@@ -4,14 +4,13 @@
 Pipeline d'ingestion big data — 8 étapes.
 
 Chemins :
-  /mnt/datasets  — source brute, LECTURE SEULE. Les sessions y sont découvertes.
-  /mnt/ingest    — espace de travail. Chaque session est copiée ici avant traitement.
-                   Tout le traitement (rotation, flux, IA, vérification) se fait ici.
-  /mnt/silver    — sortie finale validée. Écriture uniquement si --write est activé.
+  /mnt/ingest    — source ET espace de travail. Les sessions sont déposées
+                   directement ici par l'opérateur. Tout le traitement se fait
+                   sur place, en mode safe (aucune suppression sans confirmation).
+  /mnt/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
 
 Étapes :
-  1. DETECT         — Copie la session de /mnt/datasets vers /mnt/ingest,
-                      vérifie l'intégrité minimale.
+  1. DETECT         — Vérifie l'intégrité minimale de la session dans /mnt/ingest.
   2. ROTATE         — Rotation 180° des vidéos (FFmpeg, idempotente)
   3. TRACKER        — Validation du fichier tracker_positions.csv
   4. VIDEO          — Validation des vidéos et fichiers JSONL
@@ -25,6 +24,7 @@ Chemins :
 Chaque session traverse les étapes indépendamment.
 L'état de chaque étape est persisté dans /mnt/ingest/<session>/pipeline_state.json.
 Tout rollback restaure les .bak créés automatiquement.
+Aucune suppression dans /mnt/ingest sauf si delete_after_store=True (opt-in explicite).
 """
 
 from __future__ import annotations
@@ -51,10 +51,11 @@ import numpy as np
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Chemins fixes ─────────────────────────────────────────────────────────────
-DATASETS_DIR = Path("/mnt/datasets")   # source brute, lecture seule
-INGEST_DIR   = Path("/mnt/ingest")     # espace de travail (copies de travail)
+INGEST_DIR   = Path("/mnt/ingest")     # source ET espace de travail (déposé par l'opérateur)
 SILVER_DIR   = Path("/mnt/silver")     # sortie finale validée (écriture explicite)
 MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
+# Alias pour compatibilité rétrograde
+DATASETS_DIR = INGEST_DIR
 
 PIPELINE_STATE_FILE  = "pipeline_state.json"
 PIPELINE_LOCK_FILE   = ".pipeline_lock"
@@ -113,14 +114,14 @@ class StepState:
 @dataclass
 class SessionPipelineState:
     session_name:   str
-    session_path:   str           # chemin dans /mnt/ingest (espace de travail)
-    source_path:    str           # chemin d'origine dans /mnt/datasets
+    session_path:   str           # chemin dans /mnt/ingest (source et espace de travail)
     created_at:  str = field(default_factory=lambda: _now())
     updated_at:  str = field(default_factory=lambda: _now())
     current_step: str = "detect"
     finished:    bool = False
     success:     bool = False
-    write_mode:  bool = False     # si True, store vers /mnt/silver à la fin
+    write_mode:  bool = False        # si True, copie vers /mnt/silver après validation
+    delete_after_store: bool = False # si True, supprime de /mnt/ingest après store
     error:       Optional[str] = None
     steps:       Dict[str, StepState] = field(default_factory=dict)
     # Résultats pour accès rapide
@@ -128,6 +129,8 @@ class SessionPipelineState:
     mean_conf:   float = 0.0
     shifts:      dict  = field(default_factory=dict)
     silver_path: Optional[str] = None
+    # Rétrocompatibilité lecture anciens états sauvegardés
+    source_path: str = ""
 
     def __post_init__(self):
         for name in STEP_NAMES:
@@ -928,6 +931,7 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     Étape 8 — Copie la session traitée de /mnt/ingest vers /mnt/silver.
     N'est appelée que si write_mode=True dans l'état de session.
     Exclut les fichiers temporaires (.bak, locks, backups).
+    Si delete_after_store=True, supprime la session de /mnt/ingest après copie.
     """
     sess        = Path(state.session_path)   # dans /mnt/ingest
     silver_path = SILVER_DIR / sess.name
@@ -935,7 +939,7 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     if not SILVER_DIR.exists():
         raise FileNotFoundError(
             f"/mnt/silver non accessible : {SILVER_DIR}\n"
-            "Vérifiez que le montage est actif avant d'activer --write."
+            "Vérifiez que le montage est actif avant d'activer le mode écriture."
         )
 
     log(f"Écriture vers {silver_path}…", "INFO")
@@ -980,11 +984,23 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
         f"({total_bytes / 1024 / 1024:.1f} Mo) vers {silver_path}",
         "OK",
     )
+
+    # Suppression de /mnt/ingest seulement si opt-in explicite
+    deleted = False
+    if state.delete_after_store:
+        log(f"Suppression de {sess} (delete_after_store=True)…", "WARN")
+        shutil.rmtree(sess, ignore_errors=True)
+        deleted = True
+        log("Session supprimée de /mnt/ingest", "OK")
+    else:
+        log("Session conservée dans /mnt/ingest (delete_after_store=False)", "INFO")
+
     return {
         "silver_path": str(silver_path),
         "copied":      len(copied),
         "skipped":     len(skipped),
         "total_mb":    round(total_bytes / 1024 / 1024, 2),
+        "deleted_from_ingest": deleted,
     }
 
 
@@ -1000,24 +1016,25 @@ class PipelineRunner:
 
     def __init__(
         self,
-        source_path:    str,          # chemin dans /mnt/datasets
-        params:         dict,
-        write_mode:     bool = False, # si True, copie vers /mnt/silver après validation
-        log_callback:   Optional[Callable] = None,
-        step_callback:  Optional[Callable] = None,
-        force_flux:     bool = False,
-        resume:         bool = True,
+        source_path:       str,          # chemin de la session dans /mnt/ingest
+        params:            dict,
+        write_mode:        bool = False, # si True, copie vers /mnt/silver après validation
+        delete_after_store: bool = False, # si True, supprime de /mnt/ingest après store
+        log_callback:      Optional[Callable] = None,
+        step_callback:     Optional[Callable] = None,
+        force_flux:        bool = False,
+        resume:            bool = True,
     ):
-        self.source_path  = Path(source_path)
-        self.session_name = self.source_path.name
-        self.ingest_path  = INGEST_DIR / self.session_name  # espace de travail
-        self.model_dir    = MODEL_DIR
-        self.write_mode   = write_mode
-        self.params       = params
-        self.log_callback = log_callback
+        self.session_path  = Path(source_path)
+        self.session_name  = self.session_path.name
+        self.model_dir     = MODEL_DIR
+        self.write_mode    = write_mode
+        self.delete_after_store = delete_after_store
+        self.params        = params
+        self.log_callback  = log_callback
         self.step_callback = step_callback
-        self.force_flux   = force_flux
-        self.resume       = resume
+        self.force_flux    = force_flux
+        self.resume        = resume
 
         self.log = PipelineLogger(self.session_name, log_callback)
 
@@ -1026,31 +1043,28 @@ class PipelineRunner:
         return _StepContext(state, name, self.log, self.step_callback)
 
     def run(self) -> SessionPipelineState:
-        sess = self.ingest_path
+        sess = self.session_path
 
-        # ── Copie initiale datasets → ingest (si nécessaire) ──────────────
         if not sess.exists():
-            self.log(
-                f"Copie {self.source_path.name} : "
-                f"{self.source_path} → {sess}",
-                "INFO",
+            raise FileNotFoundError(
+                f"Session introuvable dans /mnt/ingest : {sess}\n"
+                "Déposez la session dans /mnt/ingest avant de lancer la pipeline."
             )
-            try:
-                shutil.copytree(str(self.source_path), str(sess))
-            except Exception as e:
-                self.log(f"Échec de la copie vers ingest : {e}", "ERROR")
-                raise
 
-        # Charger ou créer l'état (toujours dans ingest)
+        # Charger ou créer l'état (dans /mnt/ingest/<session>/)
         state = SessionPipelineState.load(sess) if self.resume else None
         if state is None:
             state = SessionPipelineState(
-                session_name = self.session_name,
-                session_path = str(sess),
-                source_path  = str(self.source_path),
-                write_mode   = self.write_mode,
+                session_name        = self.session_name,
+                session_path        = str(sess),
+                write_mode          = self.write_mode,
+                delete_after_store  = self.delete_after_store,
             )
             state.save()
+        else:
+            # Mettre à jour les options de la session courante
+            state.write_mode         = self.write_mode
+            state.delete_after_store = self.delete_after_store
 
         if state.finished and state.success and not self.force_flux:
             self.log("Session déjà traitée avec succès — skip", "INFO")
@@ -1208,28 +1222,29 @@ class _StepContext:
 
 class IngestionWatcher:
     """
-    Surveille /mnt/datasets et lance la pipeline automatiquement
-    sur les nouvelles sessions détectées.
-    Le traitement se fait dans /mnt/ingest.
+    Surveille /mnt/ingest et lance la pipeline automatiquement
+    sur les nouvelles sessions déposées par l'opérateur.
     Si write_mode=True, les sessions validées sont copiées vers /mnt/silver.
     """
 
     def __init__(
         self,
-        params:         dict,
-        write_mode:     bool  = False,
-        log_callback:   Optional[Callable] = None,
-        step_callback:  Optional[Callable] = None,
-        poll_interval:  float = 10.0,
-        auto_start:     bool  = False,
+        params:             dict,
+        write_mode:         bool  = False,
+        delete_after_store: bool  = False,
+        log_callback:       Optional[Callable] = None,
+        step_callback:      Optional[Callable] = None,
+        poll_interval:      float = 10.0,
+        auto_start:         bool  = False,
     ):
-        self.watch_dir  = DATASETS_DIR
-        self.write_mode = write_mode
-        self.params        = params
-        self.log_callback  = log_callback
-        self.step_callback = step_callback
-        self.poll_interval = poll_interval
-        self.auto_start    = auto_start
+        self.watch_dir          = INGEST_DIR
+        self.write_mode         = write_mode
+        self.delete_after_store = delete_after_store
+        self.params             = params
+        self.log_callback       = log_callback
+        self.step_callback      = step_callback
+        self.poll_interval      = poll_interval
+        self.auto_start         = auto_start
 
         self._running      = False
         self._thread       = None
@@ -1263,23 +1278,22 @@ class IngestionWatcher:
             time.sleep(self.poll_interval)
 
     def _scan(self):
-        """Scanne /mnt/datasets pour de nouvelles sessions."""
+        """Scanne /mnt/ingest pour de nouvelles sessions déposées."""
         if not self.watch_dir.exists():
             return
         for child in sorted(self.watch_dir.iterdir()):
             if not child.is_dir():
                 continue
-            if not child.name.startswith("session_"):
+            # Ignorer le répertoire du modèle ML
+            if child.name.startswith("_"):
                 continue
             if str(child) in self._seen:
                 continue
-            # Ignorer si déjà traitée avec succès dans /mnt/ingest
-            ingest_copy = INGEST_DIR / child.name
-            if ingest_copy.exists():
-                existing = SessionPipelineState.load(ingest_copy)
-                if existing and existing.finished and existing.success:
-                    self._seen.add(str(child))
-                    continue
+            # Ignorer si déjà traitée avec succès
+            existing = SessionPipelineState.load(child)
+            if existing and existing.finished and existing.success:
+                self._seen.add(str(child))
+                continue
             if (child / "metadata.json").exists():
                 self._log(f"Nouvelle session détectée: {child.name}", "INFO")
                 with self._lock:
@@ -1291,14 +1305,15 @@ class IngestionWatcher:
             queue = list(self._queue)
             self._queue.clear()
 
-        for source_sess in queue:
-            self._log(f"Lancement pipeline: {source_sess.name}", "INFO")
+        for sess in queue:
+            self._log(f"Lancement pipeline: {sess.name}", "INFO")
             runner = PipelineRunner(
-                source_path  = str(source_sess),
-                params       = self.params,
-                write_mode   = self.write_mode,
-                log_callback = self.log_callback,
-                step_callback = self.step_callback,
+                source_path        = str(sess),
+                params             = self.params,
+                write_mode         = self.write_mode,
+                delete_after_store = self.delete_after_store,
+                log_callback       = self.log_callback,
+                step_callback      = self.step_callback,
             )
             runner.run()
 
@@ -1309,19 +1324,20 @@ class IngestionWatcher:
     def get_seen(self) -> List[str]:
         return list(self._seen)
 
-    def enqueue(self, source_path: str):
-        """Enfile manuellement une session (chemin dans /mnt/datasets)."""
+    def enqueue(self, session_path: str):
+        """Enfile manuellement une session (chemin dans /mnt/ingest)."""
         with self._lock:
-            self._queue.append(Path(source_path))
+            self._queue.append(Path(session_path))
 
-    def run_session_now(self, source_path: str) -> SessionPipelineState:
+    def run_session_now(self, session_path: str) -> SessionPipelineState:
         """Lance la pipeline immédiatement sur une session (bloquant)."""
         runner = PipelineRunner(
-            source_path   = source_path,
-            params        = self.params,
-            write_mode    = self.write_mode,
-            log_callback  = self.log_callback,
-            step_callback = self.step_callback,
+            source_path        = session_path,
+            params             = self.params,
+            write_mode         = self.write_mode,
+            delete_after_store = self.delete_after_store,
+            log_callback       = self.log_callback,
+            step_callback      = self.step_callback,
         )
         return runner.run()
 
@@ -1336,9 +1352,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(
         description=(
             "Pipeline d'ingestion big data\n"
-            f"  Source    : {DATASETS_DIR}  (lecture seule)\n"
-            f"  Travail   : {INGEST_DIR}    (copies de travail)\n"
-            f"  Sortie    : {SILVER_DIR}    (--write requis pour écrire)"
+            f"  Travail   : {INGEST_DIR}  (déposez vos sessions ici)\n"
+            f"  Sortie    : {SILVER_DIR}  (--write requis pour écrire)\n"
+            "\nLe traitement est non-destructif par défaut (mode safe).\n"
+            "Utilisez --delete-after-store pour supprimer de /mnt/ingest après store."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1347,17 +1364,21 @@ if __name__ == "__main__":
     grp = p.add_mutually_exclusive_group(required=True)
     grp.add_argument(
         "--session", metavar="NAME",
-        help=f"Traiter une session spécifique de {DATASETS_DIR} (ex: session_20260318_050738)",
+        help=f"Traiter une session spécifique dans {INGEST_DIR}",
     )
     grp.add_argument(
         "--all", action="store_true",
-        help=f"Traiter toutes les sessions de {DATASETS_DIR} non encore traitées dans {INGEST_DIR}",
+        help=f"Traiter toutes les sessions non encore traitées dans {INGEST_DIR}",
     )
 
     # ── Mode écriture ──────────────────────────────────────────────────────
     p.add_argument(
         "--write", action="store_true", default=False,
-        help=f"Activer l'écriture vers {SILVER_DIR} après validation (désactivé par défaut)",
+        help=f"Copier vers {SILVER_DIR} après validation (désactivé par défaut)",
+    )
+    p.add_argument(
+        "--delete-after-store", action="store_true", default=False,
+        help="Supprimer la session de /mnt/ingest après copie vers silver (requiert --write)",
     )
 
     # ── Paramètres IA ──────────────────────────────────────────────────────
@@ -1367,22 +1388,22 @@ if __name__ == "__main__":
 
     # ── Options de contrôle ────────────────────────────────────────────────
     p.add_argument("--force-flux",           action="store_true",
-                   help="Régénérer les flux CSV même s'ils existent déjà dans /mnt/ingest")
+                   help="Régénérer les flux CSV même s'ils existent déjà")
     p.add_argument("--no-resume",            action="store_true",
-                   help="Ignorer l'état sauvegardé dans /mnt/ingest et recommencer")
+                   help="Ignorer l'état sauvegardé et recommencer depuis le début")
     p.add_argument("--label-min-confidence", type=float, default=0.90,
                    help="Confiance minimale pour la vérification des labels (défaut: 0.90)")
 
     args = p.parse_args()
 
-    # ── Validation des montages ────────────────────────────────────────────
+    # ── Validation ────────────────────────────────────────────────────────
     errors = []
-    if not DATASETS_DIR.exists():
-        errors.append(f"/mnt/datasets non accessible : {DATASETS_DIR}")
     if not INGEST_DIR.exists():
         errors.append(f"/mnt/ingest non accessible : {INGEST_DIR}")
     if args.write and not SILVER_DIR.exists():
         errors.append(f"/mnt/silver non accessible : {SILVER_DIR}  (requis par --write)")
+    if args.delete_after_store and not args.write:
+        errors.append("--delete-after-store requiert --write")
     if errors:
         for e in errors:
             print(f"ERREUR : {e}", file=sys.stderr)
@@ -1395,35 +1416,33 @@ if __name__ == "__main__":
         "label_min_confidence": args.label_min_confidence,
     }
 
-    # ── Résolution des sessions à traiter (depuis /mnt/datasets) ──────────
+    # ── Résolution des sessions à traiter (depuis /mnt/ingest) ────────────
     if args.session:
-        source_paths = [DATASETS_DIR / args.session]
+        source_paths = [INGEST_DIR / args.session]
         if not source_paths[0].is_dir():
-            print(f"ERREUR : session introuvable dans {DATASETS_DIR} : {args.session}",
+            print(f"ERREUR : session introuvable dans {INGEST_DIR} : {args.session}",
                   file=sys.stderr)
             sys.exit(1)
     else:
-        source_paths = sorted(
-            s for s in DATASETS_DIR.iterdir()
+        all_sessions = sorted(
+            s for s in INGEST_DIR.iterdir()
             if s.is_dir()
-            and s.name.startswith("session_")
+            and not s.name.startswith("_")
             and (s / "metadata.json").exists()
         )
-        if not source_paths:
-            print(f"Aucune session trouvée dans {DATASETS_DIR}", file=sys.stderr)
+        if not all_sessions:
+            print(f"Aucune session trouvée dans {INGEST_DIR}", file=sys.stderr)
             sys.exit(1)
-        # Filtrer celles déjà traitées avec succès dans /mnt/ingest
+        # Filtrer celles déjà traitées avec succès
         pending = []
-        for s in source_paths:
-            ingest_copy = INGEST_DIR / s.name
-            if ingest_copy.exists():
-                existing = SessionPipelineState.load(ingest_copy)
-                if existing and existing.finished and existing.success:
-                    continue
+        for s in all_sessions:
+            existing = SessionPipelineState.load(s)
+            if existing and existing.finished and existing.success:
+                continue
             pending.append(s)
         print(
-            f"  {len(source_paths)} sessions dans {DATASETS_DIR} — "
-            f"{len(source_paths) - len(pending)} déjà traitées — "
+            f"  {len(all_sessions)} sessions dans {INGEST_DIR} — "
+            f"{len(all_sessions) - len(pending)} déjà traitées — "
             f"{len(pending)} à traiter"
         )
         source_paths = pending
@@ -1432,10 +1451,11 @@ if __name__ == "__main__":
             sys.exit(0)
 
     # ── Affichage du mode ──────────────────────────────────────────────────
-    write_label = f"OUI → {SILVER_DIR}" if args.write else "NON (dry-run, données dans /mnt/ingest)"
-    print(f"\n  Source    : {DATASETS_DIR}")
-    print(f"  Travail   : {INGEST_DIR}")
+    write_label  = f"OUI → {SILVER_DIR}" if args.write else f"NON (résultats dans {INGEST_DIR})"
+    delete_label = "OUI (suppression après store)" if args.delete_after_store else "NON"
+    print(f"\n  Travail   : {INGEST_DIR}")
     print(f"  Écriture  : {write_label}")
+    print(f"  Suppression ingest : {delete_label}")
     print(f"  Sessions  : {len(source_paths)}\n")
 
     def _cli_log(msg, level="INFO"):
@@ -1449,16 +1469,17 @@ if __name__ == "__main__":
     for source_path in source_paths:
         print(f"\n{'═'*60}")
         print(f"  {source_path.name}")
-        print(f"  {source_path}  →  {INGEST_DIR / source_path.name}")
+        print(f"  {source_path}")
         print(f"{'═'*60}")
 
         runner = PipelineRunner(
-            source_path  = str(source_path),
-            params       = params,
-            write_mode   = args.write,
-            log_callback = _cli_log,
-            force_flux   = args.force_flux,
-            resume       = not args.no_resume,
+            source_path        = str(source_path),
+            params             = params,
+            write_mode         = args.write,
+            delete_after_store = args.delete_after_store,
+            log_callback       = _cli_log,
+            force_flux         = args.force_flux,
+            resume             = not args.no_resume,
         )
         state = runner.run()
 

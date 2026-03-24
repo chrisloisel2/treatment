@@ -107,13 +107,12 @@ _ws_lock = asyncio.Lock()
 
 # Chemins hardcodés (importés depuis pipeline)
 try:
-    from pipeline import DATASETS_DIR, INGEST_DIR, SILVER_DIR, MODEL_DIR
+    from pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
     # Fallback si pipeline non disponible au démarrage
-    DATASETS_DIR = Path("/mnt/datasets")
-    INGEST_DIR   = Path("/mnt/ingest")
-    SILVER_DIR   = Path("/mnt/silver")
-    MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
+    INGEST_DIR = Path("/mnt/ingest")
+    SILVER_DIR = Path("/mnt/silver")
+    MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -186,15 +185,17 @@ async def _broadcast(payload: dict):
 def _worker_scan(job: Job):
     try:
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
-        _log_job(job, f"Scan de {DATASETS_DIR}…")
+        _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import IA as ia
-        # Découverte dans /mnt/datasets (toutes les sessions brutes)
-        sessions = list(DATASETS_DIR.iterdir()) if DATASETS_DIR.exists() else []
-        sessions = [s for s in sessions if s.is_dir()]
+        # Découverte dans /mnt/ingest (sessions déposées par l'opérateur)
+        sessions = [
+            s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
+            if s.is_dir() and not s.name.startswith("_")
+        ]
         model_exists = (MODEL_DIR / "model.pt").exists()
         result = []
-        for s in sessions:
+        for s in sorted(sessions, key=lambda p: p.name):
             meta_path = s / "metadata.json"
             meta = {}
             if meta_path.exists():
@@ -206,19 +207,17 @@ def _worker_scan(job: Job):
             has_gripper  = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
             has_flux_csv = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
             has_jsonl    = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
-            # Statut dans /mnt/ingest
-            ingest_path  = INGEST_DIR / s.name
-            ingest_done  = False
+            # Statut pipeline
             pipeline_steps = {}
-            if ingest_path.exists():
-                ps_path = ingest_path / "pipeline_state.json"
-                if ps_path.exists():
-                    try:
-                        ps = json.loads(ps_path.read_text())
-                        pipeline_steps = ps.get("steps", {})
-                        ingest_done = ps.get("finished", False) and ps.get("success", False)
-                    except Exception:
-                        pass
+            pipeline_done  = False
+            ps_path = s / "pipeline_state.json"
+            if ps_path.exists():
+                try:
+                    ps = json.loads(ps_path.read_text())
+                    pipeline_steps = ps.get("steps", {})
+                    pipeline_done  = ps.get("finished", False) and ps.get("success", False)
+                except Exception:
+                    pass
             result_json = s / ia.RESULTS_JSON if hasattr(ia, "RESULTS_JSON") else None
             last_result = None
             if result_json and result_json.exists():
@@ -236,22 +235,21 @@ def _worker_scan(job: Job):
                 "has_jsonl":      has_jsonl,
                 "meta":           meta,
                 "last_result":    last_result,
-                "ingest_done":    ingest_done,
+                "pipeline_done":  pipeline_done,
                 "pipeline_steps": pipeline_steps,
             })
 
-        _log_job(job, f"{len(result)} sessions trouvées dans {DATASETS_DIR}.", "OK")
+        _log_job(job, f"{len(result)} sessions trouvées dans {INGEST_DIR}.", "OK")
         _update_job(
             job,
             status    = JobStatus.DONE,
             ended_at  = _now(),
             progress  = 100,
             result    = {
-                "sessions":      result,
-                "datasets_dir":  str(DATASETS_DIR),
-                "ingest_dir":    str(INGEST_DIR),
-                "silver_dir":    str(SILVER_DIR),
-                "model_exists":  model_exists,
+                "sessions":     result,
+                "ingest_dir":   str(INGEST_DIR),
+                "silver_dir":   str(SILVER_DIR),
+                "model_exists": model_exists,
             },
         )
     except Exception:
@@ -530,18 +528,20 @@ def _pipeline_step_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
 
 
 def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore[name-defined]
-                     write_mode: bool, force_flux: bool):
+                     write_mode: bool, force_flux: bool,
+                     delete_after_store: bool = False):
     try:
         from pipeline import PipelineRunner
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
         runner = PipelineRunner(
-            source_path   = source_path,
-            params        = params,
-            write_mode    = write_mode,
-            log_callback  = _pipeline_log_cb(job),
-            step_callback = _pipeline_step_cb(job),
-            force_flux    = force_flux,
-            resume        = True,
+            source_path        = source_path,
+            params             = params,
+            write_mode         = write_mode,
+            delete_after_store = delete_after_store,
+            log_callback       = _pipeline_log_cb(job),
+            step_callback      = _pipeline_step_cb(job),
+            force_flux         = force_flux,
+            resume             = True,
         )
         state = runner.run()
         final_status = JobStatus.DONE if state.success else JobStatus.ERROR
@@ -559,8 +559,8 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
 
 
 def _worker_watcher_scan(job: "Job", params: dict, write_mode: bool,  # type: ignore[name-defined]
-                          auto_start: bool):
-    """Worker qui démarre le watcher sur /mnt/datasets."""
+                          delete_after_store: bool, auto_start: bool):
+    """Worker qui démarre le watcher sur /mnt/ingest."""
     global _watcher
     try:
         from pipeline import IngestionWatcher
@@ -570,17 +570,18 @@ def _worker_watcher_scan(job: "Job", params: dict, write_mode: bool,  # type: ig
             _log_job(job, msg, level)
 
         _watcher = IngestionWatcher(
-            params       = params,
-            write_mode   = write_mode,
-            log_callback = _log,
-            poll_interval= 8.0,
-            auto_start   = auto_start,
+            params             = params,
+            write_mode         = write_mode,
+            delete_after_store = delete_after_store,
+            log_callback       = _log,
+            poll_interval      = 8.0,
+            auto_start         = auto_start,
         )
         _watcher.start()
-        _log(f"Watcher démarré sur {DATASETS_DIR}", "OK")
+        _log(f"Watcher démarré sur {INGEST_DIR}", "OK")
         _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100,
-                    result={"watch_dir": str(DATASETS_DIR), "auto_start": auto_start,
-                            "write_mode": write_mode})
+                    result={"watch_dir": str(INGEST_DIR), "auto_start": auto_start,
+                            "write_mode": write_mode, "delete_after_store": delete_after_store})
     except Exception:
         err = traceback.format_exc()
         _log_job(job, err, "ERROR")
@@ -611,19 +612,21 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:     str          # nom de session (dans /mnt/datasets)
-    write_mode:  bool  = False
-    force_flux:  bool  = False
-    resample_ms: float = 5.0
-    max_lag_ms:  float = 400.0
-    window_ms:   float = 2200.0
+    session:            str          # nom ou chemin de session dans /mnt/ingest
+    write_mode:         bool  = False
+    delete_after_store: bool  = False
+    force_flux:         bool  = False
+    resample_ms:        float = 5.0
+    max_lag_ms:         float = 400.0
+    window_ms:          float = 2200.0
 
 class WatcherStartRequest(BaseModel):
-    write_mode:  bool  = False
-    auto_start:  bool  = False
-    resample_ms: float = 5.0
-    max_lag_ms:  float = 400.0
-    window_ms:   float = 2200.0
+    write_mode:         bool  = False
+    delete_after_store: bool  = False
+    auto_start:         bool  = False
+    resample_ms:        float = 5.0
+    max_lag_ms:         float = 400.0
+    window_ms:          float = 2200.0
 
 class PipelineStateRequest(BaseModel):
     session_path: str
@@ -670,10 +673,9 @@ async def scan():
 async def get_paths():
     """Retourne les chemins hardcodés de la pipeline."""
     return {
-        "datasets_dir": str(DATASETS_DIR),
-        "ingest_dir":   str(INGEST_DIR),
-        "silver_dir":   str(SILVER_DIR),
-        "model_dir":    str(MODEL_DIR),
+        "ingest_dir":  str(INGEST_DIR),
+        "silver_dir":  str(SILVER_DIR),
+        "model_dir":   str(MODEL_DIR),
     }
 
 
@@ -744,19 +746,20 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/datasets."""
+    """Lance la pipeline complète (9 étapes) sur une session de /mnt/ingest."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/datasets
-    source_path = req.session if Path(req.session).is_absolute() else str(DATASETS_DIR / req.session)
+    # req.session peut être un nom ou un chemin complet dans /mnt/ingest
+    source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
     threading.Thread(
         target = _worker_pipeline,
-        args   = (job, source_path, params, req.write_mode, req.force_flux),
+        args   = (job, source_path, params, req.write_mode, req.force_flux,
+                  req.delete_after_store),
         daemon = True,
     ).start()
     return {"job_id": job.id}
@@ -764,10 +767,11 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions en parallèle."""
-    sessions   = req.get("sessions", [])
-    write_mode = req.get("write_mode", False)
-    force_flux = req.get("force_flux", False)
+    """Lance la pipeline sur plusieurs sessions de /mnt/ingest en parallèle."""
+    sessions           = req.get("sessions", [])
+    write_mode         = req.get("write_mode", False)
+    delete_after_store = req.get("delete_after_store", False)
+    force_flux         = req.get("force_flux", False)
     params = {
         "resample_ms": req.get("resample_ms", 5.0),
         "max_lag_ms":  req.get("max_lag_ms", 400.0),
@@ -776,11 +780,11 @@ async def pipeline_run_batch(req: dict):
 
     job_ids = []
     for sess in sessions:
-        source_path = sess if Path(sess).is_absolute() else str(DATASETS_DIR / sess)
+        source_path = sess if Path(sess).is_absolute() else str(INGEST_DIR / sess)
         job = _new_job("pipeline")
         threading.Thread(
             target = _worker_pipeline,
-            args   = (job, source_path, params, write_mode, force_flux),
+            args   = (job, source_path, params, write_mode, force_flux, delete_after_store),
             daemon = True,
         ).start()
         job_ids.append(job.id)
@@ -838,7 +842,7 @@ async def watcher_start(req: WatcherStartRequest):
     job = _new_job("watcher")
     threading.Thread(
         target = _worker_watcher_scan,
-        args   = (job, params, req.write_mode, req.auto_start),
+        args   = (job, params, req.write_mode, req.delete_after_store, req.auto_start),
         daemon = True,
     ).start()
     return {"job_id": job.id}

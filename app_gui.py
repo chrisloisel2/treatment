@@ -318,15 +318,16 @@ class ConfidenceBadge(QLabel):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class DiscoveryWorker(QThread):
-    """Découvre les sessions dans /mnt/datasets."""
+    """Découvre les sessions dans /mnt/ingest."""
     result   = pyqtSignal(list)   # list of session Path strings
     error    = pyqtSignal(str)
 
     def run(self):
         try:
-            from pipeline import DATASETS_DIR
+            from pipeline import INGEST_DIR
             sessions = sorted(
-                [s for s in DATASETS_DIR.iterdir() if s.is_dir()],
+                [s for s in INGEST_DIR.iterdir()
+                 if s.is_dir() and not s.name.startswith("_")],
                 key=lambda p: p.name,
             )
             self.result.emit([str(s) for s in sessions])
@@ -515,7 +516,7 @@ class IngestionPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        from pipeline import DATASETS_DIR, INGEST_DIR, SILVER_DIR
+        from pipeline import INGEST_DIR, SILVER_DIR
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
@@ -524,9 +525,8 @@ class IngestionPanel(QWidget):
         grp_paths = QGroupBox("Chemins de la pipeline")
         fl = QFormLayout(grp_paths)
         for label, path in [
-            ("Source (datasets)", str(DATASETS_DIR)),
-            ("Travail (ingest)",  str(INGEST_DIR)),
-            ("Sortie (silver)",   str(SILVER_DIR)),
+            ("Travail (ingest)", str(INGEST_DIR)),
+            ("Sortie (silver)",  str(SILVER_DIR)),
         ]:
             lbl = QLabel(path)
             lbl.setStyleSheet(f"color:{DARK['accent']}; font-family:monospace;")
@@ -541,7 +541,7 @@ class IngestionPanel(QWidget):
         layout.addWidget(self.btn_scan)
 
         # ── Liste des sessions ──
-        grp_sess = QGroupBox("Sessions dans /mnt/datasets")
+        grp_sess = QGroupBox("Sessions dans /mnt/ingest")
         vl = QVBoxLayout(grp_sess)
         self.lbl_count = QLabel("— sessions")
         self.lbl_count.setStyleSheet(f"color:{DARK['text_dim']};")
@@ -580,7 +580,6 @@ class IngestionPanel(QWidget):
         self._worker.start()
 
     def _on_result(self, sessions: list):
-        from pipeline import INGEST_DIR
         self._sessions = sessions
         self.list_sessions.clear()
         for s in sessions:
@@ -589,9 +588,17 @@ class IngestionPanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, s)
             has_tracker = (Path(s) / "tracker_positions.csv").exists()
             has_meta    = (Path(s) / "metadata.json").exists()
-            # Statut ingest
-            ingest_done = (INGEST_DIR / name / "pipeline_state.json").exists()
-            if ingest_done:
+            # Statut pipeline (pipeline_state.json dans le même dossier)
+            ps_path = Path(s) / "pipeline_state.json"
+            pipeline_done = False
+            if ps_path.exists():
+                try:
+                    import json as _json
+                    ps = _json.loads(ps_path.read_text())
+                    pipeline_done = ps.get("finished", False) and ps.get("success", False)
+                except Exception:
+                    pass
+            if pipeline_done:
                 item.setForeground(QColor(DARK["green"]))
                 item.setText(name + "  ✓")
             elif has_tracker and has_meta:
@@ -602,7 +609,7 @@ class IngestionPanel(QWidget):
             self.list_sessions.addItem(item)
 
         self.lbl_count.setText(f"{len(sessions)} session(s) trouvée(s)")
-        self.log.log(f"[Ingestion] {len(sessions)} sessions dans /mnt/datasets", "OK")
+        self.log.log(f"[Ingestion] {len(sessions)} sessions dans /mnt/ingest", "OK")
         self.btn_scan.setEnabled(True)
         self.list_sessions.selectAll()
         self.sessions_changed.emit(sessions)
@@ -1298,21 +1305,24 @@ class PipelineWorker(QThread):
     step_done  = pyqtSignal(dict)   # steps dict
     finished   = pyqtSignal(bool, str)  # success, silver_path
 
-    def __init__(self, source_path: str, params: dict, write_mode: bool):
+    def __init__(self, source_path: str, params: dict,
+                 write_mode: bool, delete_after_store: bool = False):
         super().__init__()
-        self.source_path = source_path
-        self.params      = params
-        self.write_mode  = write_mode
+        self.source_path       = source_path
+        self.params            = params
+        self.write_mode        = write_mode
+        self.delete_after_store = delete_after_store
 
     def run(self):
         try:
             from pipeline import PipelineRunner
             runner = PipelineRunner(
-                source_path  = self.source_path,
-                params       = self.params,
-                write_mode   = self.write_mode,
-                log_callback = lambda msg, level="INFO": self.log_msg.emit(msg, level),
-                resume       = True,
+                source_path        = self.source_path,
+                params             = self.params,
+                write_mode         = self.write_mode,
+                delete_after_store = self.delete_after_store,
+                log_callback       = lambda msg, level="INFO": self.log_msg.emit(msg, level),
+                resume             = True,
             )
             state = runner.run()
             self.finished.emit(state.success, state.silver_path or "")
@@ -1349,6 +1359,13 @@ class PipelinePanel(QWidget):
         self.chk_write_mode.setToolTip(
             "Si coché, la session validée sera copiée dans /mnt/silver après traitement."
         )
+        self.chk_delete_after = QCheckBox("Supprimer de /mnt/ingest après store")
+        self.chk_delete_after.setToolTip(
+            "ATTENTION : supprime définitivement la session de /mnt/ingest après copie vers silver.\n"
+            "Nécessite que le mode écriture soit activé."
+        )
+        self.chk_delete_after.setEnabled(False)
+        self.chk_write_mode.toggled.connect(self.chk_delete_after.setEnabled)
         self.chk_force_flux = QCheckBox("Forcer recalcul flux CSV")
         self.sp_resample = QDoubleSpinBox()
         self.sp_resample.setDecimals(1); self.sp_resample.setRange(1.0, 50.0); self.sp_resample.setValue(5.0)
@@ -1357,6 +1374,7 @@ class PipelinePanel(QWidget):
         self.sp_window = QDoubleSpinBox()
         self.sp_window.setDecimals(0); self.sp_window.setRange(500.0, 10000.0); self.sp_window.setValue(2200.0)
         fl.addRow(self.chk_write_mode)
+        fl.addRow(self.chk_delete_after)
         fl.addRow(self.chk_force_flux)
         fl.addRow("Resample (ms)", self.sp_resample)
         fl.addRow("Max lag (ms)",  self.sp_max_lag)
@@ -1419,7 +1437,20 @@ class PipelinePanel(QWidget):
             return
 
         source_path = self.combo_session.itemData(idx)
-        write_mode  = self.chk_write_mode.isChecked()
+        write_mode         = self.chk_write_mode.isChecked()
+        delete_after_store = self.chk_delete_after.isChecked() and write_mode
+
+        if delete_after_store:
+            from PyQt6.QtWidgets import QMessageBox
+            ans = QMessageBox.warning(
+                self, "Confirmation suppression",
+                f"La session sera supprimée de /mnt/ingest après copie vers /mnt/silver.\n\n"
+                f"Session : {Path(source_path).name}\n\nContinuer ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+
         params = {
             "resample_ms": self.sp_resample.value(),
             "max_lag_ms":  self.sp_max_lag.value(),
@@ -1435,7 +1466,7 @@ class PipelinePanel(QWidget):
             lbl.setText("—")
             lbl.setStyleSheet(f"color:{DARK['text_dim']};")
 
-        self._worker = PipelineWorker(source_path, params, write_mode)
+        self._worker = PipelineWorker(source_path, params, write_mode, delete_after_store)
         self._worker.log_msg.connect(self.log.log)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
@@ -1593,8 +1624,10 @@ def main():
     win.show()
 
     win.log.log("SyncML Studio démarré.", "OK")
-    win.log.log("1. Scannez les sessions dans « Ingestion »  (/mnt/datasets).", "DIM")
-    win.log.log("2. Lancez la pipeline complète dans « Pipeline ».", "DIM")
+    win.log.log("1. Déposez vos sessions dans /mnt/ingest, puis scannez dans « Ingestion ».", "DIM")
+    win.log.log("2. Lancez la pipeline dans « Pipeline » (mode safe par défaut).", "DIM")
+    win.log.log("   → Cochez « Mode écriture » pour produire le résultat dans /mnt/silver.", "DIM")
+    win.log.log("   → Cochez « Supprimer de ingest » pour nettoyer après store (opt-in).", "DIM")
     win.log.log("3. Entraînez le modèle dans « Entraînement ».", "DIM")
     win.log.log("4. Estimez les offsets dans « Inférence ».", "DIM")
     win.log.log("5. Visualisez les résultats dans « Visualisation ».", "DIM")

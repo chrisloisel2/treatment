@@ -1443,9 +1443,14 @@ async def websocket_endpoint(ws: WebSocket):
 
 def parse_args():
     p = argparse.ArgumentParser(description="SyncML Studio — Serveur web")
-    p.add_argument("--host",   default="0.0.0.0")
-    p.add_argument("--port",   type=int, default=8000)
-    p.add_argument("--reload", action="store_true")
+    p.add_argument("--host",      default="0.0.0.0")
+    p.add_argument("--port",      type=int, default=8000)
+    p.add_argument("--reload",    action="store_true")
+    # Arguments legacy ignorés (chemins désormais hardcodés dans pipeline.py)
+    p.add_argument("--root",      default=None, help=argparse.SUPPRESS)
+    p.add_argument("--model-dir", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--nas",       default=None, help=argparse.SUPPRESS)
+    p.add_argument("--watch",     default=None, help=argparse.SUPPRESS)
     return p.parse_args()
 
 

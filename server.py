@@ -97,6 +97,17 @@ def _parse_jsonl(path) -> list:
     return rows
 
 
+# Chemins hardcodés (importés depuis pipeline)
+try:
+    from pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
+except ImportError:
+    INGEST_DIR = Path("/mnt/ingest")
+    SILVER_DIR = Path("/mnt/silver")
+    MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
+
+# Répertoire de persistance des jobs sur disque
+JOBS_DIR = INGEST_DIR / "_server_jobs"
+
 # Registre en mémoire des jobs
 _jobs: Dict[str, Job] = {}
 _jobs_lock = threading.Lock()
@@ -105,14 +116,78 @@ _jobs_lock = threading.Lock()
 _ws_clients: List[WebSocket] = []
 _ws_lock = asyncio.Lock()
 
-# Chemins hardcodés (importés depuis pipeline)
-try:
-    from pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
-except ImportError:
-    # Fallback si pipeline non disponible au démarrage
-    INGEST_DIR = Path("/mnt/ingest")
-    SILVER_DIR = Path("/mnt/silver")
-    MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Persistance des jobs sur disque
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _job_file(job_id: str) -> Path:
+    return JOBS_DIR / f"{job_id}.json"
+
+
+def _persist_job(job: Job):
+    """Sauvegarde le job sur disque (non-bloquant, erreurs silencieuses)."""
+    try:
+        JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        d = {
+            "id":           job.id,
+            "kind":         job.kind,
+            "status":       job.status,
+            "created_at":   job.created_at,
+            "started_at":   job.started_at,
+            "ended_at":     job.ended_at,
+            "progress":     job.progress,
+            "result":       job.result,
+            "error":        job.error,
+            "losses":       job.losses[-200:],
+            "epochs_done":  job.epochs_done,
+            "total_epochs": job.total_epochs,
+            "pseudo_total": job.pseudo_total,
+            "pseudo_pos":   job.pseudo_pos,
+            "pseudo_neg":   job.pseudo_neg,
+            "logs":         job.logs[-500:],   # garder les 500 dernières lignes
+        }
+        tmp = _job_file(job.id).with_suffix(".tmp")
+        tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(_job_file(job.id))
+    except Exception:
+        pass
+
+
+def _load_jobs_from_disk():
+    """Recharge tous les jobs persistés au démarrage du serveur."""
+    if not JOBS_DIR.exists():
+        return
+    for p in sorted(JOBS_DIR.glob("*.json")):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            job = Job(
+                id           = d["id"],
+                kind         = d["kind"],
+                status       = JobStatus(d["status"]),
+                created_at   = d.get("created_at", _now()),
+                started_at   = d.get("started_at"),
+                ended_at     = d.get("ended_at"),
+                progress     = d.get("progress", 0.0),
+                result       = d.get("result"),
+                error        = d.get("error"),
+                losses       = d.get("losses", []),
+                epochs_done  = d.get("epochs_done", 0),
+                total_epochs = d.get("total_epochs", 0),
+                pseudo_total = d.get("pseudo_total", 0),
+                pseudo_pos   = d.get("pseudo_pos", 0),
+                pseudo_neg   = d.get("pseudo_neg", 0),
+                logs         = d.get("logs", []),
+            )
+            # Jobs interrompus par un crash → marqués ERROR
+            if job.status in (JobStatus.RUNNING, JobStatus.PENDING):
+                job.status  = JobStatus.ERROR
+                job.error   = (job.error or "") + " [interrompu par redémarrage serveur]"
+                job.ended_at = _now()
+                _persist_job(job)
+            _jobs[job.id] = job
+        except Exception:
+            pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -123,13 +198,14 @@ def _new_job(kind: str) -> Job:
     j = Job(id=str(uuid.uuid4())[:8], kind=kind)
     with _jobs_lock:
         _jobs[j.id] = j
+    _persist_job(j)
     return j
 
 
 def _log_job(job: Job, msg: str, level: str = "INFO"):
     entry = {"ts": _now(), "msg": msg, "level": level}
     job.logs.append(entry)
-    # Broadcast async (non-bloquant depuis un thread)
+    _persist_job(job)
     asyncio.run_coroutine_threadsafe(
         _broadcast({"type": "log", "job_id": job.id, "entry": entry}),
         _loop,
@@ -139,6 +215,7 @@ def _log_job(job: Job, msg: str, level: str = "INFO"):
 def _update_job(job: Job, **kwargs):
     for k, v in kwargs.items():
         setattr(job, k, v)
+    _persist_job(job)
     asyncio.run_coroutine_threadsafe(
         _broadcast({"type": "job_update", "job": _job_to_dict(job)}),
         _loop,
@@ -469,6 +546,7 @@ _loop: asyncio.AbstractEventLoop = None
 async def _startup():
     global _loop
     _loop = asyncio.get_running_loop()
+    _load_jobs_from_disk()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -872,11 +950,12 @@ async def watcher_status():
 
 @app.delete("/api/jobs")
 async def clear_jobs():
-    """Vide les jobs terminés."""
+    """Vide les jobs terminés (mémoire + disque)."""
     with _jobs_lock:
         done = [k for k, v in _jobs.items() if v.status in (JobStatus.DONE, JobStatus.ERROR)]
         for k in done:
             del _jobs[k]
+            _job_file(k).unlink(missing_ok=True)
     return {"cleared": len(done)}
 
 

@@ -156,7 +156,23 @@ class SessionPipelineState:
 
     def save(self):
         p = Path(self.session_path) / PIPELINE_STATE_FILE
-        p.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        content = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
+        # Écriture atomique via fichier temporaire pour éviter la corruption
+        # et contourner les éventuels fichiers read-only créés par un autre utilisateur
+        tmp = p.with_suffix(".tmp")
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            # S'assurer que le fichier destination est accessible en écriture
+            if p.exists():
+                try:
+                    p.chmod(0o644)
+                except OSError:
+                    pass
+            tmp.replace(p)
+        except Exception:
+            # Fallback direct si le tmp ne peut pas être déplacé
+            tmp.unlink(missing_ok=True)
+            p.write_text(content, encoding="utf-8")
 
     @classmethod
     def load(cls, session_path: Path) -> Optional["SessionPipelineState"]:

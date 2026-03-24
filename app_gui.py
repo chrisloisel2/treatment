@@ -18,7 +18,7 @@ import numpy as np
 # ── Qt ────────────────────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QTabWidget, QLabel, QPushButton, QFileDialog,
+    QSplitter, QTabWidget, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QProgressBar, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox,
     QTextEdit, QScrollArea, QFrame, QSizePolicy, QMessageBox,
@@ -318,19 +318,19 @@ class ConfidenceBadge(QLabel):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class DiscoveryWorker(QThread):
+    """Découvre les sessions dans /mnt/datasets."""
     result   = pyqtSignal(list)   # list of session Path strings
     error    = pyqtSignal(str)
 
-    def __init__(self, root: str):
-        super().__init__()
-        self.root = root
-
     def run(self):
         try:
-            import IA as ia
-            sessions = ia.discover_sessions(Path(self.root), None)
+            from pipeline import DATASETS_DIR
+            sessions = sorted(
+                [s for s in DATASETS_DIR.iterdir() if s.is_dir()],
+                key=lambda p: p.name,
+            )
             self.result.emit([str(s) for s in sessions])
-        except Exception as e:
+        except Exception:
             self.error.emit(traceback.format_exc())
 
 
@@ -341,9 +341,8 @@ class TrainWorker(QThread):
     finished_ok  = pyqtSignal(str)            # model_dir path
     error        = pyqtSignal(str)
 
-    def __init__(self, root: str, sessions: list, params: dict):
+    def __init__(self, sessions: list, params: dict):
         super().__init__()
-        self.root     = root
         self.sessions = sessions  # list of Path strings
         self.params   = params
 
@@ -352,10 +351,10 @@ class TrainWorker(QThread):
             import IA as ia
             import torch
             from torch.utils.data import DataLoader
+            from pipeline import MODEL_DIR
 
             ia.set_seed()
-            root_p = Path(self.root)
-            sess   = [Path(s) for s in self.sessions]
+            sess = [Path(s) for s in self.sessions]
 
             self.log_msg.emit(f"Chargement de {len(sess)} session(s)…", "INFO")
             examples = ia.build_training_examples(
@@ -408,7 +407,7 @@ class TrainWorker(QThread):
                     f"Époque {epoch+1:02d}/{epochs}  loss={mean_loss:.4f}", "TRAIN"
                 )
 
-            model_dir = root_p / ia.MODEL_DIRNAME
+            model_dir = MODEL_DIR
             ia.save_model(model, model_dir)
             self.log_msg.emit(f"Modèle sauvegardé → {model_dir}", "OK")
             self.finished_ok.emit(str(model_dir))
@@ -423,20 +422,19 @@ class InferenceWorker(QThread):
     finished_ok= pyqtSignal(list)  # list of dicts
     error      = pyqtSignal(str)
 
-    def __init__(self, root: str, session: str, params: dict, apply: bool = False, dry_run: bool = True):
+    def __init__(self, session: str, params: dict, apply: bool = False, dry_run: bool = True):
         super().__init__()
-        self.root       = root
-        self.session    = session
-        self.params     = params
-        self.apply      = apply
-        self.dry_run    = dry_run
+        self.session = session
+        self.params  = params
+        self.apply   = apply
+        self.dry_run = dry_run
 
     def run(self):
         try:
             import IA as ia
-            root_p    = Path(self.root)
+            from pipeline import MODEL_DIR
             sess_p    = Path(self.session)
-            model_dir = root_p / ia.MODEL_DIRNAME
+            model_dir = MODEL_DIR
 
             if not (model_dir / "model.pt").exists():
                 raise RuntimeError("Aucun modèle trouvé. Lancez d'abord l'entraînement.")
@@ -507,42 +505,43 @@ class InferenceWorker(QThread):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class IngestionPanel(QWidget):
-    sessions_changed = pyqtSignal(list, str)  # session list, root
+    sessions_changed = pyqtSignal(list)  # session list (paths in /mnt/datasets)
 
     def __init__(self, log: LogWidget):
         super().__init__()
-        self.log      = log
-        self._root    = ""
-        self._sessions= []
-        self._worker  = None
+        self.log       = log
+        self._sessions = []
+        self._worker   = None
         self._build_ui()
 
     def _build_ui(self):
+        from pipeline import DATASETS_DIR, INGEST_DIR, SILVER_DIR
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        # ── Sélecteur de répertoire ──
-        grp_dir = QGroupBox("Répertoire racine")
-        row = QHBoxLayout(grp_dir)
-        self.edit_root = QLineEdit()
-        self.edit_root.setPlaceholderText("/chemin/vers/sessions…")
-        self.edit_root.setReadOnly(True)
-        btn_browse = QPushButton("Parcourir…")
-        btn_browse.clicked.connect(self._browse)
-        row.addWidget(self.edit_root)
-        row.addWidget(btn_browse)
-        layout.addWidget(grp_dir)
+        # ── Chemins hardcodés ──
+        grp_paths = QGroupBox("Chemins de la pipeline")
+        fl = QFormLayout(grp_paths)
+        for label, path in [
+            ("Source (datasets)", str(DATASETS_DIR)),
+            ("Travail (ingest)",  str(INGEST_DIR)),
+            ("Sortie (silver)",   str(SILVER_DIR)),
+        ]:
+            lbl = QLabel(path)
+            lbl.setStyleSheet(f"color:{DARK['accent']}; font-family:monospace;")
+            lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            fl.addRow(label + ":", lbl)
+        layout.addWidget(grp_paths)
 
         # ── Bouton scan ──
         self.btn_scan = QPushButton("Scanner les sessions")
         self.btn_scan.setObjectName("primary")
-        self.btn_scan.setEnabled(False)
         self.btn_scan.clicked.connect(self._scan)
         layout.addWidget(self.btn_scan)
 
         # ── Liste des sessions ──
-        grp_sess = QGroupBox("Sessions découvertes")
+        grp_sess = QGroupBox("Sessions dans /mnt/datasets")
         vl = QVBoxLayout(grp_sess)
         self.lbl_count = QLabel("— sessions")
         self.lbl_count.setStyleSheet(f"color:{DARK['text_dim']};")
@@ -572,32 +571,30 @@ class IngestionPanel(QWidget):
 
         self.list_sessions.currentItemChanged.connect(self._show_meta)
 
-    def _browse(self):
-        d = QFileDialog.getExistingDirectory(self, "Sélectionner le répertoire racine")
-        if d:
-            self._root = d
-            self.edit_root.setText(d)
-            self.btn_scan.setEnabled(True)
-
     def _scan(self):
         self.btn_scan.setEnabled(False)
         self.lbl_count.setText("Scan en cours…")
-        self._worker = DiscoveryWorker(self._root)
+        self._worker = DiscoveryWorker()
         self._worker.result.connect(self._on_result)
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
     def _on_result(self, sessions: list):
+        from pipeline import INGEST_DIR
         self._sessions = sessions
         self.list_sessions.clear()
         for s in sessions:
             name = Path(s).name
             item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, s)
-            # check flux files
             has_tracker = (Path(s) / "tracker_positions.csv").exists()
             has_meta    = (Path(s) / "metadata.json").exists()
-            if has_tracker and has_meta:
+            # Statut ingest
+            ingest_done = (INGEST_DIR / name / "pipeline_state.json").exists()
+            if ingest_done:
+                item.setForeground(QColor(DARK["green"]))
+                item.setText(name + "  ✓")
+            elif has_tracker and has_meta:
                 item.setForeground(QColor(DARK["text"]))
             else:
                 item.setForeground(QColor(DARK["text_dim"]))
@@ -605,10 +602,10 @@ class IngestionPanel(QWidget):
             self.list_sessions.addItem(item)
 
         self.lbl_count.setText(f"{len(sessions)} session(s) trouvée(s)")
-        self.log.log(f"[Ingestion] {len(sessions)} sessions dans {self._root}", "OK")
+        self.log.log(f"[Ingestion] {len(sessions)} sessions dans /mnt/datasets", "OK")
         self.btn_scan.setEnabled(True)
         self.list_sessions.selectAll()
-        self.sessions_changed.emit(sessions, self._root)
+        self.sessions_changed.emit(sessions)
 
     def _on_error(self, err: str):
         self.log.log(f"[Ingestion] ERREUR: {err}", "ERROR")
@@ -627,7 +624,6 @@ class IngestionPanel(QWidget):
                 return
             except Exception:
                 pass
-        # fallback: list files
         files = sorted(f.name for f in sess_path.rglob("*") if f.is_file())
         self.meta_text.setText("\n".join(files[:40]))
 
@@ -636,9 +632,6 @@ class IngestionPanel(QWidget):
         if not selected:
             return self._sessions
         return [item.data(Qt.ItemDataRole.UserRole) for item in selected]
-
-    def get_root(self) -> str:
-        return self._root
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -742,10 +735,9 @@ class TrainPanel(QWidget):
         }
 
     def _start_train(self):
-        root     = self.ingestion.get_root()
         sessions = self.ingestion.get_selected_sessions()
-        if not root or not sessions:
-            QMessageBox.warning(self, "Attention", "Sélectionnez d'abord un répertoire et au moins une session.")
+        if not sessions:
+            QMessageBox.warning(self, "Attention", "Sélectionnez au moins une session.")
             return
 
         self._losses.clear()
@@ -757,7 +749,7 @@ class TrainPanel(QWidget):
         self.btn_train.setEnabled(False)
         self.btn_train.setText("Entraînement…")
 
-        self._worker = TrainWorker(root, sessions, self._get_params())
+        self._worker = TrainWorker(sessions, self._get_params())
         self._worker.epoch_done.connect(self._on_epoch)
         self._worker.log_msg.connect(self.log.log)
         self._worker.pseudo_stats.connect(self._on_pseudo)
@@ -914,15 +906,14 @@ class InferencePanel(QWidget):
         right.addWidget(self.table)
         layout.addLayout(right)
 
-    def refresh_sessions(self, sessions: list, root: str):
+    def refresh_sessions(self, sessions: list):
         self.combo_session.clear()
         for s in sessions:
             self.combo_session.addItem(Path(s).name, s)
 
     def _run(self):
-        root = self.ingestion.get_root()
-        idx  = self.combo_session.currentIndex()
-        if idx < 0 or not root:
+        idx = self.combo_session.currentIndex()
+        if idx < 0:
             QMessageBox.warning(self, "Attention", "Sélectionnez une session.")
             return
 
@@ -936,7 +927,7 @@ class InferencePanel(QWidget):
         dry_run = self.chk_dry_run.isChecked()
 
         params = self.train_panel.get_params()
-        self._worker = InferenceWorker(root, sess, params, apply=apply, dry_run=dry_run)
+        self._worker = InferenceWorker(sess, params, apply=apply, dry_run=dry_run)
         self._worker.pair_done.connect(self._on_pair)
         self._worker.log_msg.connect(self.log.log)
         self._worker.finished_ok.connect(self._on_done)
@@ -1011,13 +1002,12 @@ class InferencePanel(QWidget):
         )
         if ans != QMessageBox.StandardButton.Yes:
             return
-        root     = self.ingestion.get_root()
         sess_idx = self.combo_session.currentIndex()
         if sess_idx < 0:
             return
         sess = self.combo_session.itemData(sess_idx)
         params = self.train_panel.get_params()
-        self._worker = InferenceWorker(root, sess, params, apply=True, dry_run=False)
+        self._worker = InferenceWorker(sess, params, apply=True, dry_run=False)
         self._worker.pair_done.connect(lambda _: None)
         self._worker.log_msg.connect(self.log.log)
         self._worker.finished_ok.connect(lambda _: self.log.log("Offsets appliqués avec succès.", "OK"))
@@ -1300,6 +1290,172 @@ class VizPanel(QWidget):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Panel : Pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PipelineWorker(QThread):
+    log_msg    = pyqtSignal(str, str)
+    step_done  = pyqtSignal(dict)   # steps dict
+    finished   = pyqtSignal(bool, str)  # success, silver_path
+
+    def __init__(self, source_path: str, params: dict, write_mode: bool):
+        super().__init__()
+        self.source_path = source_path
+        self.params      = params
+        self.write_mode  = write_mode
+
+    def run(self):
+        try:
+            from pipeline import PipelineRunner
+            runner = PipelineRunner(
+                source_path  = self.source_path,
+                params       = self.params,
+                write_mode   = self.write_mode,
+                log_callback = lambda msg, level="INFO": self.log_msg.emit(msg, level),
+                resume       = True,
+            )
+            state = runner.run()
+            self.finished.emit(state.success, state.silver_path or "")
+        except Exception:
+            self.log_msg.emit(traceback.format_exc(), "ERROR")
+            self.finished.emit(False, "")
+
+
+class PipelinePanel(QWidget):
+    def __init__(self, log: LogWidget, ingestion: "IngestionPanel"):
+        super().__init__()
+        self.log       = log
+        self.ingestion = ingestion
+        self._worker   = None
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        # ── Sélection session ──
+        grp_sess = QGroupBox("Session à traiter")
+        vl = QVBoxLayout(grp_sess)
+        self.combo_session = QComboBox()
+        self.combo_session.setPlaceholderText("Choisir une session dans /mnt/datasets…")
+        vl.addWidget(self.combo_session)
+        layout.addWidget(grp_sess)
+
+        # ── Options pipeline ──
+        grp_opts = QGroupBox("Options")
+        fl = QFormLayout(grp_opts)
+        self.chk_write_mode = QCheckBox("Mode écriture — copier vers /mnt/silver")
+        self.chk_write_mode.setToolTip(
+            "Si coché, la session validée sera copiée dans /mnt/silver après traitement."
+        )
+        self.chk_force_flux = QCheckBox("Forcer recalcul flux CSV")
+        self.sp_resample = QDoubleSpinBox()
+        self.sp_resample.setDecimals(1); self.sp_resample.setRange(1.0, 50.0); self.sp_resample.setValue(5.0)
+        self.sp_max_lag = QDoubleSpinBox()
+        self.sp_max_lag.setDecimals(0); self.sp_max_lag.setRange(50.0, 2000.0); self.sp_max_lag.setValue(400.0)
+        self.sp_window = QDoubleSpinBox()
+        self.sp_window.setDecimals(0); self.sp_window.setRange(500.0, 10000.0); self.sp_window.setValue(2200.0)
+        fl.addRow(self.chk_write_mode)
+        fl.addRow(self.chk_force_flux)
+        fl.addRow("Resample (ms)", self.sp_resample)
+        fl.addRow("Max lag (ms)",  self.sp_max_lag)
+        fl.addRow("Fenêtre (ms)",  self.sp_window)
+        layout.addWidget(grp_opts)
+
+        # ── Progression étapes ──
+        grp_steps = QGroupBox("Étapes pipeline")
+        steps_layout = QVBoxLayout(grp_steps)
+        self._step_labels: Dict[str, QLabel] = {}
+        STEP_NAMES = ["detect", "rotate", "tracker", "video", "verify_labels",
+                      "flux_csv", "ia_sync", "validate", "store"]
+        STEP_DISPLAY = {
+            "detect":       "1. Détection",
+            "rotate":       "2. Rotation",
+            "tracker":      "3. Trackers",
+            "video":        "4. Vidéo",
+            "verify_labels":"5. Vérif. labels",
+            "flux_csv":     "6. Flux CSV",
+            "ia_sync":      "7. Sync IA",
+            "validate":     "8. Validation",
+            "store":        "9. Stockage silver",
+        }
+        for name in STEP_NAMES:
+            row = QHBoxLayout()
+            lbl_name = QLabel(STEP_DISPLAY[name])
+            lbl_name.setFixedWidth(160)
+            lbl_status = QLabel("—")
+            lbl_status.setStyleSheet(f"color:{DARK['text_dim']};")
+            self._step_labels[name] = lbl_status
+            row.addWidget(lbl_name)
+            row.addWidget(lbl_status)
+            row.addStretch()
+            steps_layout.addLayout(row)
+        layout.addWidget(grp_steps)
+
+        self.prog_bar = QProgressBar()
+        self.prog_bar.setValue(0)
+        layout.addWidget(self.prog_bar)
+
+        self.btn_run = QPushButton("Lancer la pipeline")
+        self.btn_run.setObjectName("primary")
+        self.btn_run.clicked.connect(self._run)
+        layout.addWidget(self.btn_run)
+
+        self.lbl_result = QLabel("")
+        self.lbl_result.setWordWrap(True)
+        layout.addWidget(self.lbl_result)
+        layout.addStretch()
+
+    def refresh_sessions(self, sessions: list):
+        self.combo_session.clear()
+        for s in sessions:
+            self.combo_session.addItem(Path(s).name, s)
+
+    def _run(self):
+        idx = self.combo_session.currentIndex()
+        if idx < 0:
+            QMessageBox.warning(self, "Attention", "Sélectionnez une session.")
+            return
+
+        source_path = self.combo_session.itemData(idx)
+        write_mode  = self.chk_write_mode.isChecked()
+        params = {
+            "resample_ms": self.sp_resample.value(),
+            "max_lag_ms":  self.sp_max_lag.value(),
+            "window_ms":   self.sp_window.value(),
+            "force_flux":  self.chk_force_flux.isChecked(),
+        }
+
+        self.btn_run.setEnabled(False)
+        self.btn_run.setText("Pipeline en cours…")
+        self.prog_bar.setValue(0)
+        self.lbl_result.setText("")
+        for lbl in self._step_labels.values():
+            lbl.setText("—")
+            lbl.setStyleSheet(f"color:{DARK['text_dim']};")
+
+        self._worker = PipelineWorker(source_path, params, write_mode)
+        self._worker.log_msg.connect(self.log.log)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.start()
+
+    def _on_finished(self, success: bool, silver_path: str):
+        self.btn_run.setEnabled(True)
+        self.btn_run.setText("Lancer la pipeline")
+        self.prog_bar.setValue(100 if success else self.prog_bar.value())
+        if success:
+            msg = "Pipeline terminée avec succès."
+            if silver_path:
+                msg += f"\nSilver: {silver_path}"
+            self.lbl_result.setText(msg)
+            self.lbl_result.setStyleSheet(f"color:{DARK['green']};")
+        else:
+            self.lbl_result.setText("Pipeline échouée. Consultez le journal.")
+            self.lbl_result.setStyleSheet(f"color:{DARK['red']};")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Fenêtre principale
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1357,15 +1513,17 @@ class MainWindow(QMainWindow):
 
         self.log = LogWidget()
 
-        self.panel_ingest  = IngestionPanel(self.log)
-        self.panel_train   = TrainPanel(self.log, self.panel_ingest)
-        self.panel_infer   = InferencePanel(self.log, self.panel_ingest, self.panel_train)
-        self.panel_viz     = VizPanel(self.log)
+        self.panel_ingest   = IngestionPanel(self.log)
+        self.panel_pipeline = PipelinePanel(self.log, self.panel_ingest)
+        self.panel_train    = TrainPanel(self.log, self.panel_ingest)
+        self.panel_infer    = InferencePanel(self.log, self.panel_ingest, self.panel_train)
+        self.panel_viz      = VizPanel(self.log)
 
-        tabs.addTab(self.panel_ingest, "1 · Ingestion")
-        tabs.addTab(self.panel_train,  "2 · Entraînement")
-        tabs.addTab(self.panel_infer,  "3 · Inférence")
-        tabs.addTab(self.panel_viz,    "4 · Visualisation")
+        tabs.addTab(self.panel_ingest,   "1 · Ingestion")
+        tabs.addTab(self.panel_pipeline, "2 · Pipeline")
+        tabs.addTab(self.panel_train,    "3 · Entraînement")
+        tabs.addTab(self.panel_infer,    "4 · Inférence")
+        tabs.addTab(self.panel_viz,      "5 · Visualisation")
 
         splitter.addWidget(tabs)
 
@@ -1396,6 +1554,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         self.panel_ingest.sessions_changed.connect(self.panel_infer.refresh_sessions)
+        self.panel_ingest.sessions_changed.connect(self.panel_pipeline.refresh_sessions)
         self.panel_infer.estimates_ready.connect(self._on_estimates_ready)
         self.panel_train.model_ready.connect(lambda: self.sb_lbl.setText("Modèle entraîné et prêt."))
 
@@ -1404,7 +1563,7 @@ class MainWindow(QMainWindow):
         # Passer auto à l'onglet visualisation
         tabs = self.centralWidget().findChild(QTabWidget)
         if tabs:
-            tabs.setCurrentIndex(3)
+            tabs.setCurrentIndex(4)
 
     def _set_device_label(self):
         try:
@@ -1434,10 +1593,11 @@ def main():
     win.show()
 
     win.log.log("SyncML Studio démarré.", "OK")
-    win.log.log("1. Sélectionnez un répertoire racine dans « Ingestion ».", "DIM")
-    win.log.log("2. Entraînez le modèle dans « Entraînement ».", "DIM")
-    win.log.log("3. Estimez les offsets dans « Inférence ».", "DIM")
-    win.log.log("4. Visualisez les résultats dans « Visualisation ».", "DIM")
+    win.log.log("1. Scannez les sessions dans « Ingestion »  (/mnt/datasets).", "DIM")
+    win.log.log("2. Lancez la pipeline complète dans « Pipeline ».", "DIM")
+    win.log.log("3. Entraînez le modèle dans « Entraînement ».", "DIM")
+    win.log.log("4. Estimez les offsets dans « Inférence ».", "DIM")
+    win.log.log("5. Visualisez les résultats dans « Visualisation ».", "DIM")
 
     sys.exit(app.exec())
 

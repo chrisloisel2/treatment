@@ -118,7 +118,10 @@ LR = 1e-3
 WEIGHT_DECAY = 1e-4
 
 MODEL_DIRNAME = "_sync_ml_model"
-RESULTS_JSON = "sync_ml_advanced_results.json"
+RESULTS_JSON  = "sync_ml_advanced_results.json"
+
+# Espace de travail fixe — toutes les sessions sont dans ce répertoire
+ROOT_DIR = Path("/mnt/datasets")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -126,20 +129,21 @@ RESULTS_JSON = "sync_ml_advanced_results.json"
 # ──────────────────────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Alignement inter-flux par deep learning auto-supervisé.")
-    p.add_argument("root_dir", type=str, help="Répertoire racine contenant les sessions.")
-    p.add_argument("--session", type=str, default=None, help="Traiter une seule session.")
-    p.add_argument("--train", action="store_true", help="Entraîne le modèle avant estimation.")
-    p.add_argument("--apply", action="store_true", help="Applique les offsets estimés en place.")
-    p.add_argument("--plot", action="store_true", help="Génère les graphes.")
-    p.add_argument("--force", action="store_true", help="Ignore les marqueurs existants.")
+    p = argparse.ArgumentParser(
+        description=f"Alignement inter-flux par deep learning — espace de travail : {ROOT_DIR}"
+    )
+    p.add_argument("--session",    type=str,   default=None,        help="Traiter une seule session (nom, pas chemin complet).")
+    p.add_argument("--train",      action="store_true",              help="Entraîne le modèle avant estimation.")
+    p.add_argument("--apply",      action="store_true",              help="Applique les offsets estimés en place.")
+    p.add_argument("--plot",       action="store_true",              help="Génère les graphes.")
+    p.add_argument("--force",      action="store_true",              help="Ignore les marqueurs existants.")
     p.add_argument("--max-lag-ms", type=float, default=MAX_LAG_MS)
-    p.add_argument("--window-ms", type=float, default=WINDOW_MS)
-    p.add_argument("--resample-ms", type=float, default=RESAMPLE_MS)
-    p.add_argument("--epochs", type=int, default=TRAIN_EPOCHS)
-    p.add_argument("--batch-size", type=int, default=BATCH_SIZE)
-    p.add_argument("--lr", type=float, default=LR)
-    p.add_argument("--dry-run", action="store_true", help="Calcule seulement.")
+    p.add_argument("--window-ms",  type=float, default=WINDOW_MS)
+    p.add_argument("--resample-ms",type=float, default=RESAMPLE_MS)
+    p.add_argument("--epochs",     type=int,   default=TRAIN_EPOCHS)
+    p.add_argument("--batch-size", type=int,   default=BATCH_SIZE)
+    p.add_argument("--lr",         type=float, default=LR)
+    p.add_argument("--dry-run",    action="store_true",              help="Calcule seulement, n'écrit rien.")
     return p.parse_args()
 
 
@@ -674,37 +678,196 @@ def contrastive_margin(ea, eb, y, margin=0.6):
     return (pos + neg).mean()
 
 def train_model(model, loader, epochs, lr, weight_decay):
+    import time
+
+    try:
+        from tqdm import tqdm as _tqdm
+        _has_tqdm = True
+    except ImportError:
+        _has_tqdm = False
+
     model.train()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        opt, max_lr=lr, steps_per_epoch=len(loader), epochs=epochs, pct_start=0.3
+    )
+
+    n_batches = len(loader)
+    n_samples = len(loader.dataset)
+    best_loss = float("inf")
+    history = []
+
+    print(f"\n{'='*70}")
+    print(f"[train] Démarrage entraînement")
+    print(f"[train]   epochs       : {epochs}")
+    print(f"[train]   batches/epoch: {n_batches}")
+    print(f"[train]   samples      : {n_samples}")
+    print(f"[train]   batch_size   : {loader.batch_size}")
+    print(f"[train]   lr_max       : {lr}")
+    print(f"[train]   device       : {DEVICE}")
+    print(f"{'='*70}\n")
+
+    t_train_start = time.time()
 
     for epoch in range(epochs):
-        losses = []
-        for xa, xb, y in loader:
+        t_epoch_start = time.time()
+        model.train()
+
+        losses_total = []
+        losses_bce   = []
+        losses_ctr   = []
+        n_correct = 0
+        n_seen    = 0
+
+        iter_loader = _tqdm(loader, desc=f"  epoch {epoch+1:02d}/{epochs}", leave=False) if _has_tqdm else loader
+
+        for batch_idx, (xa, xb, y) in enumerate(iter_loader):
             xa = xa.to(DEVICE)
             xb = xb.to(DEVICE)
-            y = y.to(DEVICE)
+            y  = y.to(DEVICE)
 
             opt.zero_grad()
             logit, ea, eb = model(xa, xb)
+
             bce = F.binary_cross_entropy_with_logits(logit, y)
             ctr = contrastive_margin(ea, eb, y)
             loss = 0.75 * bce + 0.25 * ctr
-            loss.backward()
-            opt.step()
-            losses.append(float(loss.item()))
 
-        print(f"[train] epoch {epoch + 1:02d}/{epochs}  loss={np.mean(losses):.4f}")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            opt.step()
+            scheduler.step()
+
+            losses_total.append(float(loss.item()))
+            losses_bce.append(float(bce.item()))
+            losses_ctr.append(float(ctr.item()))
+
+            with torch.no_grad():
+                preds = (torch.sigmoid(logit) >= 0.5).float()
+                n_correct += int((preds == y).sum().item())
+                n_seen    += int(y.size(0))
+
+        t_epoch = time.time() - t_epoch_start
+        lr_now  = scheduler.get_last_lr()[0]
+
+        mean_loss = float(np.mean(losses_total))
+        mean_bce  = float(np.mean(losses_bce))
+        mean_ctr  = float(np.mean(losses_ctr))
+        acc       = n_correct / max(n_seen, 1) * 100.0
+        improved  = "*" if mean_loss < best_loss else " "
+        if mean_loss < best_loss:
+            best_loss = mean_loss
+
+        history.append({
+            "epoch": epoch + 1,
+            "loss": mean_loss,
+            "bce": mean_bce,
+            "ctr": mean_ctr,
+            "acc": acc,
+            "lr": lr_now,
+        })
+
+        print(
+            f"[train] epoch {epoch+1:02d}/{epochs}{improved} "
+            f"loss={mean_loss:.4f}  bce={mean_bce:.4f}  ctr={mean_ctr:.4f}  "
+            f"acc={acc:5.1f}%  lr={lr_now:.2e}  t={t_epoch:.1f}s"
+        )
+
+    t_total = time.time() - t_train_start
+    best_epoch = min(history, key=lambda h: h["loss"])
+    print(f"\n{'='*70}")
+    print(f"[train] Entraînement terminé en {t_total:.1f}s")
+    print(f"[train] Meilleure époch : {best_epoch['epoch']:02d}  "
+          f"loss={best_epoch['loss']:.4f}  acc={best_epoch['acc']:.1f}%")
+    print(f"[train] Acc finale      : {history[-1]['acc']:.1f}%")
+    print(f"[train] Loss finale     : {history[-1]['loss']:.4f}")
+    print(f"{'='*70}\n")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Entraînement global
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _session_is_clean(session_dir: Path) -> bool:
+    """
+    Retourne True uniquement si la session a été nettoyée par les deux étapes
+    obligatoires de la pipeline d'ingestion :
+
+      1. verify_labels  — vérification des labels caméra (left/right/head)
+         → metadata.json doit contenir "camera_label_verification.global_ok" == True
+
+      2. tracker        — validation du fichier tracker_positions.csv
+         → la session doit avoir un pipeline_state.json avec les étapes
+           "tracker" et "video" en statut "done"
+
+    Une session qui ne satisfait pas ces deux conditions est exclue de
+    l'entraînement pour éviter de polluer le modèle avec des données
+    mal labelisées ou des trackers corrompus.
+    """
+    meta_path  = session_dir / "metadata.json"
+    state_path = session_dir / "pipeline_state.json"
+
+    if not meta_path.exists():
+        return False
+
+    # ── Condition 1 : labels caméra vérifiés ─────────────────────────────
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    label_verif = meta.get("camera_label_verification")
+    if not isinstance(label_verif, dict):
+        return False
+    if not label_verif.get("global_ok", False):
+        return False
+    if label_verif.get("confidence", 0.0) < 0.90:
+        return False
+
+    # ── Condition 2 : étapes tracker + video validées par la pipeline ────
+    if not state_path.exists():
+        return False
+
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    steps = state.get("steps", {})
+    for required_step in ("tracker", "video", "verify_labels"):
+        if steps.get(required_step, {}).get("status") != "done":
+            return False
+
+    return True
+
+
 def discover_sessions(root: Path, only_session: Optional[str]) -> List[Path]:
-    sessions = sorted(p.parent for p in root.rglob("metadata.json") if p.parent.name.startswith("session_"))
+    """
+    Découvre les sessions dans ROOT_DIR.
+    Seules les sessions nettoyées (labels vérifiés + tracker validé) sont retournées.
+    """
+    all_sessions = sorted(
+        p.parent
+        for p in root.rglob("metadata.json")
+        if p.parent.name.startswith("session_")
+    )
+
     if only_session:
-        sessions = [s for s in sessions if s.name == only_session]
-    return sessions
+        all_sessions = [s for s in all_sessions if s.name == only_session]
+
+    clean     = [s for s in all_sessions if _session_is_clean(s)]
+    excluded  = len(all_sessions) - len(clean)
+
+    if excluded > 0:
+        print(
+            f"[discover] {len(all_sessions)} sessions trouvées — "
+            f"{excluded} exclues (non nettoyées) — "
+            f"{len(clean)} utilisées pour l'entraînement"
+        )
+    else:
+        print(f"[discover] {len(clean)} sessions prêtes pour l'entraînement")
+
+    return clean
 
 def load_all_fluxes(session_dir: Path, signal_config: Optional[Dict] = None) -> Dict[str, Flux]:
     """signal_config : dict optionnel {flux_name: [col1, col2, ...]} pour chaque flux."""
@@ -994,6 +1157,17 @@ def save_session_results(session_dir: Path, estimates: List[PairEstimate], dry_r
 # ──────────────────────────────────────────────────────────────────────────────
 
 def train_pipeline(root: Path, sessions: List[Path], args):
+    import time
+    t0 = time.time()
+
+    print(f"\n{'='*70}")
+    print(f"[pipeline] Construction des pseudo-exemples")
+    print(f"[pipeline]   sessions    : {len(sessions)}")
+    print(f"[pipeline]   resample_ms : {args.resample_ms}")
+    print(f"[pipeline]   max_lag_ms  : {args.max_lag_ms}")
+    print(f"[pipeline]   window_ms   : {args.window_ms}")
+    print(f"{'='*70}")
+
     examples = build_training_examples(
         sessions=sessions,
         resample_ms=args.resample_ms,
@@ -1005,12 +1179,20 @@ def train_pipeline(root: Path, sessions: List[Path], args):
 
     pos = sum(y for _, _, y, _ in examples)
     neg = len(examples) - pos
-    print(f"[pseudo] total={len(examples)}  pos={pos}  neg={neg}")
+    ratio = pos / max(neg, 1)
+    print(f"\n[pseudo] total={len(examples)}  pos={pos}  neg={neg}  ratio_pos/neg={ratio:.2f}")
+    if ratio < 0.3 or ratio > 3.0:
+        print(f"[pseudo] AVERTISSEMENT : déséquilibre important pos/neg={ratio:.2f} — l'entraînement peut être biaisé")
+    t_build = time.time() - t0
+    print(f"[pseudo] Construction en {t_build:.1f}s")
 
     ds = PairWindowDataset(examples)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=False)
+    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=0)
 
     model = CrossModalAligner().to(DEVICE)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"[model] Paramètres entraînables : {n_params:,}")
+
     train_model(model, dl, epochs=args.epochs, lr=args.lr, weight_decay=WEIGHT_DECAY)
 
     model_dir = root / MODEL_DIRNAME
@@ -1067,9 +1249,9 @@ def main() -> int:
     set_seed()
     args = parse_args()
 
-    root = Path(args.root_dir).resolve()
+    root = ROOT_DIR
     if not root.exists():
-        print(f"ERREUR: root introuvable: {root}", file=sys.stderr)
+        print(f"ERREUR: ROOT_DIR introuvable: {root}", file=sys.stderr)
         return 1
 
     sessions = discover_sessions(root, args.session)

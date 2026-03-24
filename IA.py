@@ -73,6 +73,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import multiprocessing
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -98,6 +101,14 @@ torch.manual_seed(SEED)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Utilise tous les CPU disponibles pour PyTorch (opérations matricielles)
+_N_CPU = os.cpu_count() or 1
+torch.set_num_threads(_N_CPU)
+torch.set_num_interop_threads(max(1, _N_CPU // 2))
+
+# Nombre de workers pour le DataLoader et les pools multiprocessing
+_DATALOADER_WORKERS = min(4, max(0, _N_CPU - 1))
+
 RESAMPLE_MS = 5.0
 MAX_LAG_MS = 400.0
 WINDOW_MS = 2200.0
@@ -121,7 +132,7 @@ MODEL_DIRNAME = "_sync_ml_model"
 RESULTS_JSON  = "sync_ml_advanced_results.json"
 
 # Espace de travail fixe — toutes les sessions sont dans ce répertoire
-ROOT_DIR = Path("/mnt/datasets")
+ROOT_DIR = Path("/mnt/ingest")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -877,24 +888,48 @@ def load_all_fluxes(session_dir: Path, signal_config: Optional[Dict] = None) -> 
     out.update(load_grippers(session_dir, signal_config=signal_config))
     return out
 
+def _build_examples_for_session(args_tuple):
+    """Worker multiprocessing pour une session (doit être top-level pour pickle)."""
+    session_dir, resample_ms, max_lag_ms, window_ms, signal_config = args_tuple
+    fluxes = load_all_fluxes(session_dir, signal_config=signal_config)
+    session_examples = []
+    for ref_name, tgt_name in PAIRS:
+        if ref_name not in fluxes or tgt_name not in fluxes:
+            continue
+        ex = build_pseudo_examples_for_pair(
+            fluxes[ref_name],
+            fluxes[tgt_name],
+            resample_ms=resample_ms,
+            max_lag_ms=max_lag_ms,
+            window_ms=window_ms,
+        )
+        if ex:
+            session_examples.append((session_dir.name, ref_name, tgt_name, ex))
+    return session_examples
+
+
 def build_training_examples(sessions: List[Path], resample_ms: float, max_lag_ms: float,
                              window_ms: float, signal_config: Optional[Dict] = None):
+    worker_args = [
+        (session_dir, resample_ms, max_lag_ms, window_ms, signal_config)
+        for session_dir in sessions
+    ]
+
+    n_workers = min(_N_CPU, len(sessions))
     all_examples = []
-    for session_dir in sessions:
-        fluxes = load_all_fluxes(session_dir, signal_config=signal_config)
-        for ref_name, tgt_name in PAIRS:
-            if ref_name not in fluxes or tgt_name not in fluxes:
-                continue
-            ex = build_pseudo_examples_for_pair(
-                fluxes[ref_name],
-                fluxes[tgt_name],
-                resample_ms=resample_ms,
-                max_lag_ms=max_lag_ms,
-                window_ms=window_ms,
-            )
-            if ex:
+
+    if n_workers > 1:
+        with multiprocessing.Pool(processes=n_workers) as pool:
+            for session_results in pool.imap_unordered(_build_examples_for_session, worker_args):
+                for sess_name, ref_name, tgt_name, ex in session_results:
+                    all_examples.extend(ex)
+                    print(f"[pseudo] {sess_name}  {ref_name} ↔ {tgt_name}  examples={len(ex)}")
+    else:
+        for result in map(_build_examples_for_session, worker_args):
+            for sess_name, ref_name, tgt_name, ex in result:
                 all_examples.extend(ex)
-                print(f"[pseudo] {session_dir.name}  {ref_name} ↔ {tgt_name}  examples={len(ex)}")
+                print(f"[pseudo] {sess_name}  {ref_name} ↔ {tgt_name}  examples={len(ex)}")
+
     return all_examples
 
 def save_model(model: nn.Module, model_dir: Path):
@@ -913,11 +948,8 @@ def load_model(model_dir: Path) -> CrossModalAligner:
 # Inférence offset
 # ──────────────────────────────────────────────────────────────────────────────
 
-@torch.no_grad()
-def score_windows_with_model(model: CrossModalAligner, windows_a: List[np.ndarray], windows_b: List[np.ndarray]) -> np.ndarray:
-    if not windows_a:
-        return np.array([], dtype=np.float32)
-
+def _prepare_window_tensors(windows_a: List[np.ndarray], windows_b: List[np.ndarray]):
+    """Pré-calcul numpy des features (zscore, dérivée, énergie) — parallélisable."""
     batch_xa = []
     batch_xb = []
     for a, b in zip(windows_a, windows_b):
@@ -927,17 +959,27 @@ def score_windows_with_model(model: CrossModalAligner, windows_a: List[np.ndarra
         db = moving_derivative(b, RESAMPLE_MS)
         ea = smooth(a * a, 2.0)
         eb = smooth(b * b, 2.0)
-        xa = np.stack([a, da, ea], axis=0).astype(np.float32)
-        xb = np.stack([b, db, eb], axis=0).astype(np.float32)
-        batch_xa.append(xa)
-        batch_xb.append(xb)
+        batch_xa.append(np.stack([a, da, ea], axis=0).astype(np.float32))
+        batch_xb.append(np.stack([b, db, eb], axis=0).astype(np.float32))
+    return np.stack(batch_xa), np.stack(batch_xb)
 
-    xa = torch.from_numpy(np.stack(batch_xa)).to(DEVICE)
-    xb = torch.from_numpy(np.stack(batch_xb)).to(DEVICE)
 
-    logit, _, _ = model(xa, xb)
-    proba = torch.sigmoid(logit).detach().cpu().numpy().astype(np.float32)
-    return proba
+@torch.no_grad()
+def score_windows_with_model(model: CrossModalAligner, windows_a: List[np.ndarray],
+                              windows_b: List[np.ndarray], chunk_size: int = 256) -> np.ndarray:
+    if not windows_a:
+        return np.array([], dtype=np.float32)
+
+    xa_np, xb_np = _prepare_window_tensors(windows_a, windows_b)
+
+    all_proba = []
+    for i in range(0, len(xa_np), chunk_size):
+        xa = torch.from_numpy(xa_np[i:i + chunk_size]).to(DEVICE)
+        xb = torch.from_numpy(xb_np[i:i + chunk_size]).to(DEVICE)
+        logit, _, _ = model(xa, xb)
+        all_proba.append(torch.sigmoid(logit).detach().cpu().numpy().astype(np.float32))
+
+    return np.concatenate(all_proba)
 
 def estimate_pair_offset(
     model: CrossModalAligner,
@@ -1187,7 +1229,15 @@ def train_pipeline(root: Path, sessions: List[Path], args):
     print(f"[pseudo] Construction en {t_build:.1f}s")
 
     ds = PairWindowDataset(examples)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=0)
+    dl = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        drop_last=False,
+        num_workers=_DATALOADER_WORKERS,
+        persistent_workers=_DATALOADER_WORKERS > 0,
+        pin_memory=False,
+    )
 
     model = CrossModalAligner().to(DEVICE)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

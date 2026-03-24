@@ -29,6 +29,7 @@ Aucune suppression dans /mnt/ingest sauf si delete_after_store=True (opt-in expl
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import shutil
@@ -670,14 +671,35 @@ def step_verify_labels(state: SessionPipelineState, log: PipelineLogger,
     }
 
 
+def _run_video_flux(side: str, mp4: Path, out_csv: Path, jsonl: Path, video_py: Path) -> tuple:
+    """Lance video.py pour une seule caméra — exécuté en parallèle."""
+    cmd = [
+        sys.executable, str(video_py),
+        str(mp4),
+        "--output-csv",    str(out_csv),
+        "--resize-width",  "640",
+        "--smooth-window", "5",
+    ]
+    if jsonl.exists():
+        cmd += ["--jsonl", str(jsonl)]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        return side, result.returncode, result.stderr.strip()[:400]
+    except subprocess.TimeoutExpired:
+        return side, -1, "timeout 600s"
+    except Exception as e:
+        return side, -2, str(e)
+
+
 def step_flux_csv(state: SessionPipelineState, log: PipelineLogger,
                   force: bool = False) -> dict:
     """
     Étape 4 — Génération des flux CSV optiques via video.py (Farneback).
+    Les 3 caméras sont traitées en parallèle (ProcessPoolExecutor).
     Passe en mode skipped si les flux existent déjà et force=False.
     """
-    sess    = Path(state.session_path)
-    vid_dir = sess / "videos"
+    sess     = Path(state.session_path)
+    vid_dir  = sess / "videos"
     video_py = Path(__file__).parent / "video.py"
 
     if not video_py.exists():
@@ -687,17 +709,18 @@ def step_flux_csv(state: SessionPipelineState, log: PipelineLogger,
     skipped   = []
     errors    = []
 
+    # Déterminer quelles caméras ont besoin d'être (re)générées
+    to_generate = []
     for side in VIDEO_SIDES:
-        mp4      = vid_dir / f"{side}.mp4"
-        out_csv  = vid_dir / f"{side}_flux.csv"
-        jsonl    = vid_dir / f"{side}.jsonl"
+        mp4     = vid_dir / f"{side}.mp4"
+        out_csv = vid_dir / f"{side}_flux.csv"
+        jsonl   = vid_dir / f"{side}.jsonl"
 
         if not mp4.exists():
             log(f"{side}.mp4 absent — flux skipped", "WARN")
             continue
 
         if out_csv.exists() and not force:
-            # Vérifier que le CSV existant est valide
             rows = _count_flux_csv_rows(sess).get(side, 0)
             if rows >= MIN_FLUX_CSV_ROWS:
                 skipped.append(side)
@@ -707,39 +730,28 @@ def step_flux_csv(state: SessionPipelineState, log: PipelineLogger,
                 log(f"{side}_flux.csv trop court ({rows} lignes) — régénération", "WARN")
 
         log(f"Génération flux {side}…", "INFO")
-        cmd = [
-            sys.executable, str(video_py),
-            str(mp4),
-            "--output-csv",    str(out_csv),
-            "--resize-width",  "640",
-            "--smooth-window", "5",
-        ]
-        if jsonl.exists():
-            cmd += ["--jsonl", str(jsonl)]
+        to_generate.append((side, mp4, out_csv, jsonl))
 
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 min max par vidéo
-            )
-            if result.returncode != 0:
-                err = result.stderr.strip()[:400]
-                errors.append(f"{side}: {err}")
-                log(f"video.py {side} ERREUR: {err}", "ERROR")
-            else:
-                rows = _count_flux_csv_rows(sess).get(side, 0)
-                if rows < MIN_FLUX_CSV_ROWS:
-                    errors.append(f"{side}: flux CSV trop court ({rows} lignes)")
+    # Lancer les conversions en parallèle (une vidéo par worker)
+    if to_generate:
+        n_workers = min(len(to_generate), os.cpu_count() or 1)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as ex:
+            futures = {
+                ex.submit(_run_video_flux, side, mp4, out_csv, jsonl, video_py): side
+                for side, mp4, out_csv, jsonl in to_generate
+            }
+            for fut in concurrent.futures.as_completed(futures):
+                side, returncode, stderr = fut.result()
+                if returncode != 0:
+                    errors.append(f"{side}: {stderr}")
+                    log(f"video.py {side} ERREUR: {stderr}", "ERROR")
                 else:
-                    generated.append(side)
-                    log(f"{side}_flux.csv généré — {rows} lignes", "OK")
-        except subprocess.TimeoutExpired:
-            errors.append(f"{side}: timeout 600s")
-            log(f"video.py {side} TIMEOUT", "ERROR")
-        except Exception as e:
-            errors.append(f"{side}: {e}")
+                    rows = _count_flux_csv_rows(sess).get(side, 0)
+                    if rows < MIN_FLUX_CSV_ROWS:
+                        errors.append(f"{side}: flux CSV trop court ({rows} lignes)")
+                    else:
+                        generated.append(side)
+                        log(f"{side}_flux.csv généré — {rows} lignes", "OK")
 
     if errors and not generated and not skipped:
         raise RuntimeError(f"Génération flux CSV échouée: {'; '.join(errors)}")
@@ -1316,22 +1328,32 @@ class IngestionWatcher:
                     self._queue.append(child)
                 self._seen.add(str(child))
 
+    def _run_one_session(self, sess: Path):
+        self._log(f"Lancement pipeline: {sess.name}", "INFO")
+        runner = PipelineRunner(
+            source_path        = str(sess),
+            params             = self.params,
+            write_mode         = self.write_mode,
+            delete_after_store = self.delete_after_store,
+            log_callback       = self.log_callback,
+            step_callback      = self.step_callback,
+        )
+        runner.run()
+
     def _process_queue(self):
         with self._lock:
             queue = list(self._queue)
             self._queue.clear()
 
-        for sess in queue:
-            self._log(f"Lancement pipeline: {sess.name}", "INFO")
-            runner = PipelineRunner(
-                source_path        = str(sess),
-                params             = self.params,
-                write_mode         = self.write_mode,
-                delete_after_store = self.delete_after_store,
-                log_callback       = self.log_callback,
-                step_callback      = self.step_callback,
-            )
-            runner.run()
+        if not queue:
+            return
+
+        n_workers = min(len(queue), os.cpu_count() or 1)
+        if n_workers > 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as ex:
+                list(ex.map(self._run_one_session, queue))
+        else:
+            self._run_one_session(queue[0])
 
     def get_queue(self) -> List[str]:
         with self._lock:
@@ -1474,20 +1496,19 @@ if __name__ == "__main__":
     print(f"  Suppression ingest : {delete_label}")
     print(f"  Sessions  : {len(source_paths)}\n")
 
+    _print_lock = threading.Lock()
+
     def _cli_log(msg, level="INFO"):
         icons = {"OK": "✓", "ERROR": "✗", "WARN": "⚠", "STEP": "▶", "TRAIN": "◉"}
-        print(f"  {icons.get(level, '·')} {msg}")
+        with _print_lock:
+            print(f"  {icons.get(level, '·')} {msg}")
 
-    n_ok   = 0
-    n_fail = 0
-    state  = None
-
-    for source_path in source_paths:
-        print(f"\n{'═'*60}")
-        print(f"  {source_path.name}")
-        print(f"  {source_path}")
-        print(f"{'═'*60}")
-
+    def _run_session_cli(source_path: Path) -> SessionPipelineState:
+        with _print_lock:
+            print(f"\n{'═'*60}")
+            print(f"  {source_path.name}")
+            print(f"  {source_path}")
+            print(f"{'═'*60}")
         runner = PipelineRunner(
             source_path        = str(source_path),
             params             = params,
@@ -1498,17 +1519,30 @@ if __name__ == "__main__":
             resume             = not args.no_resume,
         )
         state = runner.run()
-
         icon = "✓" if state.success else "✗"
         silver_info = f"  silver={state.silver_path}" if state.silver_path else ""
-        print(f"\n  {icon} {'SUCCÈS' if state.success else 'ÉCHEC'}  "
-              f"conf={state.mean_conf:.3f}  fiables={state.n_reliable}{silver_info}")
-        for name, step in state.steps.items():
-            s_icon = "✓" if step.status == StepStatus.DONE   else \
-                     "✗" if step.status == StepStatus.FAILED  else \
-                     "○" if step.status == StepStatus.SKIPPED else "·"
-            print(f"    {s_icon} {name:<15} {step.duration_s:5.1f}s  {step.message[:55]}")
+        with _print_lock:
+            print(f"\n  {icon} {'SUCCÈS' if state.success else 'ÉCHEC'}  "
+                  f"conf={state.mean_conf:.3f}  fiables={state.n_reliable}{silver_info}")
+            for name, step in state.steps.items():
+                s_icon = "✓" if step.status == StepStatus.DONE   else \
+                         "✗" if step.status == StepStatus.FAILED  else \
+                         "○" if step.status == StepStatus.SKIPPED else "·"
+                print(f"    {s_icon} {name:<15} {step.duration_s:5.1f}s  {step.message[:55]}")
+        return state
 
+    n_ok    = 0
+    n_fail  = 0
+    results: List[SessionPipelineState] = []
+
+    n_workers = min(len(source_paths), os.cpu_count() or 1)
+    if n_workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as ex:
+            results = list(ex.map(_run_session_cli, source_paths))
+    else:
+        results = [_run_session_cli(source_paths[0])]
+
+    for state in results:
         if state.success:
             n_ok += 1
         else:
@@ -1518,4 +1552,5 @@ if __name__ == "__main__":
         print(f"\n{'═'*60}")
         print(f"  Bilan : {n_ok} succès, {n_fail} échec(s) sur {len(source_paths)} sessions")
 
-    sys.exit(0 if (state and state.success) else 1)
+    last_state = results[-1] if results else None
+    sys.exit(0 if (last_state and last_state.success) else 1)

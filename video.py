@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -60,6 +61,9 @@ import cv2
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
+# OpenCV utilise ses propres threads pour Farneback — lui allouer tous les CPU
+cv2.setNumThreads(os.cpu_count() or 1)
 
 
 def parse_args():
@@ -306,21 +310,29 @@ def main():
             0
         )
 
-        mag = np.linalg.norm(flow, axis=2)
+        # Magnitude du flow — calcul vectorisé en une passe
+        fx, fy = flow[..., 0], flow[..., 1]
+        mag = np.sqrt(fx * fx + fy * fy)
+        mag_flat = mag.ravel()
+        mag_sorted = np.sort(mag_flat)
+        p90_idx = int(0.90 * len(mag_sorted))
 
         abs_diff = cv2.absdiff(prev_gray, gray).astype(np.float32)
+        diff_flat = abs_diff.ravel()
+        diff_sorted = np.sort(diff_flat)
+        dp90_idx = int(0.90 * len(diff_sorted))
 
         row = {
             "frame_index": current_frame_idx,
             "time_seconds": time_sec,
-            "motion_mean": float(np.mean(mag)),
-            "motion_median": float(np.median(mag)),
-            "motion_p90": float(np.percentile(mag, 90)),
-            "motion_max": float(np.max(mag)),
-            "diff_mean": float(np.mean(abs_diff)),
-            "diff_median": float(np.median(abs_diff)),
-            "diff_p90": float(np.percentile(abs_diff, 90)),
-            "diff_max": float(np.max(abs_diff)),
+            "motion_mean":   float(mag_flat.mean()),
+            "motion_median": float(mag_sorted[len(mag_sorted) // 2]),
+            "motion_p90":    float(mag_sorted[p90_idx]),
+            "motion_max":    float(mag_sorted[-1]),
+            "diff_mean":     float(diff_flat.mean()),
+            "diff_median":   float(diff_sorted[len(diff_sorted) // 2]),
+            "diff_p90":      float(diff_sorted[dp90_idx]),
+            "diff_max":      float(diff_sorted[-1]),
         }
 
         # Ancrage absolu depuis le JSONL

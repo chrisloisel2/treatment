@@ -430,7 +430,7 @@ def load_grippers(session_dir: Path, signal_config: Optional[Dict] = None) -> Di
     """Charge les grippers.
 
     signal_config peut contenir "gripper_left" / "gripper_right" avec une liste de colonnes.
-    Si absent, utilise opening_mm (dérivée 1e+2e ordre).
+    Si absent, utilise angle_deg (dérivée 1e+2e ordre).
     """
     out = {}
     for side in ("left", "right"):
@@ -459,10 +459,10 @@ def load_grippers(session_dir: Path, signal_config: Optional[Dict] = None) -> Di
                 parts.append(zscore(robust_clip(np.nan_to_num(v))))
             sig = smooth(np.mean(parts, axis=0), 1.5)
         else:
-            if "opening_mm" not in df.columns:
+            if "angle_deg" not in df.columns:
                 continue
-            opening = pd.to_numeric(df["opening_mm"], errors="coerce").to_numpy(np.float32)
-            d1 = np.diff(opening, prepend=opening[0])
+            angle = pd.to_numeric(df["angle_deg"], errors="coerce").to_numpy(np.float32)
+            d1 = np.diff(angle, prepend=angle[0])
             d2 = np.diff(d1, prepend=d1[0])
             sig = 0.75 * zscore(np.abs(d1)) + 0.25 * zscore(np.abs(d2))
             sig = smooth(sig, 1.5)

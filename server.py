@@ -1042,8 +1042,8 @@ def _load_session_timeseries(session_path: str) -> dict:
       - meta           : metadata.json
       - tracker        : {t_ms, head_x/y/z, left_x/y/z, right_x/y/z,
                           head_qw/qx/qy/qz, left_qw..., right_qw...}
-      - gripper_left   : {t_ms, opening_mm, angle_deg}
-      - gripper_right  : {t_ms, opening_mm, angle_deg}
+      - gripper_left   : {t_ms, angle_deg}
+      - gripper_right  : {t_ms, angle_deg}
       - videos         : {head: {t_ms, frame_idx}, left: ..., right: ...}
       - flux           : {head: {t_ms, motion}, left: ..., right: ...}
       - start_ns       : epoch ns du début de session
@@ -1113,9 +1113,8 @@ def _load_session_timeseries(session_path: str) -> dict:
                 t_ms = df["time_seconds"].to_numpy(dtype=float) * 1000
                 t_ms = t_ms.tolist()
             grip: dict = {"t_ms": t_ms}
-            for col in ("opening_mm", "angle_deg"):
-                if col in df.columns:
-                    grip[col] = df[col].tolist()
+            if "angle_deg" in df.columns:
+                grip["angle_deg"] = df["angle_deg"].tolist()
             result[f"gripper_{side}"] = grip
 
     # ── JSONL vidéo (timestamps frames) ──
@@ -1427,7 +1426,7 @@ def _load_diff_data(session_path: str) -> dict:
             tgt_series = {"t_ms": [], "signal": [], "name": tgt}
             ref_series = {"t_ms": [], "signal": [], "name": ref_name}
 
-            # Signal cible : gripper opening_mm
+            # Signal cible : gripper angle_deg
             for side in ("left", "right"):
                 if side in tgt.lower():
                     gp = sess / f"gripper_{side}_data.csv"
@@ -1439,8 +1438,8 @@ def _load_diff_data(session_path: str) -> dict:
                             gt = _ns_to_ms(gdf["t_ms_corrected_ns"].to_numpy())
                         else:
                             gt = (gdf["time_seconds"].to_numpy(dtype=float) * 1000).tolist()
-                        tgt_series["t_ms"]    = gt
-                        tgt_series["signal"]  = gdf["opening_mm"].tolist()
+                        tgt_series["t_ms"]   = gt
+                        tgt_series["signal"] = gdf["angle_deg"].tolist() if "angle_deg" in gdf.columns else []
                     break
 
             # Signal référence : tracker position norm

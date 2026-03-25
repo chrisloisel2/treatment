@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1306,6 +1306,135 @@ async def session_frame(session_path: str, side: str, t_ms: float):
     return Response(content=frame_bytes, media_type="image/jpeg")
 
 
+@app.get("/api/session/stream")
+async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 0.0):
+    """
+    SSE stream : envoie en boucle les 3 frames vidéo (base64 JPEG) + positions
+    tracker + grippers à chaque instant t_ms, à fps Hz.
+
+    Chaque event data = JSON :
+    {
+      "t_ms": float,
+      "duration_ms": float,
+      "frames": {"head": "<b64>", "left": "<b64>", "right": "<b64>"},
+      "tracker": {"head": [x,y,z], "left": [x,y,z], "right": [x,y,z]},
+      "gripper": {"left": float|null, "right": float|null}
+    }
+    Quand la fin est atteinte envoie {"done": true, "t_ms": duration_ms}.
+    """
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    fps = max(1.0, min(fps, 30.0))
+    interval = 1.0 / fps
+
+    # Pré-charger les séries temporelles pour interpolation rapide
+    try:
+        ts_data = _load_session_timeseries(session_path)
+    except Exception as e:
+        raise HTTPException(500, f"Erreur chargement session : {e}")
+
+    duration_ms: float = ts_data.get("duration_ms", 0.0)
+    if duration_ms <= 0:
+        raise HTTPException(400, "Session vide (durée nulle)")
+
+    def _build_arr(series: dict, key: str):
+        v = series.get(key)
+        return np.asarray(v, dtype=np.float64) if v else None
+
+    trk = ts_data.get("tracker", {})
+    trk_t   = _build_arr(trk, "t_ms")
+    trk_data = {}
+    for role in ("head", "left", "right"):
+        xs = _build_arr(trk, f"{role}_x")
+        ys = _build_arr(trk, f"{role}_y")
+        zs = _build_arr(trk, f"{role}_z")
+        if xs is not None and ys is not None and zs is not None:
+            trk_data[role] = (xs, ys, zs)
+
+    grip_data = {}
+    for side in ("left", "right"):
+        g = ts_data.get(f"gripper_{side}", {})
+        gt = _build_arr(g, "t_ms")
+        ga = _build_arr(g, "angle_deg")
+        if gt is not None and ga is not None:
+            grip_data[side] = (gt, ga)
+
+    def _interp(t_arr, v_arr, t):
+        """Interpolation linéaire ou valeur la plus proche."""
+        if t_arr is None or v_arr is None:
+            return None
+        idx = int(np.searchsorted(t_arr, t))
+        if idx == 0:
+            return float(v_arr[0])
+        if idx >= len(t_arr):
+            return float(v_arr[-1])
+        t0, t1 = t_arr[idx-1], t_arr[idx]
+        v0, v1 = v_arr[idx-1], v_arr[idx]
+        alpha = (t - t0) / (t1 - t0) if t1 != t0 else 0.0
+        return float(v0 + alpha * (v1 - v0))
+
+    async def _generate():
+        t_ms = t_start
+        while True:
+            # Frames vidéo en parallèle via executor
+            loop = asyncio.get_event_loop()
+            tasks = {
+                side: loop.run_in_executor(
+                    None, _extract_video_frame, session_path, side, t_ms
+                )
+                for side in ("head", "left", "right")
+            }
+            frames_raw = {}
+            for side, task in tasks.items():
+                raw = await task
+                if raw:
+                    frames_raw[side] = base64.b64encode(raw).decode()
+                else:
+                    frames_raw[side] = ""
+
+            # Positions tracker interpolées
+            tracker_pos = {}
+            if trk_t is not None:
+                for role, (xs, ys, zs) in trk_data.items():
+                    tracker_pos[role] = [
+                        _interp(trk_t, xs, t_ms),
+                        _interp(trk_t, ys, t_ms),
+                        _interp(trk_t, zs, t_ms),
+                    ]
+
+            # Grippers interpolés
+            gripper_val = {}
+            for side, (gt, ga) in grip_data.items():
+                gripper_val[side] = _interp(gt, ga, t_ms)
+
+            payload = {
+                "t_ms":        t_ms,
+                "duration_ms": duration_ms,
+                "frames":      frames_raw,
+                "tracker":     tracker_pos,
+                "gripper":     gripper_val,
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
+
+            t_ms += interval * 1000.0  # avancer de 1 frame
+            if t_ms >= duration_ms:
+                yield f"data: {json.dumps({'done': True, 't_ms': duration_ms})}\n\n"
+                return
+
+            await asyncio.sleep(interval)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Visualisation — diff avant / après corrections
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1523,6 +1652,89 @@ async def session_diff(session_path: str):
         return JSONResponse(content=data)
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Visualisation — arborescence fichiers d'une session
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Fichiers attendus dans une session complète (relatifs à la racine session)
+_EXPECTED_FILES = [
+    "metadata.json",
+    "tracker_positions.csv",
+    "gripper_left_data.csv",
+    "gripper_right_data.csv",
+    "videos/head.mp4",
+    "videos/head.jsonl",
+    "videos/left.mp4",
+    "videos/left.jsonl",
+    "videos/right.mp4",
+    "videos/right.jsonl",
+]
+
+
+def _fmt_size(nb: int) -> str:
+    if nb < 1024:
+        return f"{nb} B"
+    if nb < 1024 ** 2:
+        return f"{nb/1024:.1f} KB"
+    if nb < 1024 ** 3:
+        return f"{nb/1024**2:.1f} MB"
+    return f"{nb/1024**3:.2f} GB"
+
+
+def _scan_dir(base: Path, rel: Path) -> list:
+    """Retourne récursivement l'arborescence sous base/rel."""
+    entries = []
+    target = base / rel
+    try:
+        items = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name))
+    except PermissionError:
+        return entries
+    for item in items:
+        item_rel = rel / item.name
+        if item.is_dir():
+            entries.append({
+                "name":     item.name,
+                "rel":      str(item_rel),
+                "type":     "dir",
+                "children": _scan_dir(base, item_rel),
+            })
+        else:
+            stat = item.stat()
+            entries.append({
+                "name":     item.name,
+                "rel":      str(item_rel),
+                "type":     "file",
+                "size":     stat.st_size,
+                "size_fmt": _fmt_size(stat.st_size),
+                "expected": str(item_rel).replace("\\", "/") in _EXPECTED_FILES,
+            })
+    return entries
+
+
+@app.get("/api/session/files")
+async def session_files(session_path: str):
+    """
+    Retourne l'arborescence complète des fichiers d'une session,
+    avec taille et flag 'expected' (fichier attendu dans une session complète).
+    """
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    tree = _scan_dir(sess, Path(""))
+
+    # Fichiers attendus manquants
+    missing = [
+        f for f in _EXPECTED_FILES
+        if not (sess / f).exists()
+    ]
+
+    return JSONResponse({
+        "tree":    tree,
+        "missing": missing,
+    })
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -74,12 +74,14 @@ input,select,textarea{font:inherit}
 
 /* Main */
 #main{flex:1;min-width:0;overflow-y:auto;padding:18px 20px 80px}
-#main:has(#page-viewer.active){padding:0;overflow:hidden}
 
 /* ══ Pages ══════════════════════════════════════════════════════════ */
 .page{display:none}
 .page.active{display:block}
+#page-viewer{display:none;flex-direction:row;height:100%;overflow:hidden}
 #page-viewer.active{display:flex}
+/* quand le viewer est actif, #main ne doit pas scroller ni padder */
+#main.viewer-active{padding:0;overflow:hidden;display:flex;flex-direction:column}
 
 /* ══ Components ═════════════════════════════════════════════════════ */
 .ph{font-size:1rem;font-weight:700;margin-bottom:4px}
@@ -318,18 +320,16 @@ td.c{text-align:center}
 .tc.active{display:block}
 
 /* ══ TIMELINE VIEWER ═════════════════════════════════════════════ */
-/* Wrapper global du viewer : panneau sessions + contenu */
-#tv-page-body{display:flex;flex:1;min-height:0;gap:0;height:100%}
 
 /* Panneau latéral sessions */
 #tv-sess-panel{
   width:220px;flex-shrink:0;background:var(--bg2);
   border-right:1px solid var(--border);
-  display:flex;flex-direction:column;
-  transition:width .18s ease, opacity .18s ease;
-  overflow:hidden;
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:width .2s ease;
 }
-#tv-sess-panel.collapsed{width:0;opacity:0;pointer-events:none}
+#tv-sess-panel.collapsed{width:0}
+#tv-sess-panel-inner{display:flex;flex-direction:column;height:100%;min-width:220px}
 #tv-sess-panel-hdr{
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 12px 8px;flex-shrink:0;border-bottom:1px solid var(--border);
@@ -337,43 +337,102 @@ td.c{text-align:center}
 #tv-sess-panel-title{font-size:.68rem;font-weight:800;text-transform:uppercase;
   letter-spacing:.08em;color:var(--text3)}
 #tv-sess-scan-btn{
-  font-size:.72rem;padding:2px 7px;border-radius:var(--rs);
+  font-size:.72rem;padding:2px 8px;border-radius:var(--rs);
   border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;
-  transition:all .12s;
+  transition:all .12s;line-height:1.4;
 }
 #tv-sess-scan-btn:hover{border-color:var(--accent);color:var(--accent)}
-#tv-sess-scan-btn.scanning{color:var(--orange);border-color:var(--orange)66;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#tv-sess-list{flex:1;overflow-y:auto;padding:6px 0}
+#tv-sess-scan-btn.scanning{color:var(--orange);border-color:var(--orange)88}
+#tv-sess-list{flex:1;overflow-y:auto;padding:4px 0}
 .tv-sess-item{
-  display:flex;flex-direction:column;gap:1px;
-  padding:7px 12px;cursor:pointer;border-radius:var(--rs);margin:1px 5px;
-  border-left:2px solid transparent;transition:all .1s;
+  padding:8px 12px;cursor:pointer;margin:2px 6px;border-radius:var(--rs);
+  border-left:2px solid transparent;transition:background .1s,border-color .1s;
 }
 .tv-sess-item:hover{background:var(--bg4)}
-.tv-sess-item.active{background:var(--accent)15;border-left-color:var(--accent)}
-.tv-sess-item-name{font-size:.78rem;font-weight:600;color:var(--text);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.tv-sess-item-meta{font-size:.67rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tv-sess-item-status{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
-.tv-sess-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:1px}
-#tv-sess-empty{padding:20px 12px;font-size:.75rem;color:var(--text3);text-align:center;line-height:1.5}
+.tv-sess-item.active{background:var(--accent)18;border-left-color:var(--accent)}
+.tv-sess-item-name{font-size:.79rem;font-weight:600;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.tv-sess-item-sub{font-size:.67rem;color:var(--text3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.tv-sess-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;display:inline-block}
+#tv-sess-empty{padding:24px 14px;font-size:.75rem;color:var(--text3);text-align:center;line-height:1.6}
 
-/* Bouton toggle panneau */
+/* Zone de contenu principal */
+#tv-content{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+/* Bouton repli panneau — collé sur le bord droit du panneau */
 #tv-panel-toggle{
   position:absolute;left:0;top:50%;transform:translateY(-50%);
-  width:14px;height:40px;background:var(--bg3);border:1px solid var(--border);
-  border-left:none;border-radius:0 var(--rs) var(--rs) 0;
+  width:16px;height:44px;
+  background:var(--bg3);border:1px solid var(--border);border-left:none;
+  border-radius:0 var(--rs) var(--rs) 0;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
-  font-size:.6rem;color:var(--text3);transition:all .12s;z-index:10;
+  font-size:.65rem;color:var(--text3);z-index:20;transition:all .12s;
 }
-#tv-panel-toggle:hover{background:var(--bg4);color:var(--text)}
-#tv-content{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden}
-#tv-content > .tc{flex:1;overflow-y:auto;padding:0 14px 14px 22px}
+#tv-panel-toggle:hover{background:var(--bg5);color:var(--text)}
 
-#tv-layout{display:flex;flex-direction:column;gap:0;height:100%;min-height:500px}
-#tv-top{display:flex;gap:12px;flex-shrink:0;margin-bottom:10px;align-items:center;flex-wrap:wrap}
-#tv-videos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex-shrink:0}
+/* Barre de contrôles */
+#tv-toolbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;
+  padding:10px 16px 0 24px;
+}
+#tv-sess-name{flex:1;min-width:0;font-size:.85rem;font-weight:700;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Onglets */
+#tv-tabs{padding:6px 16px 0 24px;flex-shrink:0}
+
+/* Zone onglet */
+.tv-tc{display:none;flex:1;overflow-y:auto;padding:8px 16px 16px 24px;flex-direction:column}
+.tv-tc.active{display:flex}
+
+/* Layout live */
+#tv-live-inner{display:none;flex-direction:column;gap:8px;height:100%}
+
+/* Grille vidéos + 3D */
+#tv-media-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;flex-shrink:0}
+.tv-vid-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);
+  border-radius:var(--rs);overflow:hidden;aspect-ratio:16/9}
+.tv-vid-label{position:absolute;top:5px;left:7px;font-size:.67rem;font-weight:700;
+  padding:2px 7px;border-radius:99px;background:#000000bb;color:#fff;z-index:2;text-transform:uppercase}
+.tv-vid-time{position:absolute;bottom:5px;right:7px;font-size:.66rem;font-family:monospace;
+  padding:1px 6px;border-radius:99px;background:#000000bb;color:#bbb;z-index:2}
+.tv-vid-wrap img{width:100%;height:100%;display:block;object-fit:cover;background:var(--bg4)}
+
+/* Timeline */
+#tv-scrubber-wrap{flex-shrink:0;padding:6px 0 2px}
+#tv-playhead{height:3px;background:var(--bg5);border-radius:2px;margin-bottom:5px;cursor:pointer;position:relative}
+#tv-playhead-fill{height:100%;background:var(--accent)66;border-radius:2px;width:0%}
+#tv-scrub{width:100%;accent-color:var(--accent);cursor:pointer;height:16px}
+#tv-time-display{display:flex;justify-content:space-between;font-size:.75rem;font-family:monospace;color:var(--text3)}
+
+/* Charts */
+#tv-charts{flex:1;min-height:120px;display:flex;flex-direction:column;gap:0;overflow:hidden}
+.tvc-row{position:relative;flex:1;min-height:0;border-bottom:1px solid var(--border)44}
+.tvc-row:last-child{border-bottom:none}
+.tvc-label{position:absolute;top:4px;left:8px;font-size:.63rem;font-weight:700;
+  color:var(--text3);text-transform:uppercase;letter-spacing:.06em;z-index:3;pointer-events:none}
+.tvc-canvas-wrap{width:100%;height:100%;position:relative}
+
+/* Légende */
+.tv-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.7rem;padding:4px 0}
+.tv-legend-item{display:flex;align-items:center;gap:4px}
+.tv-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* Play button */
+#tv-play-btn{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);
+  background:var(--bg3);color:var(--text);font-size:.85rem;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;flex-shrink:0;transition:all .12s}
+#tv-play-btn:hover{border-color:var(--accent);color:var(--accent)}
+#tv-play-btn.playing{border-color:var(--accent);background:var(--accent)1a;color:var(--accent)}
+
+/* Selector */
+.tv-sel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
+  color:var(--text);padding:4px 8px;font-size:.79rem}
+
+/* Loading */
+#tv-loading{display:none;align-items:center;justify-content:center;
+  padding:60px;color:var(--text3);font-size:.85rem;flex-shrink:0}
 .tv-vid-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);
   border-radius:var(--rs);overflow:hidden}
 .tv-vid-label{position:absolute;top:4px;left:6px;font-size:.68rem;font-weight:700;
@@ -712,196 +771,160 @@ td.c{text-align:center}
 <!-- ══════════════════════════════════════════════════════
   PAGE : VIEWER (timeline + vidéos)
 ══════════════════════════════════════════════════════ -->
-<div class="page" id="page-viewer" style="display:none;flex-direction:column;padding:0;overflow:hidden">
+<div class="page" id="page-viewer">
 
-<div id="tv-page-body">
-
-  <!-- ── Panneau latéral sessions ──────────────────────────── -->
+  <!-- ── Panneau sessions (gauche) ───────────────────────── -->
   <div id="tv-sess-panel">
-    <div id="tv-sess-panel-hdr">
-      <span id="tv-sess-panel-title">Sessions</span>
-      <button id="tv-sess-scan-btn" onclick="tvScanSessions()" title="Scanner le dossier">⟳</button>
-    </div>
-    <div id="tv-sess-list">
-      <div id="tv-sess-empty">Cliquez ⟳ pour<br/>charger les sessions</div>
+    <div id="tv-sess-panel-inner">
+      <div id="tv-sess-panel-hdr">
+        <span id="tv-sess-panel-title">Sessions</span>
+        <button id="tv-sess-scan-btn" onclick="tvScanSessions()">⟳ Scanner</button>
+      </div>
+      <div id="tv-sess-list">
+        <div id="tv-sess-empty">Cliquez « Scanner »<br/>pour charger les sessions</div>
+      </div>
     </div>
   </div>
 
-  <!-- ── Contenu principal ─────────────────────────────────── -->
+  <!-- ── Zone principale (droite) ────────────────────────── -->
   <div id="tv-content">
-    <!-- Bouton toggle panneau -->
-    <button id="tv-panel-toggle" onclick="tvTogglePanel()" title="Afficher/masquer sessions">‹</button>
 
-    <!-- En-tête avec contrôles -->
-    <div style="padding:10px 14px 0 22px;flex-shrink:0">
-      <div id="tv-top" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <div style="font-size:.82rem;font-weight:700;color:var(--text);flex:1;min-width:0;
-             white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="tv-sess-name">
-          — Sélectionnez une session —
-        </div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <label style="font-size:.78rem;color:var(--text2)">Trackers</label>
-          <select id="tv-trk-mode" class="tv-sel" onchange="tvRebuildCharts()">
-            <option value="speed">Vitesse</option>
-            <option value="xyz">Position XYZ</option>
-            <option value="norm">Norme position</option>
-          </select>
-        </div>
-        <button id="tv-play-btn" onclick="tvTogglePlay()" title="Play/Pause">▶</button>
-        <div style="font-size:.78rem;color:var(--text3)" id="tv-fps-display"></div>
-      </div>
+    <!-- Bouton repli panneau -->
+    <button id="tv-panel-toggle" onclick="tvTogglePanel()">‹</button>
+
+    <!-- Barre de contrôles -->
+    <div id="tv-toolbar">
+      <div id="tv-sess-name">— Sélectionnez une session —</div>
+      <label style="font-size:.78rem;color:var(--text2);flex-shrink:0">Trackers</label>
+      <select id="tv-trk-mode" class="tv-sel" onchange="tvRebuildCharts()">
+        <option value="speed">Vitesse</option>
+        <option value="xyz">Position XYZ</option>
+        <option value="norm">Norme</option>
+      </select>
+      <button id="tv-play-btn" onclick="tvTogglePlay()">▶</button>
     </div>
 
-    <!-- Onglets Live / Diff -->
-    <div class="tabs" style="margin:6px 14px 0 22px">
-      <div class="tab active" id="tv-tab-live"  onclick="tvNavTab('live',this)">▣ Live</div>
-      <div class="tab"        id="tv-tab-diff"  onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
+    <!-- Onglets -->
+    <div id="tv-tabs" class="tabs">
+      <div class="tab active" onclick="tvNavTab('live',this)">▣ Live</div>
+      <div class="tab"        onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
     </div>
 
-  <!-- ── Onglet LIVE ─────────────────────────────── -->
-  <div class="tc active" id="tv-tc-live">
-    <div id="tv-loading" style="display:none;padding:40px;text-align:center;color:var(--text3)">
-      Chargement des données…
-    </div>
+    <!-- ── Onglet LIVE ──────────────────────────────────── -->
+    <div class="tv-tc active" id="tv-tc-live">
+      <div id="tv-loading" style="display:flex">Sélectionnez une session dans le panneau gauche.</div>
 
-    <div id="tv-layout" style="display:none">
-      <!-- Rangée principale : 3 vidéos (LEFT | HEAD | RIGHT) + vue 3D -->
-      <div id="tv-main-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:10px;align-items:stretch">
-        <!-- LEFT — gauche -->
-        <div class="tv-vid-wrap" id="tv-wrap-left" style="display:flex;flex-direction:column">
-          <div class="tv-vid-label" style="background:#22d38699">LEFT</div>
-          <div class="tv-vid-time" id="tv-vt-left">0ms</div>
-          <img id="tv-img-left" src="" alt="left" style="flex:1;object-fit:cover"/>
-        </div>
-        <!-- HEAD — centre -->
-        <div class="tv-vid-wrap" id="tv-wrap-head" style="display:flex;flex-direction:column">
-          <div class="tv-vid-label" style="background:#5b7df599">HEAD</div>
-          <div class="tv-vid-time" id="tv-vt-head">0ms</div>
-          <img id="tv-img-head" src="" alt="head" style="flex:1;object-fit:cover"/>
-        </div>
-        <!-- RIGHT — droite -->
-        <div class="tv-vid-wrap" id="tv-wrap-right" style="display:flex;flex-direction:column">
-          <div class="tv-vid-label" style="background:#f59e0b99">RIGHT</div>
-          <div class="tv-vid-time" id="tv-vt-right">0ms</div>
-          <img id="tv-img-right" src="" alt="right" style="flex:1;object-fit:cover"/>
-        </div>
-        <!-- Vue 3D intégrée — même ligne -->
-        <div id="tv-3d-inline-wrap" style="position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);overflow:hidden;min-height:160px">
-          <div style="position:absolute;top:4px;left:6px;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;background:#00000099;color:#fff;z-index:2;text-transform:uppercase;letter-spacing:.04em">3D</div>
-          <canvas id="tv3d-canvas" style="width:100%;height:100%;display:block"></canvas>
-          <div id="tv3d-legend" style="position:absolute;top:4px;right:6px;display:flex;flex-direction:column;gap:3px;font-size:.65rem"></div>
-          <div id="tv3d-coords" style="position:absolute;bottom:4px;left:6px;font-size:.62rem;font-family:monospace;color:var(--text3);background:#00000088;padding:1px 6px;border-radius:4px;display:none"></div>
-          <div id="tv3d-empty-inline" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;color:var(--text3);text-align:center;padding:8px">Chargez une session</div>
-          <!-- Mini contrôles 3D -->
-          <div style="position:absolute;bottom:4px;right:6px;display:flex;gap:4px;z-index:5">
-            <select id="tv3d-mode" class="tv-sel" onchange="tv3dSetMode(this.value)" style="font-size:.65rem;padding:1px 5px;background:#00000099;border-color:#333360">
-              <option value="both">Traj+pos</option>
-              <option value="trajectoire">Trajectoire</option>
-              <option value="curseur">Position</option>
-            </select>
-            <select id="tv3d-axes" class="tv-sel" onchange="tv3dSetAxes(this.value)" style="font-size:.65rem;padding:1px 5px;background:#00000099;border-color:#333360">
-              <option value="xyz">XYZ</option>
-              <option value="xzy">XZY</option>
-            </select>
-            <button class="btn" onclick="tv3dResetCamera()" style="font-size:.62rem;padding:1px 5px;background:#00000099;border-color:#333360" title="Reset caméra">↺</button>
+      <div id="tv-live-inner">
+        <!-- Vidéos LEFT | HEAD | RIGHT + 3D -->
+        <div id="tv-media-row">
+          <div class="tv-vid-wrap" id="tv-wrap-left">
+            <div class="tv-vid-label" style="background:#22d386bb">LEFT</div>
+            <div class="tv-vid-time" id="tv-vt-left">—</div>
+            <img id="tv-img-left" src="" alt=""/>
+          </div>
+          <div class="tv-vid-wrap" id="tv-wrap-head">
+            <div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
+            <div class="tv-vid-time" id="tv-vt-head">—</div>
+            <img id="tv-img-head" src="" alt=""/>
+          </div>
+          <div class="tv-vid-wrap" id="tv-wrap-right">
+            <div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
+            <div class="tv-vid-time" id="tv-vt-right">—</div>
+            <img id="tv-img-right" src="" alt=""/>
+          </div>
+          <!-- Vue 3D -->
+          <div class="tv-vid-wrap" id="tv-3d-wrap" style="position:relative">
+            <div class="tv-vid-label" style="background:#8b5cf6bb">3D</div>
+            <canvas id="tv3d-canvas" style="width:100%;height:100%;display:block"></canvas>
+            <div id="tv3d-legend" style="position:absolute;top:24px;right:6px;display:flex;flex-direction:column;gap:3px;font-size:.63rem"></div>
+            <div id="tv3d-coords" style="position:absolute;bottom:5px;left:7px;font-size:.62rem;font-family:monospace;color:var(--text3);background:#000000aa;padding:1px 6px;border-radius:3px;display:none"></div>
+            <div id="tv3d-empty-msg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;color:var(--text3);text-align:center">Pas de données tracker</div>
+            <!-- Contrôles 3D -->
+            <div style="position:absolute;bottom:5px;right:6px;display:flex;gap:3px;z-index:5">
+              <select id="tv3d-mode" class="tv-sel" onchange="tv3dSetMode(this.value)" style="font-size:.62rem;padding:1px 4px;background:#000000aa;border-color:#333360">
+                <option value="both">Traj+pos</option>
+                <option value="trajectoire">Trajectoire</option>
+                <option value="curseur">Position</option>
+              </select>
+              <select id="tv3d-axes" class="tv-sel" onchange="tv3dSetAxes(this.value)" style="font-size:.62rem;padding:1px 4px;background:#000000aa;border-color:#333360">
+                <option value="xyz">XYZ</option>
+                <option value="xzy">XZY</option>
+              </select>
+              <button onclick="tv3dResetCamera()" style="font-size:.62rem;padding:1px 5px;background:#000000aa;border:1px solid #333360;border-radius:3px;color:#dde0f5;cursor:pointer">↺</button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Timeline partagée -->
-      <div id="tv-scrubber-wrap">
-        <div id="tv-playhead" onclick="tvScrubClick(event)">
-          <div id="tv-playhead-fill"></div>
+        <!-- Timeline partagée -->
+        <div id="tv-scrubber-wrap">
+          <div id="tv-playhead" onclick="tvScrubClick(event)">
+            <div id="tv-playhead-fill"></div>
+          </div>
+          <input type="range" id="tv-scrub" min="0" max="1000" value="0" oninput="tvScrub(+this.value)"/>
+          <div id="tv-time-display">
+            <span id="tv-t-cur">0.0s</span>
+            <span id="tv-t-dur">—</span>
+          </div>
         </div>
-        <input type="range" id="tv-scrub" min="0" max="1000" value="0"
-               oninput="tvScrub(+this.value)" style="width:100%"/>
-        <div id="tv-time-display">
-          <span id="tv-t-cur">0.0s</span>
-          <span id="tv-t-dur">—</span>
-        </div>
-      </div>
 
-      <!-- Charts empilés -->
-      <div id="tv-charts">
-        <div class="tvc-row" id="tv-row-tracker">
-          <div class="tvc-label">Trackers</div>
-          <div class="tvc-canvas-wrap"><canvas id="tv-ch-tracker"></canvas></div>
+        <!-- Charts -->
+        <div id="tv-charts">
+          <div class="tvc-row" id="tv-row-tracker">
+            <div class="tvc-label">Trackers</div>
+            <div class="tvc-canvas-wrap"><canvas id="tv-ch-tracker"></canvas></div>
+          </div>
+          <div class="tvc-row" id="tv-row-gripper">
+            <div class="tvc-label">Grippers</div>
+            <div class="tvc-canvas-wrap"><canvas id="tv-ch-gripper"></canvas></div>
+          </div>
+          <div class="tvc-row" id="tv-row-flux" style="display:none">
+            <div class="tvc-label">Flux optique</div>
+            <div class="tvc-canvas-wrap"><canvas id="tv-ch-flux"></canvas></div>
+          </div>
         </div>
-        <div class="tvc-row" id="tv-row-gripper">
-          <div class="tvc-label">Grippers</div>
-          <div class="tvc-canvas-wrap"><canvas id="tv-ch-gripper"></canvas></div>
-        </div>
-        <div class="tvc-row" id="tv-row-flux" style="display:none">
-          <div class="tvc-label">Flux optique</div>
-          <div class="tvc-canvas-wrap"><canvas id="tv-ch-flux"></canvas></div>
-        </div>
-      </div>
 
-      <div style="padding:6px 2px">
         <div class="tv-legend" id="tv-legend"></div>
       </div>
-    </div>
-  </div><!-- /tc live -->
+    </div><!-- /tv-tc-live -->
 
-  <!-- ── Onglet DIFF ─────────────────────────────── -->
-  <div class="tc" id="tv-tc-diff">
-    <div id="diff-loading" style="display:none;padding:40px;text-align:center;color:var(--text3)">
-      Calcul des différences…
-    </div>
-    <div id="diff-empty" style="padding:40px;text-align:center;color:var(--text3)">
-      Sélectionnez une session puis cliquez sur « Charger diff ».
-    </div>
-    <div id="diff-layout" style="display:none">
-
-      <!-- Sous-onglets fix / IA -->
-      <div class="tabs" style="border:none;margin:10px 0 0">
-        <div class="tab active" id="diff-tab-fix" onclick="diffNavTab('fix',this)">
-          ① Rôles trackers (fix.py)
-        </div>
-        <div class="tab" id="diff-tab-ia" onclick="diffNavTab('ia',this)">
-          ② Synchronisation IA
-        </div>
+    <!-- ── Onglet DIFF ──────────────────────────────────── -->
+    <div class="tv-tc" id="tv-tc-diff">
+      <div id="diff-loading" style="display:none;padding:40px;text-align:center;color:var(--text3)">
+        Calcul des différences…
       </div>
-
-      <!-- FIX diff -->
-      <div class="tc active" id="diff-tc-fix">
-        <div id="diff-fix-badges" style="display:flex;gap:8px;align-items:center;padding:10px 0 6px;flex-wrap:wrap"></div>
-        <div class="g2" style="gap:10px">
-          <!-- AVANT -->
-          <div class="card" style="padding:12px">
-            <div class="card-h" style="color:var(--red)">✗ Avant correction</div>
-            <div style="font-size:.75rem;color:var(--text3);margin-bottom:8px">Rôles tels qu'assignés dans le CSV original</div>
-            <div style="height:220px"><canvas id="diff-ch-fix-before"></canvas></div>
+      <div id="diff-empty" style="padding:40px;text-align:center;color:var(--text3)">
+        Sélectionnez une session puis cliquez sur « Charger diff ».
+      </div>
+      <div id="diff-layout" style="display:none">
+        <div class="tabs" style="border:none;margin:10px 0 0">
+          <div class="tab active" id="diff-tab-fix" onclick="diffNavTab('fix',this)">① Rôles trackers</div>
+          <div class="tab" id="diff-tab-ia" onclick="diffNavTab('ia',this)">② Sync IA</div>
+        </div>
+        <div class="tc active" id="diff-tc-fix">
+          <div id="diff-fix-badges" style="display:flex;gap:8px;align-items:center;padding:10px 0 6px;flex-wrap:wrap"></div>
+          <div class="g2" style="gap:10px">
+            <div class="card" style="padding:12px">
+              <div class="card-h" style="color:var(--red)">✗ Avant correction</div>
+              <div style="height:220px"><canvas id="diff-ch-fix-before"></canvas></div>
+            </div>
+            <div class="card" style="padding:12px">
+              <div class="card-h" style="color:var(--green)">✓ Après correction (conf = <span id="diff-fix-conf">—</span>)</div>
+              <div style="height:220px"><canvas id="diff-ch-fix-after"></canvas></div>
+            </div>
           </div>
-          <!-- APRÈS -->
-          <div class="card" style="padding:12px">
-            <div class="card-h" style="color:var(--green)">✓ Après correction</div>
-            <div style="font-size:.75rem;color:var(--text3);margin-bottom:8px">Rôles réassignés par fix.py (conf = <span id="diff-fix-conf">—</span>)</div>
-            <div style="height:220px"><canvas id="diff-ch-fix-after"></canvas></div>
-          </div>
+          <div id="diff-fix-swaps" style="margin-top:10px"></div>
         </div>
-        <!-- Tableau des swaps -->
-        <div id="diff-fix-swaps" style="margin-top:10px"></div>
+        <div class="tc" id="diff-tc-ia">
+          <div id="diff-ia-badges" style="display:flex;gap:8px;align-items:center;padding:10px 0 6px;flex-wrap:wrap"></div>
+          <div id="diff-ia-pairs"></div>
+        </div>
       </div>
-
-      <!-- IA diff -->
-      <div class="tc" id="diff-tc-ia">
-        <div id="diff-ia-badges" style="display:flex;gap:8px;align-items:center;padding:10px 0 6px;flex-wrap:wrap"></div>
-        <div id="diff-ia-pairs"></div>
+      <div id="diff-btn-wrap" style="padding:16px 0;display:none">
+        <button class="btn p" onclick="tvLoadDiff()">⊕ Charger Avant / Après</button>
       </div>
-
-    </div><!-- /diff-layout -->
-
-    <!-- Bouton charger diff (visible quand pas encore chargé) -->
-    <div id="diff-btn-wrap" style="padding:16px 0;display:none">
-      <button class="btn p" onclick="tvLoadDiff()">⊕ Charger Avant / Après</button>
-    </div>
-  </div><!-- /tc diff -->
-
-  <!-- ── Onglet 3D supprimé : vue 3D maintenant intégrée dans l'onglet Live -->
+    </div><!-- /tv-tc-diff -->
 
   </div><!-- /tv-content -->
-</div><!-- /tv-page-body -->
 </div><!-- /page-viewer -->
 
 <!-- ══════════════════════════════════════════════════════
@@ -1910,7 +1933,7 @@ async function tvSelectSession(path) {
   });
 
   ge('tv-loading').style.display = 'flex';
-  ge('tv-layout').style.display = 'none';
+  ge('tv-live-inner').style.display = 'none';
 
   try {
     const data = await fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`).then(r=>r.json());
@@ -1918,23 +1941,19 @@ async function tvSelectSession(path) {
     TV.duration_ms = data.duration_ms || 30000;
     ge('tv-t-dur').textContent = (TV.duration_ms/1000).toFixed(1)+'s';
     ge('tv-loading').style.display = 'none';
-    ge('tv-layout').style.display = 'flex';
+    ge('tv-live-inner').style.display = 'flex';
     tvBuildCharts();
     tvRenderAt(0);
     tvUpdateLegend();
-    // Initialiser et construire la vue 3D inline
+    // 3D
     tv3dInitIfNeeded();
-    if (data?.tracker?.t_ms?.length) {
-      ge('tv3d-empty-inline').style.display = 'none';
-      TV3D.needsRebuild = true;
-      tv3dBuild();
-      TV3D.needsRebuild = false;
-      tv3dUpdateCursor(0);
-    } else {
-      ge('tv3d-empty-inline').style.display = 'flex';
-    }
+    const has3d = !!(data?.tracker?.t_ms?.length);
+    ge('tv3d-empty-msg').style.display = has3d ? 'none' : 'flex';
+    if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
   } catch(e) {
-    ge('tv-loading').textContent = '⚠ Erreur: ' + e.message;
+    ge('tv-loading').style.display = 'flex';
+    ge('tv-loading').textContent = '⚠ ' + e.message;
+    ge('tv-live-inner').style.display = 'none';
     log('Viewer: '+e.message, 'ERROR');
   }
 }
@@ -2271,9 +2290,9 @@ function tvUpdateLegend() {
 
 // ── Navigation onglets viewer ──────────────────────────────────────
 function tvNavTab(name, el) {
-  document.querySelectorAll('#tv-content .tabs .tab')
+  document.querySelectorAll('#tv-tabs .tab')
     .forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('#tv-content > .tc')
+  document.querySelectorAll('#tv-content .tv-tc')
     .forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   ge(`tv-tc-${name}`)?.classList.add('active');
@@ -2843,18 +2862,16 @@ function mkChart(id, type, data, opts={}) {
 // Navigation
 // ══════════════════════════════════════════════════════════════════
 function nav(name, btn) {
-  // Arrêter le playback si on quitte le viewer
   if (name !== 'viewer' && TV.playing) tvStopPlay();
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   ge('page-'+name)?.classList.add('active');
   btn?.classList.add('active');
-  // Viewer : refresh liste + resize charts + scan auto si vide
+  // Viewer actif : supprimer padding/scroll du #main
+  ge('main').classList.toggle('viewer-active', name === 'viewer');
   if (name === 'viewer') {
     tvRefreshSessions();
-    requestAnimationFrame(() => {
-      Object.values(TV.charts).forEach(ch => ch?.resize());
-    });
+    requestAnimationFrame(() => Object.values(TV.charts).forEach(ch => ch?.resize()));
     if (!S.sessions.length) tvScanSessions();
   }
 }
@@ -2981,7 +2998,7 @@ const TV3D_COLORS = {
   right: 0xf59e0b,
 };
 
-// La vue 3D est maintenant intégrée dans l'onglet Live (tv-3d-inline-wrap)
+// La vue 3D est maintenant intégrée dans l'onglet Live (tv-3d-wrap)
 function tv3dShow() {
   // Rien à faire ici — la 3D est toujours visible dans l'onglet Live
 }
@@ -2994,7 +3011,7 @@ function tv3dInitIfNeeded() {
 
 function tv3dInit() {
   const canvas = ge('tv3d-canvas');
-  const wrap   = ge('tv-3d-inline-wrap');
+  const wrap   = ge('tv-3d-wrap');
 
   TV3D.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   TV3D.renderer.setPixelRatio(window.devicePixelRatio);
@@ -3030,7 +3047,7 @@ function tv3dInit() {
 }
 
 function tv3dResize() {
-  const wrap = ge('tv-3d-inline-wrap');
+  const wrap = ge('tv-3d-wrap');
   if (!wrap || !TV3D.renderer) return;
   const w = wrap.clientWidth, h = wrap.clientHeight;
   if (w < 10 || h < 10) return;

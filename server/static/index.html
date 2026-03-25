@@ -2958,7 +2958,7 @@
 		const STEPS = ['detect', 'rotate', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate', 'store'];
 		const STEP_LABELS = {
 			detect: 'Détection', rotate: 'Rotation 180°', tracker: 'Tracker', video: 'Vidéo',
-			flux_csv: 'Flux CSV', ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS'
+			verify_labels: 'Labels', flux_csv: 'Flux CSV', ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS'
 		};
 		const STEP_DESCS = {
 			detect: 'Vérification intégrité structure session',
@@ -3172,11 +3172,6 @@
 		// Modale sélection étapes
 		// ══════════════════════════════════════════════════════════════════
 		const ALL_STEPS = ['detect', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store'];
-		const STEP_LABELS = {
-			detect: 'Détection', rotate: 'Rotation', tracker: 'Tracker',
-			video: 'Vidéo', verify_labels: 'Labels', flux_csv: 'Flux CSV',
-			ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS',
-		};
 		const DEFAULT_STEPS = new Set(['detect', 'rotate', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate']);
 
 		let _stepsModalTarget = null; // 'selected' | 'all' | 'drawer'

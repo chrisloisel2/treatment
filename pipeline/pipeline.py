@@ -104,6 +104,9 @@ STEP_NAMES = [
     "store",
 ]
 
+# Étapes destructives qui nécessitent un backup + rollback automatique en cas d'échec
+ROLLBACK_STEPS = {"rotate", "flux_csv", "ia_sync"}
+
 
 @dataclass
 class StepState:
@@ -785,10 +788,6 @@ def step_ia_sync(state: SessionPipelineState, log: PipelineLogger,
             "Entraînez le modèle d'abord depuis l'interface."
         )
 
-    # Backup avant modification
-    _backup_session(sess, "ia_sync")
-    log("Backup créé avant synchronisation IA", "INFO")
-
     model  = ia.load_model(model_dir)
     fluxes = ia.load_all_fluxes(sess)
 
@@ -1068,6 +1067,7 @@ class PipelineRunner:
         step_callback:     Optional[Callable] = None,
         force_flux:        bool = False,
         resume:            bool = True,
+        steps_whitelist:   Optional[List[str]] = None,
     ):
         self.session_path  = Path(source_path)
         self.session_name  = self.session_path.name
@@ -1077,8 +1077,9 @@ class PipelineRunner:
         self.params        = params
         self.log_callback  = log_callback
         self.step_callback = step_callback
-        self.force_flux    = force_flux
-        self.resume        = resume
+        self.force_flux      = force_flux
+        self.resume          = resume
+        self.steps_whitelist = set(steps_whitelist) if steps_whitelist else None
         self.log = PipelineLogger(self.session_name, log_callback)
 
     def _step_ctx(self, state: SessionPipelineState, name: str):
@@ -1205,6 +1206,9 @@ class PipelineRunner:
         return state
 
     def _should_run(self, state: SessionPipelineState, name: str) -> bool:
+        # Exclure si la whitelist est définie et que l'étape n'y figure pas
+        if self.steps_whitelist is not None and name not in self.steps_whitelist:
+            return False
         s = state.steps.get(name)
         if s is None:
             return True
@@ -1214,7 +1218,7 @@ class PipelineRunner:
 
 
 class _StepContext:
-    """Context manager pour une étape : chrono + statut + sauvegarde."""
+    """Context manager pour une étape : chrono + statut + sauvegarde + rollback automatique."""
     def __init__(self, state: SessionPipelineState, name: str,
                  log: PipelineLogger, callback: Optional[Callable]):
         self.state    = state
@@ -1232,6 +1236,14 @@ class _StepContext:
         self.state.updated_at   = _now()
         self.state.save()
         self._t0 = time.time()
+        # Backup automatique avant les étapes destructives
+        if self.name in ROLLBACK_STEPS:
+            sess = Path(self.state.session_path)
+            try:
+                _backup_session(sess, self.name)
+                self.log(f"Backup créé avant étape {self.name.upper()}", "INFO")
+            except Exception as e:
+                self.log(f"Avertissement: backup impossible pour {self.name}: {e}", "WARN")
         self.log.step_start(self.name)
         if self.callback:
             self.callback(self.state)
@@ -1250,6 +1262,20 @@ class _StepContext:
             step.status  = StepStatus.FAILED
             step.message = str(exc_val)[:200]
             self.log.step_fail(self.name, str(exc_val)[:200])
+            # Rollback automatique pour les étapes destructives
+            if self.name in ROLLBACK_STEPS:
+                sess = Path(self.state.session_path)
+                self.log(f"Rollback automatique après échec de {self.name.upper()}…", "WARN")
+                try:
+                    ok = _restore_backup(sess, self.name)
+                    if ok:
+                        step.status  = StepStatus.ROLLED_BACK
+                        step.message = f"ROLLBACK ({str(exc_val)[:150]})"
+                        self.log(f"Rollback {self.name.upper()} réussi — état restauré", "OK")
+                    else:
+                        self.log(f"Rollback {self.name.upper()} impossible (backup introuvable)", "ERROR")
+                except Exception as rb_err:
+                    self.log(f"Erreur rollback {self.name.upper()}: {rb_err}", "ERROR")
         self.state.updated_at = _now()
         self.state.save()
         if self.callback:

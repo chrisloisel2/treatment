@@ -302,6 +302,30 @@ td.c{text-align:center}
 .ll.STEP{color:var(--accent2)} .ll.TRAIN{color:var(--accent)}
 .ll.DIM{color:var(--text3)}
 
+/* ── Modal étapes pipeline ─────────────────────────────────────── */
+#steps-modal-backdrop{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;
+  align-items:center;justify-content:center;
+}
+#steps-modal-backdrop.open{display:flex}
+#steps-modal{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:20px 24px;min-width:340px;max-width:460px;width:90vw;box-shadow:0 8px 32px #0008;
+}
+#steps-modal h3{margin:0 0 4px;font-size:.9rem;color:var(--text)}
+#steps-modal .sm-sub{font-size:.74rem;color:var(--text3);margin-bottom:14px}
+.step-chk-row{display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:16px}
+.step-chk-row label{
+  display:flex;align-items:center;gap:5px;font-size:.78rem;color:var(--text2);
+  background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:4px 8px;cursor:pointer;user-select:none;transition:background .15s,border-color .15s;
+}
+.step-chk-row label:has(input:checked){
+  background:var(--accent);border-color:var(--accent);color:#fff;
+}
+.step-chk-row label input{display:none}
+.sm-btns{display:flex;gap:8px;justify-content:flex-end}
+
 /* Divider */
 .div{height:1px;background:var(--border);margin:12px 0}
 
@@ -716,10 +740,10 @@ td.c{text-align:center}
 
   <!-- Actions -->
   <div class="row">
-    <button class="btn p" id="btn-run-selected" onclick="runSelected()" disabled>
+    <button class="btn p" id="btn-run-selected" onclick="openStepsModal('selected')" disabled>
       ▶ Lancer sélectionnées
     </button>
-    <button class="btn" onclick="runAll()">▶ Tout traiter</button>
+    <button class="btn" onclick="openStepsModal('all')">▶ Tout traiter</button>
     <button class="btn d" onclick="rollbackSelected()">↩ Rollback sélectionnées</button>
     <div style="flex:1"></div>
     <label style="font-size:.78rem;color:var(--text2)">
@@ -1184,9 +1208,27 @@ td.c{text-align:center}
     <div id="sess-drawer-title">—</div>
     <button class="btn sm" onclick="closeDrawer()">✕</button>
     <button class="btn sm d" id="btn-drawer-rollback" onclick="rollbackDrawer()">↩ Rollback</button>
-    <button class="btn sm p" id="btn-drawer-run" onclick="runDrawer()">▶ Relancer</button>
+    <button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
   </div>
   <div id="sess-drawer-body"></div>
+</div>
+
+<!-- ══ Modale sélection étapes ══════════════════════════════════════ -->
+<div id="steps-modal-backdrop" onclick="stepsModalClose(event)">
+  <div id="steps-modal">
+    <h3>Étapes à exécuter</h3>
+    <div class="sm-sub" id="steps-modal-sub">Sessions sélectionnées</div>
+    <div class="step-chk-row" id="steps-chk-row"></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn sm" onclick="stepsModalSelectAll()">Tout</button>
+      <button class="btn sm" onclick="stepsModalSelectNone()">Aucun</button>
+      <button class="btn sm" onclick="stepsModalSelectDefault()">Défaut</button>
+    </div>
+    <div class="sm-btns">
+      <button class="btn" onclick="stepsModalCancel()">Annuler</button>
+      <button class="btn p" onclick="stepsModalConfirm()">▶ Lancer</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ Log panel ════════════════════════════════════════════════════ -->
@@ -1388,7 +1430,67 @@ function getParams() {
   };
 }
 
-async function runSessions(sessions) {
+// ══════════════════════════════════════════════════════════════════
+// Modale sélection étapes
+// ══════════════════════════════════════════════════════════════════
+const ALL_STEPS = ['detect','rotate','tracker','video','verify_labels','flux_csv','ia_sync','validate','store'];
+const STEP_LABELS = {
+  detect: 'Détection', rotate: 'Rotation', tracker: 'Tracker',
+  video: 'Vidéo', verify_labels: 'Labels', flux_csv: 'Flux CSV',
+  ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS',
+};
+const DEFAULT_STEPS = new Set(['detect','rotate','tracker','video','flux_csv','ia_sync','validate']);
+
+let _stepsModalTarget = null; // 'selected' | 'all' | 'drawer'
+
+function openStepsModal(target) {
+  if (target === 'selected' && !S.selected.size) { alert('Sélectionnez des sessions.'); return; }
+  if (target === 'all' && !S.sessions.length) { alert('Scannez d\'abord un répertoire.'); return; }
+  _stepsModalTarget = target;
+  const sub = target === 'drawer' && S.drawerSess
+    ? S.drawerSess.name
+    : target === 'selected'
+      ? `${S.selected.size} session(s) sélectionnée(s)`
+      : `${S.sessions.length} session(s)`;
+  ge('steps-modal-sub').textContent = sub;
+  // Build checkboxes
+  const row = ge('steps-chk-row');
+  row.innerHTML = ALL_STEPS.map(s => `
+    <label>
+      <input type="checkbox" value="${s}" ${DEFAULT_STEPS.has(s)?'checked':''}>
+      ${STEP_LABELS[s] || s}
+    </label>`).join('');
+  ge('steps-modal-backdrop').classList.add('open');
+}
+
+function stepsModalClose(e) {
+  if (e.target === ge('steps-modal-backdrop')) stepsModalCancel();
+}
+function stepsModalCancel() {
+  ge('steps-modal-backdrop').classList.remove('open');
+  _stepsModalTarget = null;
+}
+function stepsModalSelectAll()     { ge('steps-chk-row').querySelectorAll('input').forEach(i=>i.checked=true); }
+function stepsModalSelectNone()    { ge('steps-chk-row').querySelectorAll('input').forEach(i=>i.checked=false); }
+function stepsModalSelectDefault() { ge('steps-chk-row').querySelectorAll('input').forEach(i=>i.checked=DEFAULT_STEPS.has(i.value)); }
+
+async function stepsModalConfirm() {
+  const steps = [...ge('steps-chk-row').querySelectorAll('input:checked')].map(i=>i.value);
+  if (!steps.length) { alert('Sélectionnez au moins une étape.'); return; }
+  ge('steps-modal-backdrop').classList.remove('open');
+  const target = _stepsModalTarget;
+  _stepsModalTarget = null;
+  if (target === 'drawer' && S.drawerSess) {
+    await runSessions([S.drawerSess], steps);
+  } else if (target === 'selected') {
+    const sel = S.sessions.filter(s => S.selected.has(s.path));
+    await runSessions(sel, steps);
+  } else {
+    await runSessions(S.sessions, steps);
+  }
+}
+
+async function runSessions(sessions, steps) {
   const root      = S.cfg.root || ge('cfg-root').value;
   const modelDir  = ge('s-model').value || '_sync_ml_model';
   const nas       = ge('cfg-nas').value || ge('s-nas').value;
@@ -1397,14 +1499,16 @@ async function runSessions(sessions) {
 
   for (const sess of sessions) {
     try {
-      const {job_id} = await api('POST', '/api/pipeline/run', {
+      const body = {
         session:    sess.path,
         root,
         model_dir:  modelDir,
         nas_root:   nas,
         force_flux: forceFlux,
         ...params,
-      });
+      };
+      if (steps && steps.length) body.steps = steps;
+      const {job_id} = await api('POST', '/api/pipeline/run', body);
       // Lier le job à la session
       const s = S.sessions.find(s => s.path === sess.path);
       if (s) s.job_id = job_id;
@@ -1417,14 +1521,11 @@ async function runSessions(sessions) {
 }
 
 async function runSelected() {
-  const sel = S.sessions.filter(s => S.selected.has(s.path));
-  if (!sel.length) { alert('Sélectionnez des sessions.'); return; }
-  await runSessions(sel);
+  openStepsModal('selected');
 }
 
 async function runAll() {
-  if (!S.sessions.length) { alert('Scannez d\'abord un répertoire.'); return; }
-  await runSessions(S.sessions);
+  openStepsModal('all');
 }
 
 async function rollbackSelected() {
@@ -1591,7 +1692,7 @@ function renderPipelineBoard() {
 function openDrawer(sess) {
   S.drawerSess = sess;
   ge('sess-drawer-title').textContent = sess.name;
-  ge('btn-drawer-run').onclick = () => { runSessions([sess]); };
+  ge('btn-drawer-run').onclick = () => { openStepsModal('drawer'); };
   ge('btn-drawer-rollback').onclick = () => rollbackDrawer();
   renderDrawerContent(sess);
   ge('sess-drawer').classList.add('open');

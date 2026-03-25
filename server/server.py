@@ -642,7 +642,8 @@ def _pipeline_step_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
 
 def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore[name-defined]
                      write_mode: bool, force_flux: bool,
-                     delete_after_store: bool = False):
+                     delete_after_store: bool = False,
+                     steps_whitelist: Optional[List[str]] = None):
     try:
         from pipeline.pipeline import PipelineRunner
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
@@ -655,6 +656,7 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
             step_callback      = _pipeline_step_cb(job),
             force_flux         = force_flux,
             resume             = True,
+            steps_whitelist    = steps_whitelist,
         )
         if not _session_writable(source_path):
             raise PermissionError(
@@ -739,6 +741,7 @@ class PipelineRunRequest(BaseModel):
     resample_ms:        float = 5.0
     max_lag_ms:         float = 400.0
     window_ms:          float = 2200.0
+    steps:              Optional[List[str]] = None  # None = toutes les étapes
 
 class WatcherStartRequest(BaseModel):
     watch_dir:          str   = DEFAULT_WATCH_DIR
@@ -880,7 +883,7 @@ async def pipeline_run(req: PipelineRunRequest):
     threading.Thread(
         target = _worker_pipeline,
         args   = (job, source_path, params, req.write_mode, req.force_flux,
-                  req.delete_after_store),
+                  req.delete_after_store, req.steps),
         daemon = True,
     ).start()
     return {"job_id": job.id}

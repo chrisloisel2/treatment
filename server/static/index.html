@@ -2849,12 +2849,12 @@ function nav(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   ge('page-'+name)?.classList.add('active');
   btn?.classList.add('active');
-  // Resize les charts du viewer quand on y revient
+  // Viewer : refresh liste + resize charts + scan auto si vide
   if (name === 'viewer') {
+    tvRefreshSessions();
     requestAnimationFrame(() => {
       Object.values(TV.charts).forEach(ch => ch?.resize());
     });
-    // Scan auto si aucune session chargée
     if (!S.sessions.length) tvScanSessions();
   }
 }

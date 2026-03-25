@@ -481,9 +481,11 @@ td.c{text-align:center}
   padding:2px 7px;border-radius:99px;background:#000000bb;color:#fff;z-index:2;text-transform:uppercase}
 .tv-vid-time{position:absolute;bottom:5px;right:7px;font-size:.66rem;font-family:monospace;
   padding:1px 6px;border-radius:99px;background:#000000bb;color:#bbb;z-index:2}
-.tv-vid-wrap img{width:100%;height:100%;display:block;object-fit:cover;background:var(--bg4)}
-/* placeholder quand pas encore de frame */
-.tv-vid-wrap img[src=""]{background:var(--bg4)}
+.tv-vid-wrap video{width:100%;height:100%;display:block;object-fit:cover;background:var(--bg4)}
+/* Overlay loading sur la vidéo */
+.tv-vid-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--bg3);color:var(--text3);font-size:.72rem;transition:opacity .3s;pointer-events:none}
+.tv-vid-overlay.hidden{opacity:0}
 
 /* ── Timeline ──────────────────────────────────────────────────── */
 #tv-scrubber-wrap{flex-shrink:0;padding:6px 0 2px}
@@ -884,22 +886,25 @@ td.c{text-align:center}
         <!-- ── Colonne principale ──────────────────────────────── -->
         <div id="tv-live-main">
 
-          <!-- Vidéos LEFT | HEAD | RIGHT -->
+          <!-- Vidéos LEFT | HEAD | RIGHT — lecture native HTML5 -->
           <div id="tv-media-row">
             <div class="tv-vid-wrap" id="tv-wrap-left">
               <div class="tv-vid-label" style="background:#22d386bb">LEFT</div>
               <div class="tv-vid-time" id="tv-vt-left">—</div>
-              <img id="tv-img-left" src="" alt=""/>
+              <video id="tv-vid-left" preload="auto" muted playsinline></video>
+              <div class="tv-vid-overlay" id="tv-ovl-left">Pas de vidéo</div>
             </div>
             <div class="tv-vid-wrap" id="tv-wrap-head">
               <div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
               <div class="tv-vid-time" id="tv-vt-head">—</div>
-              <img id="tv-img-head" src="" alt=""/>
+              <video id="tv-vid-head" preload="auto" muted playsinline></video>
+              <div class="tv-vid-overlay" id="tv-ovl-head">Pas de vidéo</div>
             </div>
             <div class="tv-vid-wrap" id="tv-wrap-right">
               <div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
               <div class="tv-vid-time" id="tv-vt-right">—</div>
-              <img id="tv-img-right" src="" alt=""/>
+              <video id="tv-vid-right" preload="auto" muted playsinline></video>
+              <div class="tv-vid-overlay" id="tv-ovl-right">Pas de vidéo</div>
             </div>
           </div>
 
@@ -1997,8 +2002,11 @@ const TV = {
   playSpeed:   1.0,
   charts:      {},      // chart.js instances
   annotations: {},
-  stream:      null,    // EventSource SSE en cours
+  stream:      null,    // EventSource SSE en cours (tracker/gripper uniquement)
   streaming:   false,   // true si playback SSE actif
+  // Vidéo native
+  vidInfo:     {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
+  vidReady:    {},      // { head: bool, left: bool, right: bool }
 };
 
 const TV_COLORS = {
@@ -2038,10 +2046,15 @@ function tvToggleRightPanel() {
 
 function tvSetSpeed(v) {
   TV.playSpeed = v;
-  // Si stream en cours, le relancer avec le nouveau fps
+  // Appliquer immédiatement sur les vidéos natives
+  for (const side of ['head','left','right']) {
+    const vid = ge(`tv-vid-${side}`);
+    if (vid) vid.playbackRate = v;
+  }
+  // Relancer le SSE si en cours
   if (TV.streaming) {
     tvStopStream();
-    tvStartStream(TV.sessPath, TV.t_ms, false);
+    tvStartStream(TV.sessPath, TV.t_ms);
   }
 }
 
@@ -2212,6 +2225,8 @@ async function tvSelectSession(path) {
   TV.data = null;
   TV.sessPath = path;
   TV.t_ms = 0;
+  TV.vidInfo = {};
+  TV.vidReady = {};
   TV3D.needsRebuild = true;
 
   const sess = S.sessions.find(s => s.path === path);
@@ -2219,43 +2234,72 @@ async function tvSelectSession(path) {
   document.querySelectorAll('.tv-sess-item').forEach(el =>
     el.classList.toggle('active', el.title === path));
 
-  // Afficher le loading, cacher le contenu
   const loadEl = ge('tv-loading');
   const innerEl = ge('tv-live-inner');
   loadEl.innerHTML = '<span style="animation:pulse .8s infinite">⏳</span>&nbsp;Chargement…';
   loadEl.style.display = 'flex';
   innerEl.style.display = 'none';
 
+  // Détacher les anciennes vidéos
+  for (const side of ['head','left','right']) {
+    const v = ge(`tv-vid-${side}`);
+    if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+    ge(`tv-ovl-${side}`)?.classList.remove('hidden');
+  }
+
   try {
-    const r = await fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
+    // Charger données timeseries + video_info en parallèle
+    const [dataResp, infoResp] = await Promise.all([
+      fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`),
+      fetch(`/api/session/video_info?session_path=${encodeURIComponent(path)}`),
+    ]);
+    if (!dataResp.ok) throw new Error(`HTTP ${dataResp.status}`);
+    const data = await dataResp.json();
     if (!data || typeof data !== 'object') throw new Error('Réponse invalide');
+    TV.vidInfo = infoResp.ok ? await infoResp.json() : {};
 
     TV.data = data;
     TV.duration_ms = data.duration_ms || 0;
     ge('tv-t-dur').textContent = TV.duration_ms > 0
-      ? (TV.duration_ms / 1000).toFixed(1) + 's'
-      : '—';
+      ? (TV.duration_ms / 1000).toFixed(1) + 's' : '—';
     ge('tv-scrub').value = 0;
     ge('tv-playhead-fill').style.width = '0%';
     ge('tv-t-cur').textContent = '0.000s';
 
-    // Afficher le contenu
+    // Brancher les vidéos natives
+    for (const side of ['head','left','right']) {
+      const v = ge(`tv-vid-${side}`);
+      const ovl = ge(`tv-ovl-${side}`);
+      if (!v) continue;
+      if (TV.vidInfo[side]?.available) {
+        const url = `/api/session/video/${side}?session_path=${encodeURIComponent(path)}`;
+        v.src = url;
+        v.load();
+        v.oncanplay = () => {
+          TV.vidReady[side] = true;
+          ovl?.classList.add('hidden');
+        };
+        v.onerror = () => { TV.vidReady[side] = false; };
+        // Seek immédiat à t=0
+        v.onseeked = null;
+      } else {
+        TV.vidReady[side] = false;
+      }
+    }
+
     loadEl.style.display = 'none';
     innerEl.style.display = 'flex';
 
     const has3d = !!(data?.tracker?.t_ms?.length);
     ge('tv3d-empty-msg').style.display = has3d ? 'none' : '';
 
-    // Attendre que le navigateur ait calculé les dimensions avant d'init charts et 3D
     requestAnimationFrame(() => {
       tvBuildCharts();
       tvUpdateLegend();
       tv3dInitIfNeeded();
       if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
-      // Charger la première frame
-      if (TV.duration_ms > 0) tvStartStream(path, 0, true);
+      // Positionner les vidéos à t=0 sans les jouer
+      tvSeekVideos(0);
     });
 
     if (ge('tv-pane-files')?.classList.contains('active')) tvLoadFiles(path);
@@ -2264,6 +2308,20 @@ async function tvSelectSession(path) {
     loadEl.style.display = 'flex';
     innerEl.style.display = 'none';
     console.error('[Viewer]', e);
+  }
+}
+
+// Seek toutes les vidéos à t_ms (relatif à start de session)
+function tvSeekVideos(t_ms) {
+  for (const side of ['head','left','right']) {
+    const v = ge(`tv-vid-${side}`);
+    if (!v || !TV.vidInfo[side]?.available) continue;
+    const t0 = TV.vidInfo[side].t0_s || 0;
+    const targetSec = t0 + t_ms / 1000;
+    if (Math.abs(v.currentTime - targetSec) > 0.04) {
+      v.currentTime = targetSec;
+    }
+    ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
   }
 }
 
@@ -2430,10 +2488,7 @@ function tvMkChart(canvasId, datasets, yLabel) {
 }
 
 // ── Rendu à un instant t_ms ────────────────────────────────────────
-// Appelé par le scrubber / seek uniquement.
-// Quand le stream SSE est actif, le stream met à jour directement les frames.
 function tvRenderAt(t_ms) {
-  // Si un stream est en cours (playback), l'arrêter (seek manuel)
   if (TV.streaming) tvStopStream();
 
   TV.t_ms = t_ms;
@@ -2443,11 +2498,10 @@ function tvRenderAt(t_ms) {
   ge('tv-playhead-fill').style.width = (pct*100).toFixed(2)+'%';
   ge('tv-t-cur').textContent = (t_ms/1000).toFixed(3)+'s';
 
+  // Seek natif HTML5 (instantané, pas de réseau)
+  tvSeekVideos(t_ms);
   tvDrawCursorLine(t_ms);
   tv3dUpdateCursor(t_ms);
-
-  // Charger les frames via SSE (1 seul event) pour le seek
-  tvStartStream(TV.sessPath, t_ms, true);
 }
 
 function tvDrawCursorLine(t_ms) {
@@ -2496,95 +2550,84 @@ function tvScrubClick(ev) {
   tvRenderAt(pct * TV.duration_ms);
 }
 
-// ── SSE Streaming ──────────────────────────────────────────────────
-function tvStartStream(path, t_start, singleFrame) {
+// ── SSE Streaming — tracker + gripper uniquement ────────────────────
+// Les vidéos sont gérées nativement par les éléments <video> HTML5.
+function tvStartStream(path, t_start) {
   tvStopStream();
   if (!path) return;
-  const baseFps = Math.min(30, +(ge('rp-fps')?.value || 10));
-  const fps = singleFrame ? 1 : Math.max(1, Math.round(baseFps * (TV.playSpeed || 1)));
+  const fps = Math.min(60, Math.max(10, +(ge('rp-fps')?.value || 30)));
   const url = `/api/session/stream?session_path=${encodeURIComponent(path)}&fps=${fps}&t_start=${(+t_start || 0).toFixed(1)}`;
   const es  = new EventSource(url);
   TV.stream    = es;
-  TV.streaming = !singleFrame;
+  TV.streaming = true;
 
   es.onmessage = ev => {
-    // Ignorer si ce stream a déjà été remplacé
     if (TV.stream !== es) return;
 
     let d;
-    try { d = JSON.parse(ev.data); } catch(err) {
-      console.warn('[SSE] parse error', err); return;
-    }
+    try { d = JSON.parse(ev.data); } catch(err) { return; }
 
     if (d.done) {
-      // Fin de session
       es.close();
       if (TV.stream === es) { TV.stream = null; TV.streaming = false; }
-      if (!singleFrame) tvStopPlay();
+      tvStopPlay();
       return;
     }
 
-    // ── Timeline ──────────────────────────────────────────────────
     const t = +d.t_ms || 0;
     TV.t_ms = t;
     const pct = TV.duration_ms > 0 ? t / TV.duration_ms : 0;
     ge('tv-scrub').value = Math.round(pct * 1000);
     ge('tv-playhead-fill').style.width = (pct * 100).toFixed(2) + '%';
     ge('tv-t-cur').textContent = (t / 1000).toFixed(3) + 's';
+
+    // Sync vidéos natives (doucement — évite les micro-sauts)
+    tvSyncVideos(t);
     tvDrawCursorLine(t);
 
-    // ── Frames vidéo ───────────────────────────────────────────────
-    for (const side of ['head', 'left', 'right']) {
-      const b64 = d.frames?.[side];
-      if (b64 && b64.length > 10) {   // guard: non-empty
-        const img = ge(`tv-img-${side}`);
-        if (img) img.src = `data:image/jpeg;base64,${b64}`;
-        const timeEl = ge(`tv-vt-${side}`);
-        if (timeEl) timeEl.textContent = (t / 1000).toFixed(3) + 's';
-      }
-    }
-
-    // ── 3D tracker ────────────────────────────────────────────────
-    if (d.tracker && Object.keys(d.tracker).length && TV3D.initialized) {
+    // 3D tracker
+    if (TV3D.initialized) {
       tv3dUpdateCursor(t);
-      // Afficher les coordonnées
-      const coordsEl = ge('tv3d-coords');
-      if (coordsEl) {
-        const parts = ['head','left','right'].map(r => {
-          const p = d.tracker[r];
-          return p ? `${r}:(${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)})` : null;
-        }).filter(Boolean);
-        if (parts.length) {
-          coordsEl.style.display = '';
-          coordsEl.textContent = parts.join('   ');
+      // Afficher coordonnées depuis données interpolées dans TV.data
+      if (d.tracker && Object.keys(d.tracker).length) {
+        const coordsEl = ge('tv3d-coords');
+        if (coordsEl) {
+          const parts = ['head','left','right'].map(r => {
+            const p = d.tracker[r];
+            return p ? `${r}: (${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)})` : null;
+          }).filter(Boolean);
+          if (parts.length) { coordsEl.style.display = ''; coordsEl.textContent = parts.join('  |  '); }
         }
       }
-    }
-
-    // ── singleFrame : fermer proprement après le premier event ────
-    if (singleFrame) {
-      es.close();
-      if (TV.stream === es) { TV.stream = null; TV.streaming = false; }
     }
   };
 
   es.onerror = () => {
-    // Seulement agir si c'est bien le stream courant
     if (TV.stream !== es) return;
-    console.warn('[SSE] stream error');
     es.close();
-    TV.stream    = null;
-    TV.streaming = false;
-    if (!singleFrame && TV.playing) tvStopPlay();
+    TV.stream = null; TV.streaming = false;
+    if (TV.playing) tvStopPlay();
   };
 }
 
 function tvStopStream() {
-  if (TV.stream) {
-    TV.stream.close();
-    TV.stream = null;
-  }
+  if (TV.stream) { TV.stream.close(); TV.stream = null; }
   TV.streaming = false;
+}
+
+// Sync douce des vidéos : ne seek que si dérive > seuil
+function tvSyncVideos(t_ms) {
+  for (const side of ['head','left','right']) {
+    const v = ge(`tv-vid-${side}`);
+    if (!v || !TV.vidInfo[side]?.available || !TV.vidReady[side]) continue;
+    const t0 = TV.vidInfo[side].t0_s || 0;
+    const targetSec = t0 + t_ms / 1000;
+    // Si dérive > 150ms on force le seek (sinon la vidéo suit le playback naturellement)
+    if (Math.abs(v.currentTime - targetSec) > 0.15) {
+      v.currentTime = targetSec;
+    }
+    ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
+  }
 }
 
 // ── Playback ───────────────────────────────────────────────────────
@@ -2598,14 +2641,27 @@ function tvStartPlay() {
   TV.playing = true;
   ge('tv-play-btn').textContent = '⏸';
   ge('tv-play-btn').classList.add('playing');
-  // Lancer le stream SSE depuis la position courante
-  tvStartStream(TV.sessPath, TV.t_ms, false);
+  // Jouer toutes les vidéos natives en parallèle
+  for (const side of ['head','left','right']) {
+    const v = ge(`tv-vid-${side}`);
+    if (v && TV.vidInfo[side]?.available && TV.vidReady[side]) {
+      v.playbackRate = TV.playSpeed || 1;
+      v.play().catch(() => {});
+    }
+  }
+  // SSE pour tracker + gripper
+  tvStartStream(TV.sessPath, TV.t_ms);
 }
 
 function tvStopPlay() {
   TV.playing = false;
   tvStopStream();
   if (TV.playTimer) { cancelAnimationFrame(TV.playTimer); TV.playTimer = null; }
+  // Mettre en pause toutes les vidéos
+  for (const side of ['head','left','right']) {
+    const v = ge(`tv-vid-${side}`);
+    if (v && !v.paused) v.pause();
+  }
   const btn = ge('tv-play-btn');
   if (btn) { btn.textContent = '▶'; btn.classList.remove('playing'); }
 }
@@ -3466,8 +3522,12 @@ function tv3dAnimate() {
 }
 
 function tv3dBuild() {
+  if (!TV3D.initialized) return;
   const data = TV.data?.tracker;
-  if (!data) return;
+  if (!data?.t_ms?.length) {
+    console.warn('[3D] pas de données tracker');
+    return;
+  }
 
   // Supprimer anciens objets de trajectoire
   ['head','left','right'].forEach(role => {
@@ -3475,25 +3535,35 @@ function tv3dBuild() {
     if (TV3D.cursors[role])   { TV3D.scene.remove(TV3D.cursors[role]);   TV3D.cursors[role]   = null; }
   });
 
-  // Calculer centroïde pour centrer la scène
+  // Vérifier quels trackers ont des données XYZ
+  const roles = ['head','left','right'].filter(role =>
+    data[`${role}_x`]?.length && data[`${role}_y`]?.length && data[`${role}_z`]?.length
+  );
+  if (!roles.length) {
+    console.warn('[3D] colonnes x/y/z absentes dans tracker data. Clés:', Object.keys(data));
+    ge('tv3d-empty-msg').style.display = '';
+    ge('tv3d-empty-msg').textContent = 'Données XYZ manquantes';
+    return;
+  }
+  ge('tv3d-empty-msg').style.display = 'none';
+
+  // Calculer centroïde
   let cx=0, cy=0, cz=0, count=0;
-  ['head','left','right'].forEach(role => {
+  roles.forEach(role => {
     const xs = data[`${role}_x`], ys = data[`${role}_y`], zs = data[`${role}_z`];
-    if (!xs) return;
-    xs.forEach((v,i) => { cx += v; cy += ys[i]; cz += zs[i]; count++; });
+    for (let i=0; i<xs.length; i++) { cx+=xs[i]; cy+=ys[i]; cz+=zs[i]; count++; }
   });
   if (count > 0) { cx/=count; cy/=count; cz/=count; }
   TV3D.target = {x:cx, y:cy, z:cz};
 
-  // Estimer échelle pour adapter la caméra
+  // Estimer échelle
   let maxDist = 0.01;
-  ['head','left','right'].forEach(role => {
+  roles.forEach(role => {
     const xs = data[`${role}_x`], ys = data[`${role}_y`], zs = data[`${role}_z`];
-    if (!xs) return;
-    xs.forEach((v,i) => {
-      const d = Math.sqrt((v-cx)**2+(ys[i]-cy)**2+(zs[i]-cz)**2);
+    for (let i=0; i<xs.length; i++) {
+      const d = Math.sqrt((xs[i]-cx)**2+(ys[i]-cy)**2+(zs[i]-cz)**2);
       if (d > maxDist) maxDist = d;
-    });
+    }
   });
   TV3D.spherical.r = maxDist * 3.5;
 
@@ -3501,42 +3571,44 @@ function tv3dBuild() {
   TV3D.scene.children.filter(c => c.name==='grid').forEach(g => TV3D.scene.remove(g));
   const gs = maxDist * 4;
   const grid = new THREE.GridHelper(gs, 20, 0x252545, 0x1a1a36);
-  grid.position.set(cx, cy - maxDist, cz);
+  grid.position.set(cx, Math.min(cy, cy - maxDist * 0.5), cz);
   grid.name = 'grid';
   TV3D.scene.add(grid);
 
-  // Construire trajectoires
-  ['head','left','right'].forEach(role => {
-    const xs = data[`${role}_x`], ys = data[`${role}_y`], zs = data[`${role}_z`];
-    if (!xs?.length) return;
-
+  // Construire trajectoires + curseurs pour chaque role disponible
+  roles.forEach(role => {
     const [ax1, ax2, ax3] = tv3dGetAxes(role, data);
-    if (!ax1) return;
+    if (!ax1?.length) return;
 
+    // Downsample si trop de points (> 5000 pts → perf)
+    const stride = ax1.length > 5000 ? Math.ceil(ax1.length / 5000) : 1;
     const pts = [];
-    for (let i = 0; i < ax1.length; i++) {
+    for (let i = 0; i < ax1.length; i += stride) {
       pts.push(new THREE.Vector3(ax1[i], ax2[i], ax3[i]));
     }
+    // S'assurer que le dernier point est inclus
+    if (stride > 1) pts.push(new THREE.Vector3(ax1.at(-1), ax2.at(-1), ax3.at(-1)));
 
-    // Ligne de trajectoire
     const geo  = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat  = new THREE.LineBasicMaterial({ color: TV3D_COLORS[role], linewidth: 1, opacity: 0.6, transparent: true });
+    const mat  = new THREE.LineBasicMaterial({ color: TV3D_COLORS[role], linewidth: 1.5, opacity: 0.7, transparent: true });
     const line = new THREE.Line(geo, mat);
     TV3D.scene.add(line);
     TV3D.trajLines[role] = line;
 
-    // Sphère curseur
-    const sGeo  = new THREE.SphereGeometry(maxDist * 0.04, 12, 12);
-    const sMat  = new THREE.MeshPhongMaterial({ color: TV3D_COLORS[role], emissive: TV3D_COLORS[role], emissiveIntensity: 0.4 });
+    const sphereR = Math.max(0.005, maxDist * 0.04);
+    const sGeo  = new THREE.SphereGeometry(sphereR, 12, 12);
+    const sMat  = new THREE.MeshPhongMaterial({ color: TV3D_COLORS[role], emissive: TV3D_COLORS[role], emissiveIntensity: 0.5 });
     const sphere = new THREE.Mesh(sGeo, sMat);
-    sphere.position.copy(pts[0]);
+    sphere.position.set(ax1[0], ax2[0], ax3[0]);
     TV3D.scene.add(sphere);
     TV3D.cursors[role] = sphere;
   });
 
+  console.log(`[3D] construit: ${roles.length} trackers, maxDist=${maxDist.toFixed(3)}`);
   tv3dApplyCamera();
   tv3dApplyMode();
   tv3dUpdateLegend();
+  TV3D.needsRebuild = false;
 }
 
 function tv3dGetAxes(role, data) {
@@ -3547,16 +3619,19 @@ function tv3dGetAxes(role, data) {
 }
 
 function tv3dUpdateCursor(t_ms) {
+  if (!TV3D.initialized) return;
   const data = TV.data?.tracker;
-  if (!data?.t_ms) return;
+  if (!data?.t_ms?.length) return;
   const ts = data.t_ms;
-  // Trouver l'index le plus proche
-  let best = 0, bestD = Infinity;
-  for (let i = 0; i < ts.length; i++) {
-    const d = Math.abs(ts[i] - t_ms);
-    if (d < bestD) { bestD = d; best = i; }
-    else if (d > bestD + 100) break;
+
+  // Recherche binaire de l'index le plus proche
+  let lo = 0, hi = ts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ts[mid] < t_ms) lo = mid + 1; else hi = mid;
   }
+  // Comparer avec le voisin gauche
+  const best = (lo > 0 && Math.abs(ts[lo-1] - t_ms) < Math.abs(ts[lo] - t_ms)) ? lo - 1 : lo;
 
   ['head','left','right'].forEach(role => {
     const sphere = TV3D.cursors[role];
@@ -3566,18 +3641,15 @@ function tv3dUpdateCursor(t_ms) {
     sphere.position.set(ax1[best], ax2[best], ax3[best]);
   });
 
-  // Coordonnées affichées
   const coordEl = ge('tv3d-coords');
+  if (!coordEl) return;
   const parts = [];
   ['head','left','right'].forEach(role => {
     const [ax1, ax2, ax3] = tv3dGetAxes(role, data);
     if (!ax1 || best >= ax1.length) return;
     parts.push(`${role}: (${ax1[best].toFixed(3)}, ${ax2[best].toFixed(3)}, ${ax3[best].toFixed(3)})`);
   });
-  if (parts.length) {
-    coordEl.textContent = parts.join('  |  ');
-    coordEl.style.display = '';
-  }
+  if (parts.length) { coordEl.textContent = parts.join('  |  '); coordEl.style.display = ''; }
 }
 
 function tv3dApplyMode() {

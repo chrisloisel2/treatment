@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1281,6 +1281,103 @@ async def session_data(session_path: str):
         raise HTTPException(500, str(e))
 
 
+@app.get("/api/session/video/{side}")
+async def session_video(side: str, session_path: str, request: Request):
+    """
+    Sert le fichier mp4 brut avec support HTTP Range pour lecture native <video>.
+    side : head | left | right
+    """
+    if side not in ("head", "left", "right"):
+        raise HTTPException(400, "side doit être head, left ou right")
+    sess = Path(session_path)
+    mp4 = sess / "videos" / f"{side}.mp4"
+    if not mp4.exists():
+        raise HTTPException(404, f"Vidéo {side} introuvable")
+
+    file_size = mp4.stat().st_size
+    range_header = request.headers.get("range")
+
+    if range_header:
+        # Parse "bytes=start-end"
+        try:
+            ranges = range_header.replace("bytes=", "").split("-")
+            start = int(ranges[0])
+            end   = int(ranges[1]) if ranges[1] else file_size - 1
+        except Exception:
+            raise HTTPException(416, "Range invalide")
+        end = min(end, file_size - 1)
+        chunk_size = end - start + 1
+
+        def _iter_file(path, s, length):
+            with open(path, "rb") as f:
+                f.seek(s)
+                remaining = length
+                while remaining > 0:
+                    data = f.read(min(65536, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        return StreamingResponse(
+            _iter_file(mp4, start, chunk_size),
+            status_code=206,
+            media_type="video/mp4",
+            headers={
+                "Content-Range":  f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges":  "bytes",
+                "Content-Length": str(chunk_size),
+                "Cache-Control":  "no-cache",
+            },
+        )
+
+    # Pas de Range → envoyer tout
+    return FileResponse(str(mp4), media_type="video/mp4", headers={
+        "Accept-Ranges":  "bytes",
+        "Content-Length": str(file_size),
+        "Cache-Control":  "no-cache",
+    })
+
+
+@app.get("/api/session/video_info")
+async def session_video_info(session_path: str):
+    """
+    Retourne pour chaque caméra le t0 en secondes (offset entre start_time_ns de la session
+    et la première capture_time du JSONL), pour synchroniser video.currentTime avec la timeline.
+    """
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    meta_path = sess / "metadata.json"
+    start_ns = 0
+    if meta_path.exists():
+        try:
+            start_ns = int(json.loads(meta_path.read_text()).get("start_time_ns", 0))
+        except Exception:
+            pass
+
+    start_ms = start_ns / 1_000_000
+    result = {}
+    for side in ("head", "left", "right"):
+        jl = sess / "videos" / f"{side}.jsonl"
+        mp4 = sess / "videos" / f"{side}.mp4"
+        if not jl.exists() or not mp4.exists():
+            continue
+        rows = _parse_jsonl(jl)
+        if not rows:
+            continue
+        first_capture_ms = float(rows[0]["capture_time"])
+        # offset = temps de la première frame relative à start_ns de session (en secondes)
+        t0_s = (first_capture_ms - start_ms) / 1000.0
+        result[side] = {
+            "t0_s": t0_s,
+            "available": True,
+        }
+
+    return JSONResponse(result)
+
+
 @app.get("/api/session/frame")
 async def session_frame(session_path: str, side: str, t_ms: float):
     """
@@ -1307,16 +1404,15 @@ async def session_frame(session_path: str, side: str, t_ms: float):
 
 
 @app.get("/api/session/stream")
-async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 0.0):
+async def session_stream(session_path: str, fps: float = 30.0, t_start: float = 0.0):
     """
-    SSE stream : envoie en boucle les 3 frames vidéo (base64 JPEG) + positions
-    tracker + grippers à chaque instant t_ms, à fps Hz.
+    SSE stream léger : uniquement tracker + grippers (pas de frames vidéo).
+    Les vidéos sont lues nativement par <video> via /api/session/video/{side}.
 
     Chaque event data = JSON :
     {
       "t_ms": float,
       "duration_ms": float,
-      "frames": {"head": "<b64>", "left": "<b64>", "right": "<b64>"},
       "tracker": {"head": [x,y,z], "left": [x,y,z], "right": [x,y,z]},
       "gripper": {"left": float|null, "right": float|null}
     }
@@ -1326,10 +1422,9 @@ async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
 
-    fps = max(1.0, min(fps, 30.0))
+    fps = max(1.0, min(fps, 60.0))
     interval = 1.0 / fps
 
-    # Pré-charger les séries temporelles pour interpolation rapide
     try:
         ts_data = _load_session_timeseries(session_path)
     except Exception as e:
@@ -1362,7 +1457,6 @@ async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 
             grip_data[side] = (gt, ga)
 
     def _interp(t_arr, v_arr, t):
-        """Interpolation linéaire ou valeur la plus proche."""
         if t_arr is None or v_arr is None:
             return None
         idx = int(np.searchsorted(t_arr, t))
@@ -1378,23 +1472,6 @@ async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 
     async def _generate():
         t_ms = t_start
         while True:
-            # Frames vidéo en parallèle via executor
-            loop = asyncio.get_event_loop()
-            tasks = {
-                side: loop.run_in_executor(
-                    None, _extract_video_frame, session_path, side, t_ms
-                )
-                for side in ("head", "left", "right")
-            }
-            frames_raw = {}
-            for side, task in tasks.items():
-                raw = await task
-                if raw:
-                    frames_raw[side] = base64.b64encode(raw).decode()
-                else:
-                    frames_raw[side] = ""
-
-            # Positions tracker interpolées
             tracker_pos = {}
             if trk_t is not None:
                 for role, (xs, ys, zs) in trk_data.items():
@@ -1404,7 +1481,6 @@ async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 
                         _interp(trk_t, zs, t_ms),
                     ]
 
-            # Grippers interpolés
             gripper_val = {}
             for side, (gt, ga) in grip_data.items():
                 gripper_val[side] = _interp(gt, ga, t_ms)
@@ -1412,13 +1488,12 @@ async def session_stream(session_path: str, fps: float = 10.0, t_start: float = 
             payload = {
                 "t_ms":        t_ms,
                 "duration_ms": duration_ms,
-                "frames":      frames_raw,
                 "tracker":     tracker_pos,
                 "gripper":     gripper_val,
             }
             yield f"data: {json.dumps(payload)}\n\n"
 
-            t_ms += interval * 1000.0  # avancer de 1 frame
+            t_ms += interval * 1000.0
             if t_ms >= duration_ms:
                 yield f"data: {json.dumps({'done': True, 't_ms': duration_ms})}\n\n"
                 return

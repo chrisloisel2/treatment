@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SERVICE_NAME="treatment"
-USER_NAME="ia"
-GROUP_NAME="ia"
+USER_NAME="exoria"
+GROUP_NAME="exoria"
 
 APP_DIR="/home/exoria/treatment"
 WORK_DIR="/home/exoria/workbench"

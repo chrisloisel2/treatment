@@ -562,26 +562,11 @@ _loop: asyncio.AbstractEventLoop = None
 
 @app.on_event("startup")
 async def _startup():
-    global _loop, _watcher
+    global _loop
     _loop = asyncio.get_running_loop()
     _load_jobs_from_disk()
-    # Démarrer le watcher automatiquement au lancement du serveur
-    try:
-        from pipeline.pipeline import IngestionWatcher
-        def _startup_log(msg, level="INFO"):
-            print(f"[Watcher] [{level}] {msg}", flush=True)
-        _watcher = IngestionWatcher(
-            params             = {"resample_ms": 5.0, "max_lag_ms": 400.0, "window_ms": 2200.0},
-            write_mode         = False,
-            delete_after_store = False,
-            log_callback       = _startup_log,
-            poll_interval      = 8.0,
-            auto_start         = True,
-            watch_dir          = DEFAULT_WATCH_DIR,
-        )
-        _watcher.start()
-    except Exception:
-        pass  # ne pas bloquer le démarrage si le watcher échoue
+    # Le watcher NE démarre PAS automatiquement.
+    # Il doit être activé explicitement depuis l'interface (POST /api/watcher/start).
 
 
 # ──────────────────────────────────────────────────────────────────────────────

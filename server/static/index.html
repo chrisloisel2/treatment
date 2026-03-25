@@ -669,6 +669,7 @@ td.c{text-align:center}
         <select id="tv-sess-sel" class="tv-sel" style="flex:1" onchange="tvSelectSession(this.value)">
           <option value="">— Sélectionner —</option>
         </select>
+        <button class="btn" onclick="scanAndShow()" title="Scanner le dossier" style="font-size:.8rem;padding:4px 9px;flex-shrink:0">⟳</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
         <label style="font-size:.78rem;color:var(--text2)">Trackers</label>
@@ -2729,6 +2730,8 @@ function nav(name, btn) {
     requestAnimationFrame(() => {
       Object.values(TV.charts).forEach(ch => ch?.resize());
     });
+    // Scan auto si aucune session chargée
+    if (!S.sessions.length) scanAndShow();
   }
 }
 

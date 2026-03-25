@@ -1,0 +1,9 @@
+# SyncML Studio — dépendances GUI
+PyQt6>=6.6.0
+matplotlib>=3.8.0
+
+# Moteur IA (déjà requis par IA.py)
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+torch>=2.0.0

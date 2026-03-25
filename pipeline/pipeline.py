@@ -4,13 +4,13 @@
 Pipeline d'ingestion big data — 8 étapes.
 
 Chemins :
-  /home/exoria/ingest    — source ET espace de travail. Les sessions sont déposées
+  /home/ia/workbench/    — source ET espace de travail. Les sessions sont déposées
                    directement ici par l'opérateur. Tout le traitement se fait
                    sur place, en mode safe (aucune suppression sans confirmation).
  /home/ia/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
 
 Étapes :
-  1. DETECT         — Vérifie l'intégrité minimale de la session dans /home/exoria/ingest.
+  1. DETECT         — Vérifie l'intégrité minimale de la session dans /home/ia/workbench/.
   2. ROTATE         — Rotation 180° des vidéos (FFmpeg, idempotente)
   3. TRACKER        — Validation du fichier tracker_positions.csv
   4. VIDEO          — Validation des vidéos et fichiers JSONL
@@ -22,9 +22,9 @@ Chemins :
   8. STORE          — Copie vers/home/ia/silver (seulement si write_mode=True)
 
 Chaque session traverse les étapes indépendamment.
-L'état de chaque étape est persisté dans /home/exoria/ingest/<session>/pipeline_state.json.
+L'état de chaque étape est persisté dans /home/ia/workbench//<session>/pipeline_state.json.
 Tout rollback restaure les .bak créés automatiquement.
-Aucune suppression dans /home/exoria/ingest sauf si delete_after_store=True (opt-in explicite).
+Aucune suppression dans /home/ia/workbench/ sauf si delete_after_store=True (opt-in explicite).
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ if str(_ROOT) not in sys.path:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Chemins fixes ─────────────────────────────────────────────────────────────
-INGEST_DIR   = Path("/home/exoria/ingest")  # source ET espace de travail (déposé par l'opérateur)
+INGEST_DIR   = Path("/home/ia/workbench/")  # source ET espace de travail (déposé par l'opérateur)
 SILVER_DIR   = Path("/home/exoria/silver")     # sortie finale validée (écriture explicite)
 MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
 # Alias pour compatibilité rétrograde
@@ -122,14 +122,14 @@ class StepState:
 @dataclass
 class SessionPipelineState:
     session_name:   str
-    session_path:   str           # chemin dans /home/exoria/ingest (source et espace de travail)
+    session_path:   str           # chemin dans /home/ia/workbench/ (source et espace de travail)
     created_at:  str = field(default_factory=lambda: _now())
     updated_at:  str = field(default_factory=lambda: _now())
     current_step: str = "detect"
     finished:    bool = False
     success:     bool = False
     write_mode:  bool = False        # si True, copie vers/home/ia/silver après validation
-    delete_after_store: bool = False # si True, supprime de /home/exoria/ingest après store
+    delete_after_store: bool = False # si True, supprime de /home/ia/workbench/ après store
     error:       Optional[str] = None
     steps:       Dict[str, StepState] = field(default_factory=dict)
     # Résultats pour accès rapide
@@ -971,12 +971,12 @@ def step_validate(state: SessionPipelineState, log: PipelineLogger,
 
 def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     """
-    Étape 8 — Copie la session traitée de /home/exoria/ingest vers/home/ia/silver.
+    Étape 8 — Copie la session traitée de /home/ia/workbench/ vers/home/ia/silver.
     N'est appelée que si write_mode=True dans l'état de session.
     Exclut les fichiers temporaires (.bak, locks, backups).
-    Si delete_after_store=True, supprime la session de /home/exoria/ingest après copie.
+    Si delete_after_store=True, supprime la session de /home/ia/workbench/ après copie.
     """
-    sess        = Path(state.session_path)   # dans /home/exoria/ingest
+    sess        = Path(state.session_path)   # dans /home/ia/workbench/
     silver_path = SILVER_DIR / sess.name
 
     if not SILVER_DIR.exists():
@@ -1028,15 +1028,15 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
         "OK",
     )
 
-    # Suppression de /home/exoria/ingest seulement si opt-in explicite
+    # Suppression de /home/ia/workbench/ seulement si opt-in explicite
     deleted = False
     if state.delete_after_store:
         log(f"Suppression de {sess} (delete_after_store=True)…", "WARN")
         shutil.rmtree(sess, ignore_errors=True)
         deleted = True
-        log("Session supprimée de /home/exoria/ingest", "OK")
+        log("Session supprimée de /home/ia/workbench/", "OK")
     else:
-        log("Session conservée dans /home/exoria/ingest (delete_after_store=False)", "INFO")
+        log("Session conservée dans /home/ia/workbench/ (delete_after_store=False)", "INFO")
 
     return {
         "silver_path": str(silver_path),
@@ -1091,8 +1091,8 @@ class PipelineRunner:
 
         if not sess.exists():
             raise FileNotFoundError(
-                f"Session introuvable dans /home/exoria/ingest : {sess}\n"
-                "Déposez la session dans /home/exoria/ingest avant de lancer la pipeline."
+                f"Session introuvable dans /home/ia/workbench/ : {sess}\n"
+                "Déposez la session dans /home/ia/workbench/ avant de lancer la pipeline."
             )
 
         # Charger ou créer l'état dans le dossier session
@@ -1182,7 +1182,7 @@ class PipelineRunner:
                 else:
                     state.steps["store"].status  = StepStatus.SKIPPED
                     state.steps["store"].message = "write_mode désactivé — aucune écriture vers/home/ia/silver"
-                    self.log("Store ignoré (write_mode=False) — données disponibles dans /home/exoria/ingest", "INFO")
+                    self.log("Store ignoré (write_mode=False) — données disponibles dans /home/ia/workbench/", "INFO")
 
             state.finished = True
             state.success  = True
@@ -1289,7 +1289,7 @@ class _StepContext:
 
 class IngestionWatcher:
     """
-    Surveille /home/exoria/ingest et lance la pipeline automatiquement
+    Surveille /home/ia/workbench/ et lance la pipeline automatiquement
     sur les nouvelles sessions déposées par l'opérateur.
     Si write_mode=True, les sessions validées sont copiées vers/home/ia/silver.
     """
@@ -1346,7 +1346,7 @@ class IngestionWatcher:
             time.sleep(self.poll_interval)
 
     def _scan(self):
-        """Scanne /home/exoria/ingest pour de nouvelles sessions déposées."""
+        """Scanne /home/ia/workbench/ pour de nouvelles sessions déposées."""
         if not self.watch_dir.exists():
             return
         for child in sorted(self.watch_dir.iterdir()):
@@ -1403,7 +1403,7 @@ class IngestionWatcher:
         return list(self._seen)
 
     def enqueue(self, session_path: str):
-        """Enfile manuellement une session (chemin dans /home/exoria/ingest)."""
+        """Enfile manuellement une session (chemin dans /home/ia/workbench/)."""
         with self._lock:
             self._queue.append(Path(session_path))
 
@@ -1546,7 +1546,7 @@ if __name__ == "__main__":
         description=(
             "Pipeline d'ingestion big data\n"
             "\nSous-commandes :\n"
-            "  run        — traite une ou toutes les sessions de /home/exoria/ingest\n"
+            "  run        — traite une ou toutes les sessions de /home/ia/workbench/\n"
             "  preprocess — génère les flux optiques sur un dataset local\n"
             "  train      — entraîne le modèle IA sur un dataset local\n"
         ),
@@ -1564,7 +1564,7 @@ if __name__ == "__main__":
     p_run.add_argument("--write", action="store_true", default=False,
                        help=f"Copier vers {SILVER_DIR} après validation")
     p_run.add_argument("--delete-after-store", action="store_true", default=False,
-                       help="Supprimer de /home/exoria/ingest après copie (requiert --write)")
+                       help="Supprimer de /home/ia/workbench/ après copie (requiert --write)")
     p_run.add_argument("--resample", type=float, default=5.0,    help="Rééchantillonnage (ms)")
     p_run.add_argument("--max-lag",  type=float, default=400.0,  help="Lag max recherché (ms)")
     p_run.add_argument("--window",   type=float, default=2200.0, help="Fenêtre d'analyse (ms)")
@@ -1633,7 +1633,7 @@ if __name__ == "__main__":
     # ── run ────────────────────────────────────────────────────────────────
     run_errors = []
     if not INGEST_DIR.exists():
-        run_errors.append(f"/home/exoria/ingest non accessible : {INGEST_DIR}")
+        run_errors.append(f"/home/ia/workbench/ non accessible : {INGEST_DIR}")
     if args.write and not SILVER_DIR.exists():
         run_errors.append(f"/home/ia/silver non accessible : {SILVER_DIR}  (requis par --write)")
     if args.delete_after_store and not args.write:
@@ -1650,7 +1650,7 @@ if __name__ == "__main__":
         "label_min_confidence": args.label_min_confidence,
     }
 
-    # ── Résolution des sessions à traiter (depuis /home/exoria/ingest) ────────────
+    # ── Résolution des sessions à traiter (depuis /home/ia/workbench/) ────────────
     if args.session:
         source_paths = [INGEST_DIR / args.session]
         if not source_paths[0].is_dir():

@@ -4,9 +4,9 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /mnt/datasets  → source brute, lecture seule
+  /home/ia/workbench  → source brute, lecture seule
   /home/exoria/ingest    → espace de travail (copie de travail)
-  /mnt/silver    → sortie finale validée (seulement si write_mode=True)
+ /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
   - API REST JSON pour automatisation / orchestrateurs (Airflow, Prefect, etc.)
@@ -107,11 +107,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/storage_nfs/ingest")
-    SILVER_DIR = Path("/mnt/silver")
+    INGEST_DIR = Path("/home/ia/workbench")
+    SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/storage_nfs/ingest"
+DEFAULT_WATCH_DIR = "/home/ia/workbench"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -787,7 +787,7 @@ async def health():
 
 @app.post("/api/scan")
 async def scan():
-    """Lance un scan asynchrone de /mnt/datasets."""
+    """Lance un scan asynchrone de /home/ia/workbench."""
     job = _new_job("scan")
     threading.Thread(target=_worker_scan, args=(job,), daemon=True).start()
     return {"job_id": job.id}

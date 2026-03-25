@@ -7,7 +7,7 @@ Chemins :
   /home/exoria/ingest    — source ET espace de travail. Les sessions sont déposées
                    directement ici par l'opérateur. Tout le traitement se fait
                    sur place, en mode safe (aucune suppression sans confirmation).
-  /mnt/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
+ /home/ia/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
 
 Étapes :
   1. DETECT         — Vérifie l'intégrité minimale de la session dans /home/exoria/ingest.
@@ -19,7 +19,7 @@ Chemins :
   5. FLUX_CSV       — Génération des flux optiques 1D (signals.py flux, Farneback)
   6. IA_SYNC        — Synchronisation fine par deep learning (sync.py)
   7. VALIDATE       — Validation de cohérence + rollback si score insuffisant
-  8. STORE          — Copie vers /mnt/silver (seulement si write_mode=True)
+  8. STORE          — Copie vers/home/ia/silver (seulement si write_mode=True)
 
 Chaque session traverse les étapes indépendamment.
 L'état de chaque étape est persisté dans /home/exoria/ingest/<session>/pipeline_state.json.
@@ -128,7 +128,7 @@ class SessionPipelineState:
     current_step: str = "detect"
     finished:    bool = False
     success:     bool = False
-    write_mode:  bool = False        # si True, copie vers /mnt/silver après validation
+    write_mode:  bool = False        # si True, copie vers/home/ia/silver après validation
     delete_after_store: bool = False # si True, supprime de /home/exoria/ingest après store
     error:       Optional[str] = None
     steps:       Dict[str, StepState] = field(default_factory=dict)
@@ -971,7 +971,7 @@ def step_validate(state: SessionPipelineState, log: PipelineLogger,
 
 def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     """
-    Étape 8 — Copie la session traitée de /home/exoria/ingest vers /mnt/silver.
+    Étape 8 — Copie la session traitée de /home/exoria/ingest vers/home/ia/silver.
     N'est appelée que si write_mode=True dans l'état de session.
     Exclut les fichiers temporaires (.bak, locks, backups).
     Si delete_after_store=True, supprime la session de /home/exoria/ingest après copie.
@@ -981,7 +981,7 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
 
     if not SILVER_DIR.exists():
         raise FileNotFoundError(
-            f"/mnt/silver non accessible : {SILVER_DIR}\n"
+            f"/home/ia/silver non accessible : {SILVER_DIR}\n"
             "Vérifiez que le montage est actif avant d'activer le mode écriture."
         )
 
@@ -1173,7 +1173,7 @@ class PipelineRunner:
                     state.mean_conf  = ctx.result.get("avg_score", 0.0) or 0.0
                     state.shifts     = ctx.result.get("shifts", {})
 
-            # ── Étape 8 : Store vers /mnt/silver ──
+            # ── Étape 8 : Store vers/home/ia/silver ──
             if self._should_run(state, "store"):
                 if state.write_mode:
                     with self._step_ctx(state, "store") as ctx:
@@ -1181,7 +1181,7 @@ class PipelineRunner:
                         state.silver_path = ctx.result.get("silver_path")
                 else:
                     state.steps["store"].status  = StepStatus.SKIPPED
-                    state.steps["store"].message = "write_mode désactivé — aucune écriture vers /mnt/silver"
+                    state.steps["store"].message = "write_mode désactivé — aucune écriture vers/home/ia/silver"
                     self.log("Store ignoré (write_mode=False) — données disponibles dans /home/exoria/ingest", "INFO")
 
             state.finished = True
@@ -1291,7 +1291,7 @@ class IngestionWatcher:
     """
     Surveille /home/exoria/ingest et lance la pipeline automatiquement
     sur les nouvelles sessions déposées par l'opérateur.
-    Si write_mode=True, les sessions validées sont copiées vers /mnt/silver.
+    Si write_mode=True, les sessions validées sont copiées vers/home/ia/silver.
     """
 
     def __init__(
@@ -1635,7 +1635,7 @@ if __name__ == "__main__":
     if not INGEST_DIR.exists():
         run_errors.append(f"/home/exoria/ingest non accessible : {INGEST_DIR}")
     if args.write and not SILVER_DIR.exists():
-        run_errors.append(f"/mnt/silver non accessible : {SILVER_DIR}  (requis par --write)")
+        run_errors.append(f"/home/ia/silver non accessible : {SILVER_DIR}  (requis par --write)")
     if args.delete_after_store and not args.write:
         run_errors.append("--delete-after-store requiert --write")
     if run_errors:

@@ -511,7 +511,7 @@ class InferenceWorker(QThread):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class IngestionPanel(QWidget):
-    sessions_changed = pyqtSignal(list)  # session list (paths in /mnt/datasets)
+    sessions_changed = pyqtSignal(list)  # session list (paths in /home/ia/workbench)
 
     def __init__(self, log: LogWidget):
         super().__init__()
@@ -1353,16 +1353,16 @@ class PipelinePanel(QWidget):
         grp_sess = QGroupBox("Session à traiter")
         vl = QVBoxLayout(grp_sess)
         self.combo_session = QComboBox()
-        self.combo_session.setPlaceholderText("Choisir une session dans /mnt/datasets…")
+        self.combo_session.setPlaceholderText("Choisir une session dans /home/ia/workbench…")
         vl.addWidget(self.combo_session)
         layout.addWidget(grp_sess)
 
         # ── Options pipeline ──
         grp_opts = QGroupBox("Options")
         fl = QFormLayout(grp_opts)
-        self.chk_write_mode = QCheckBox("Mode écriture — copier vers /mnt/silver")
+        self.chk_write_mode = QCheckBox("Mode écriture — copier vers/home/ia/silver")
         self.chk_write_mode.setToolTip(
-            "Si coché, la session validée sera copiée dans /mnt/silver après traitement."
+            "Si coché, la session validée sera copiée dans/home/ia/silver après traitement."
         )
         self.chk_delete_after = QCheckBox("Supprimer de /home/exoria/ingest après store")
         self.chk_delete_after.setToolTip(
@@ -1449,7 +1449,7 @@ class PipelinePanel(QWidget):
             from PyQt6.QtWidgets import QMessageBox
             ans = QMessageBox.warning(
                 self, "Confirmation suppression",
-                f"La session sera supprimée de /home/exoria/ingest après copie vers /mnt/silver.\n\n"
+                f"La session sera supprimée de /home/exoria/ingest après copie vers/home/ia/silver.\n\n"
                 f"Session : {Path(source_path).name}\n\nContinuer ?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -1631,7 +1631,7 @@ def main():
     win.log.log("SyncML Studio démarré.", "OK")
     win.log.log("1. Déposez vos sessions dans /home/exoria/ingest, puis scannez dans « Ingestion ».", "DIM")
     win.log.log("2. Lancez la pipeline dans « Pipeline » (mode safe par défaut).", "DIM")
-    win.log.log("   → Cochez « Mode écriture » pour produire le résultat dans /mnt/silver.", "DIM")
+    win.log.log("   → Cochez « Mode écriture » pour produire le résultat dans/home/ia/silver.", "DIM")
     win.log.log("   → Cochez « Supprimer de ingest » pour nettoyer après store (opt-in).", "DIM")
     win.log.log("3. Entraînez le modèle dans « Entraînement ».", "DIM")
     win.log.log("4. Estimez les offsets dans « Inférence ».", "DIM")

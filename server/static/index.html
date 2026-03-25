@@ -1150,70 +1150,60 @@
 			justify-content: center;
 		}
 
-		#steps-modal-backdrop.open {
-			display: flex
-		}
+		#steps-modal-backdrop.open { display: flex }
 
 		#steps-modal {
 			background: var(--bg2);
 			border: 1px solid var(--border);
 			border-radius: 8px;
-			padding: 20px 24px;
-			min-width: 340px;
-			max-width: 460px;
-			width: 90vw;
+			padding: 18px 20px;
+			min-width: 320px;
+			max-width: 480px;
+			width: 92vw;
 			box-shadow: 0 8px 32px #0008;
 		}
 
-		#steps-modal h3 {
-			margin: 0 0 4px;
-			font-size: .9rem;
-			color: var(--text)
-		}
+		#steps-modal h3 { margin: 0 0 3px; font-size: .88rem; color: var(--text) }
+		#steps-modal .sm-sub { font-size: .72rem; color: var(--text3); margin-bottom: 12px }
+		#steps-modal .sm-section { font-size: .7rem; font-weight: 700; color: var(--text3);
+			text-transform: uppercase; letter-spacing: .06em; margin-bottom: 7px }
 
-		#steps-modal .sm-sub {
-			font-size: .74rem;
-			color: var(--text3);
-			margin-bottom: 14px
+		/* Boutons action rapide */
+		.step-quick-grid {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 6px;
+			margin-bottom: 14px;
 		}
+		.step-quick-btn {
+			display: flex; flex-direction: column; align-items: center; justify-content: center;
+			gap: 2px; padding: 8px 4px;
+			background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+			font-size: .72rem; color: var(--text2); cursor: pointer;
+			transition: background .12s, border-color .12s, color .12s;
+			text-align: center; line-height: 1.3;
+		}
+		.step-quick-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff }
+		.step-quick-btn .sq-ico { font-size: 1rem; line-height: 1 }
 
+		/* Checkboxes combinaison */
 		.step-chk-row {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 6px 10px;
-			margin-bottom: 16px
+			display: flex; flex-wrap: wrap; gap: 5px 8px; margin-bottom: 12px
 		}
-
 		.step-chk-row label {
-			display: flex;
-			align-items: center;
-			gap: 5px;
-			font-size: .78rem;
-			color: var(--text2);
-			background: var(--bg3);
-			border: 1px solid var(--border);
-			border-radius: 4px;
-			padding: 4px 8px;
-			cursor: pointer;
-			user-select: none;
-			transition: background .15s, border-color .15s;
+			display: flex; align-items: center; gap: 4px;
+			font-size: .74rem; color: var(--text2);
+			background: var(--bg3); border: 1px solid var(--border);
+			border-radius: 4px; padding: 3px 8px;
+			cursor: pointer; user-select: none;
+			transition: background .12s, border-color .12s;
 		}
-
 		.step-chk-row label:has(input:checked) {
-			background: var(--accent);
-			border-color: var(--accent);
-			color: #fff;
+			background: var(--accent); border-color: var(--accent); color: #fff;
 		}
+		.step-chk-row label input { display: none }
 
-		.step-chk-row label input {
-			display: none
-		}
-
-		.sm-btns {
-			display: flex;
-			gap: 8px;
-			justify-content: flex-end
-		}
+		.sm-btns { display: flex; gap: 8px; justify-content: flex-end }
 
 		/* Divider */
 		.div {
@@ -2391,6 +2381,17 @@
 							<button class="btn sm" onclick="deselAll()">Aucun</button>
 						</div>
 						<div id="sess-list"></div>
+						<div class="div" style="margin:10px 0 8px"></div>
+						<div style="display:flex;align-items:center;gap:8px">
+							<button class="btn p" id="btn-sess-run" onclick="openStepsModal('selected')" disabled>
+								▶ Lancer sur sélectionnées
+							</button>
+							<button class="btn d" id="btn-sess-rollback" onclick="rollbackSelected()" disabled>
+								↩ Rollback
+							</button>
+							<div style="flex:1"></div>
+							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0 sélectionnée(s)</span>
+						</div>
 					</div>
 				</div>
 
@@ -2912,17 +2913,25 @@
 	<!-- ══ Modale sélection étapes ══════════════════════════════════════ -->
 	<div id="steps-modal-backdrop" onclick="stepsModalClose(event)">
 		<div id="steps-modal">
-			<h3>Étapes à exécuter</h3>
+			<h3>Action pipeline</h3>
 			<div class="sm-sub" id="steps-modal-sub">Sessions sélectionnées</div>
+
+			<!-- Action rapide : 1 clic = lancer cette seule étape -->
+			<div class="sm-section">Action unique</div>
+			<div class="step-quick-grid" id="steps-quick-grid"></div>
+
+			<div class="div" style="margin:12px 0 10px"></div>
+
+			<!-- Combinaison d'étapes -->
+			<div class="sm-section">Combinaison d'étapes</div>
 			<div class="step-chk-row" id="steps-chk-row"></div>
-			<div style="display:flex;gap:8px;margin-bottom:14px">
+			<div style="display:flex;gap:6px;margin-bottom:12px">
 				<button class="btn sm" onclick="stepsModalSelectAll()">Tout</button>
 				<button class="btn sm" onclick="stepsModalSelectNone()">Aucun</button>
-				<button class="btn sm" onclick="stepsModalSelectDefault()">Défaut</button>
 			</div>
 			<div class="sm-btns">
 				<button class="btn" onclick="stepsModalCancel()">Annuler</button>
-				<button class="btn p" onclick="stepsModalConfirm()">▶ Lancer</button>
+				<button class="btn p" onclick="stepsModalConfirm()">▶ Lancer sélection</button>
 			</div>
 		</div>
 	</div>
@@ -3172,9 +3181,18 @@
 		// Modale sélection étapes
 		// ══════════════════════════════════════════════════════════════════
 		const ALL_STEPS = ['detect', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store'];
-		const DEFAULT_STEPS = new Set(['detect', 'rotate', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate']);
+		const STEP_ICONS = {
+			detect: '🔍', rotate: '↻', tracker: '📡', video: '🎬',
+			verify_labels: '🏷', flux_csv: '〜', ia_sync: '🤖', validate: '✓', store: '💾',
+		};
 
 		let _stepsModalTarget = null; // 'selected' | 'all' | 'drawer'
+
+		function _stepsModalSessions() {
+			if (_stepsModalTarget === 'drawer' && S.drawerSess) return [S.drawerSess];
+			if (_stepsModalTarget === 'selected') return S.sessions.filter(s => S.selected.has(s.path));
+			return S.sessions;
+		}
 
 		function openStepsModal(target) {
 			if (target === 'selected' && !S.selected.size) { alert('Sélectionnez des sessions.'); return; }
@@ -3186,14 +3204,26 @@
 					? `${S.selected.size} session(s) sélectionnée(s)`
 					: `${S.sessions.length} session(s)`;
 			ge('steps-modal-sub').textContent = sub;
-			// Build checkboxes
-			const row = ge('steps-chk-row');
-			row.innerHTML = ALL_STEPS.map(s => `
-    <label>
-      <input type="checkbox" value="${s}" ${DEFAULT_STEPS.has(s) ? 'checked' : ''}>
-      ${STEP_LABELS[s] || s}
-    </label>`).join('');
+
+			// Grille action rapide
+			ge('steps-quick-grid').innerHTML = ALL_STEPS.map(s => `
+				<button class="step-quick-btn" onclick="stepsQuickRun('${s}')">
+					<span class="sq-ico">${STEP_ICONS[s] || '▸'}</span>
+					${STEP_LABELS[s] || s}
+				</button>`).join('');
+
+			// Checkboxes combinaison — aucune pré-cochée
+			ge('steps-chk-row').innerHTML = ALL_STEPS.map(s => `
+				<label><input type="checkbox" value="${s}">${STEP_LABELS[s] || s}</label>`).join('');
+
 			ge('steps-modal-backdrop').classList.add('open');
+		}
+
+		async function stepsQuickRun(step) {
+			ge('steps-modal-backdrop').classList.remove('open');
+			const sessions = _stepsModalSessions();
+			_stepsModalTarget = null;
+			await runSessions(sessions, [step]);
 		}
 
 		function stepsModalClose(e) {
@@ -3203,24 +3233,16 @@
 			ge('steps-modal-backdrop').classList.remove('open');
 			_stepsModalTarget = null;
 		}
-		function stepsModalSelectAll() { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = true); }
+		function stepsModalSelectAll()  { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = true); }
 		function stepsModalSelectNone() { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = false); }
-		function stepsModalSelectDefault() { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = DEFAULT_STEPS.has(i.value)); }
 
 		async function stepsModalConfirm() {
 			const steps = [...ge('steps-chk-row').querySelectorAll('input:checked')].map(i => i.value);
 			if (!steps.length) { alert('Sélectionnez au moins une étape.'); return; }
 			ge('steps-modal-backdrop').classList.remove('open');
-			const target = _stepsModalTarget;
+			const sessions = _stepsModalSessions();
 			_stepsModalTarget = null;
-			if (target === 'drawer' && S.drawerSess) {
-				await runSessions([S.drawerSess], steps);
-			} else if (target === 'selected') {
-				const sel = S.sessions.filter(s => S.selected.has(s.path));
-				await runSessions(sel, steps);
-			} else {
-				await runSessions(S.sessions, steps);
-			}
+			await runSessions(sessions, steps);
 		}
 
 		async function runSessions(sessions, steps) {
@@ -3421,6 +3443,7 @@
 			});
 
 			ge('btn-run-selected').disabled = S.selected.size === 0;
+			_updateSessActions();
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -3536,6 +3559,7 @@
 			const list = ge('sess-list');
 			ge('sess-count').textContent = S.sessions.length;
 			list.innerHTML = '';
+			_updateSessActions();
 			S.sessions.forEach(s => {
 				const div = document.createElement('div');
 				div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '');
@@ -3561,9 +3585,20 @@
 		function toggleSel(path, el) {
 			if (S.selected.has(path)) { S.selected.delete(path); el.classList.remove('selected'); }
 			else { S.selected.add(path); el.classList.add('selected'); }
+			_updateSessActions();
 		}
 		function selAll() { S.sessions.forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); }
 		function deselAll() { S.selected.clear(); renderSessionsList(); renderPipelineBoard(); }
+
+		function _updateSessActions() {
+			const n = S.selected.size;
+			const btnRun = ge('btn-sess-run');
+			const btnRb  = ge('btn-sess-rollback');
+			const cnt    = ge('sess-sel-count');
+			if (btnRun) btnRun.disabled = n === 0;
+			if (btnRb)  btnRb.disabled  = n === 0;
+			if (cnt)    cnt.textContent = `${n} sélectionnée(s)`;
+		}
 
 		// ══════════════════════════════════════════════════════════════════
 		// Signal config — sélection des colonnes d'alignement

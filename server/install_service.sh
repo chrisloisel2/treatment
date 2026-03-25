@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SERVICE_NAME="treatment"
-USER_NAME="exoria"
-GROUP_NAME="exoria"
+USER_NAME="ia"
+GROUP_NAME="ia"
 
-APP_DIR="/home/exoria/treatment"
-WORK_DIR="/home/exoria/workbench"
+APP_DIR="/home/ia/treatment"
+WORK_DIR="/home/ia/workbench"
 PYTHON_BIN="/usr/bin/python3"
 PORT="8000"
 HOST="0.0.0.0"

@@ -1146,6 +1146,8 @@ def _load_session_timeseries(session_path: str) -> dict:
                 t_ms = df["time_seconds"].to_numpy(dtype=float) * 1000
                 t_ms = t_ms.tolist()
             grip: dict = {"t_ms": t_ms}
+            if "opening_mm" in df.columns:
+                grip["opening_mm"] = df["opening_mm"].tolist()
             if "angle_deg" in df.columns:
                 grip["angle_deg"] = df["angle_deg"].tolist()
             result[f"gripper_{side}"] = grip

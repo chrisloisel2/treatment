@@ -5277,6 +5277,7 @@
 			spherical: { theta: 0.5, phi: 1.0, r: 3.0 },
 			target: { x: 0, y: 0, z: 0 },
 			trajLines: {},
+			trajPts: {},
 			cursors: {},
 			mode: 'both',
 			axesMode: 'xyz',
@@ -5417,6 +5418,7 @@
 			for (const role of ['head', 'left', 'right']) {
 				if (TV3D.trajLines[role]) { TV3D.scene.remove(TV3D.trajLines[role]); TV3D.trajLines[role] = null; }
 				if (TV3D.cursors[role]) { TV3D.scene.remove(TV3D.cursors[role]); TV3D.cursors[role] = null; }
+				TV3D.trajPts[role] = null;
 			}
 
 			// Quels rôles ont des XYZ ?
@@ -5478,7 +5480,19 @@
 					if (!pts.at(-1).equals(last)) pts.push(last);
 				}
 
-				const geo = new THREE.BufferGeometry().setFromPoints(pts);
+				// Stocker les points pour mise à jour progressive du drawRange
+				TV3D.trajPts[role] = pts;
+
+				// Créer la géométrie avec tous les points mais drawRange = 0 au départ
+				const positions = new Float32Array(pts.length * 3);
+				for (let i = 0; i < pts.length; i++) {
+					positions[i * 3]     = pts[i].x;
+					positions[i * 3 + 1] = pts[i].y;
+					positions[i * 3 + 2] = pts[i].z;
+				}
+				const geo = new THREE.BufferGeometry();
+				geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+				geo.setDrawRange(0, 0);
 				const mat = new THREE.LineBasicMaterial({ color: TV3D_COLORS[role], linewidth: 2, opacity: 0.8, transparent: true });
 				const line = new THREE.Line(geo, mat);
 				TV3D.scene.add(line);
@@ -5522,10 +5536,19 @@
 			const parts = [];
 			for (const role of ['head', 'left', 'right']) {
 				const sphere = TV3D.cursors[role];
+				const line = TV3D.trajLines[role];
+				const pts = TV3D.trajPts[role];
 				const [ax1, ax2, ax3] = tv3dGetAxes(role, data);
 				if (!sphere || !ax1 || best >= ax1.length) continue;
 				sphere.position.set(ax1[best], ax2[best], ax3[best]);
 				parts.push(`${role}: (${ax1[best].toFixed(3)}, ${ax2[best].toFixed(3)}, ${ax3[best].toFixed(3)})`);
+
+				// Mettre à jour le drawRange : afficher seulement les points déjà parcourus
+				if (line && pts) {
+					const stride = Math.max(1, Math.ceil(ax1.length / pts.length));
+					const ptIdx = Math.min(Math.floor(best / stride) + 1, pts.length);
+					line.geometry.setDrawRange(0, ptIdx);
+				}
 			}
 			const coordEl = ge('tv3d-coords');
 			if (coordEl && parts.length) { coordEl.textContent = parts.join('  |  '); coordEl.style.display = ''; }

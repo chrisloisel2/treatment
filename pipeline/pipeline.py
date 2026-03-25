@@ -141,6 +141,9 @@ class SessionPipelineState:
         for name in STEP_NAMES:
             if name not in self.steps:
                 self.steps[name] = StepState(name=name)
+        # Répertoire local alternatif pour pipeline_state.json (hors NFS)
+        # Non sérialisé — défini par PipelineRunner après chargement
+        self._state_dir: Optional[Path] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -160,14 +163,18 @@ class SessionPipelineState:
         return obj
 
     def save(self):
-        p = Path(self.session_path) / PIPELINE_STATE_FILE
+        """
+        Persiste l'état dans self._state_dir/pipeline_state.json si défini (NFS inaccessible),
+        sinon dans le dossier session sur NFS directement.
+        """
+        sd = getattr(self, '_state_dir', None)
+        p = (sd / PIPELINE_STATE_FILE) if sd else (Path(self.session_path) / PIPELINE_STATE_FILE)
+        if sd:
+            sd.mkdir(parents=True, exist_ok=True)
         content = json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
-        # Écriture atomique via fichier temporaire pour éviter la corruption
-        # et contourner les éventuels fichiers read-only créés par un autre utilisateur
         tmp = p.with_suffix(".tmp")
         try:
             tmp.write_text(content, encoding="utf-8")
-            # S'assurer que le fichier destination est accessible en écriture
             if p.exists():
                 try:
                     p.chmod(0o644)
@@ -175,19 +182,26 @@ class SessionPipelineState:
                     pass
             tmp.replace(p)
         except Exception:
-            # Fallback direct si le tmp ne peut pas être déplacé
             tmp.unlink(missing_ok=True)
             p.write_text(content, encoding="utf-8")
 
     @classmethod
-    def load(cls, session_path: Path) -> Optional["SessionPipelineState"]:
-        p = session_path / PIPELINE_STATE_FILE
-        if not p.exists():
-            return None
-        try:
-            return cls.from_dict(json.loads(p.read_text()))
-        except Exception:
-            return None
+    def load(cls, session_path: Path, state_dir: Optional[Path] = None) -> Optional["SessionPipelineState"]:
+        """Cherche d'abord dans state_dir (local), puis dans le dossier session (NFS)."""
+        candidates = []
+        if state_dir:
+            candidates.append(state_dir / PIPELINE_STATE_FILE)
+        candidates.append(session_path / PIPELINE_STATE_FILE)
+        for p in candidates:
+            if p.exists():
+                try:
+                    obj = cls.from_dict(json.loads(p.read_text()))
+                    if state_dir:
+                        obj._state_dir = state_dir
+                    return obj
+                except Exception:
+                    continue
+        return None
 
 
 def _now() -> str:
@@ -1072,6 +1086,7 @@ class PipelineRunner:
         step_callback:     Optional[Callable] = None,
         force_flux:        bool = False,
         resume:            bool = True,
+        state_dir:         Optional[Path] = None,  # répertoire local pour pipeline_state.json
     ):
         self.session_path  = Path(source_path)
         self.session_name  = self.session_path.name
@@ -1083,6 +1098,9 @@ class PipelineRunner:
         self.step_callback = step_callback
         self.force_flux    = force_flux
         self.resume        = resume
+        # Répertoire local pour l'état quand NFS est en lecture seule
+        # Par défaut None → état écrit dans le dossier session sur NFS
+        self.state_dir: Optional[Path] = state_dir
 
         self.log = PipelineLogger(self.session_name, log_callback)
 
@@ -1099,8 +1117,9 @@ class PipelineRunner:
                 "Déposez la session dans /mnt/ingest avant de lancer la pipeline."
             )
 
-        # Charger ou créer l'état (dans /mnt/ingest/<session>/)
-        state = SessionPipelineState.load(sess) if self.resume else None
+        # Charger ou créer l'état
+        # state_dir local est utilisé quand NFS est en lecture seule
+        state = SessionPipelineState.load(sess, self.state_dir) if self.resume else None
         if state is None:
             state = SessionPipelineState(
                 session_name        = self.session_name,
@@ -1108,18 +1127,20 @@ class PipelineRunner:
                 write_mode          = self.write_mode,
                 delete_after_store  = self.delete_after_store,
             )
-            state.save()
-        else:
-            # Mettre à jour les options de la session courante
-            state.write_mode         = self.write_mode
-            state.delete_after_store = self.delete_after_store
+        if self.state_dir:
+            state._state_dir = self.state_dir
+        state.write_mode         = self.write_mode
+        state.delete_after_store = self.delete_after_store
+        state.save()
 
         if state.finished and state.success and not self.force_flux:
             self.log("Session déjà traitée avec succès — skip", "INFO")
             return state
 
-        # Verrou fichier pour éviter double-traitement concurrent
-        lock = sess / PIPELINE_LOCK_FILE
+        # Verrou : dans state_dir si NFS inaccessible, sinon dans le dossier session
+        lock_dir = self.state_dir if self.state_dir else sess
+        lock_dir.mkdir(parents=True, exist_ok=True) if self.state_dir else None
+        lock = lock_dir / PIPELINE_LOCK_FILE
         if lock.exists():
             self.log("Session verrouillée par un autre processus", "WARN")
             return state

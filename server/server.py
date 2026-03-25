@@ -116,6 +116,32 @@ DEFAULT_WATCH_DIR = "/mnt/storage_nfs/ingest"
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
 
+# Répertoire local pour pipeline_state.json quand NFS est en lecture seule.
+# Chaque session a son propre sous-dossier : _PIPELINE_STATE_LOCAL_DIR/<session_name>/
+_SERVER_DIR = Path(__file__).resolve().parent
+_PIPELINE_STATE_LOCAL_DIR = _SERVER_DIR / "_pipeline_states"
+
+
+def _nfs_writable() -> bool:
+    """Teste si INGEST_DIR est accessible en écriture (test rapide)."""
+    probe = INGEST_DIR / ".write_probe"
+    try:
+        probe.write_text("ok")
+        probe.unlink()
+        return True
+    except Exception:
+        return False
+
+
+def _get_state_dir(session_name: str) -> Optional[Path]:
+    """
+    Retourne un répertoire local pour pipeline_state.json si NFS n'est pas accessible
+    en écriture, sinon None (= écriture directe dans le dossier session NFS).
+    """
+    if _nfs_writable():
+        return None
+    return _PIPELINE_STATE_LOCAL_DIR / session_name
+
 # Registre en mémoire des jobs
 _jobs: Dict[str, Job] = {}
 _jobs_lock = threading.Lock()
@@ -636,6 +662,7 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
     try:
         from pipeline.pipeline import PipelineRunner
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
+        session_name = Path(source_path).name
         runner = PipelineRunner(
             source_path        = source_path,
             params             = params,
@@ -645,6 +672,7 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
             step_callback      = _pipeline_step_cb(job),
             force_flux         = force_flux,
             resume             = True,
+            state_dir          = _get_state_dir(session_name),
         )
         state = runner.run()
         final_status = JobStatus.DONE if state.success else JobStatus.ERROR
@@ -902,7 +930,9 @@ async def pipeline_run_batch(req: dict):
 async def pipeline_state(session_path: str):
     """Retourne l'état pipeline persisté d'une session."""
     from pipeline.pipeline import SessionPipelineState
-    state = SessionPipelineState.load(Path(session_path))
+    session_name = Path(session_path).name
+    local_dir = _PIPELINE_STATE_LOCAL_DIR / session_name
+    state = SessionPipelineState.load(Path(session_path), state_dir=local_dir if local_dir.exists() else None)
     if state is None:
         raise HTTPException(404, "Aucun état pipeline trouvé pour cette session")
     return state.to_dict()

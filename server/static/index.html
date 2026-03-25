@@ -74,10 +74,12 @@ input,select,textarea{font:inherit}
 
 /* Main */
 #main{flex:1;min-width:0;overflow-y:auto;padding:18px 20px 80px}
+#main:has(#page-viewer.active){padding:0;overflow:hidden}
 
 /* ══ Pages ══════════════════════════════════════════════════════════ */
 .page{display:none}
 .page.active{display:block}
+#page-viewer.active{display:flex}
 
 /* ══ Components ═════════════════════════════════════════════════════ */
 .ph{font-size:1rem;font-weight:700;margin-bottom:4px}
@@ -316,7 +318,60 @@ td.c{text-align:center}
 .tc.active{display:block}
 
 /* ══ TIMELINE VIEWER ═════════════════════════════════════════════ */
-#tv-layout{display:flex;flex-direction:column;gap:0;height:calc(100vh - 200px);min-height:600px}
+/* Wrapper global du viewer : panneau sessions + contenu */
+#tv-page-body{display:flex;flex:1;min-height:0;gap:0;height:100%}
+
+/* Panneau latéral sessions */
+#tv-sess-panel{
+  width:220px;flex-shrink:0;background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  transition:width .18s ease, opacity .18s ease;
+  overflow:hidden;
+}
+#tv-sess-panel.collapsed{width:0;opacity:0;pointer-events:none}
+#tv-sess-panel-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 12px 8px;flex-shrink:0;border-bottom:1px solid var(--border);
+}
+#tv-sess-panel-title{font-size:.68rem;font-weight:800;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--text3)}
+#tv-sess-scan-btn{
+  font-size:.72rem;padding:2px 7px;border-radius:var(--rs);
+  border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;
+  transition:all .12s;
+}
+#tv-sess-scan-btn:hover{border-color:var(--accent);color:var(--accent)}
+#tv-sess-scan-btn.scanning{color:var(--orange);border-color:var(--orange)66;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#tv-sess-list{flex:1;overflow-y:auto;padding:6px 0}
+.tv-sess-item{
+  display:flex;flex-direction:column;gap:1px;
+  padding:7px 12px;cursor:pointer;border-radius:var(--rs);margin:1px 5px;
+  border-left:2px solid transparent;transition:all .1s;
+}
+.tv-sess-item:hover{background:var(--bg4)}
+.tv-sess-item.active{background:var(--accent)15;border-left-color:var(--accent)}
+.tv-sess-item-name{font-size:.78rem;font-weight:600;color:var(--text);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.tv-sess-item-meta{font-size:.67rem;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-sess-item-status{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
+.tv-sess-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:1px}
+#tv-sess-empty{padding:20px 12px;font-size:.75rem;color:var(--text3);text-align:center;line-height:1.5}
+
+/* Bouton toggle panneau */
+#tv-panel-toggle{
+  position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:14px;height:40px;background:var(--bg3);border:1px solid var(--border);
+  border-left:none;border-radius:0 var(--rs) var(--rs) 0;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:.6rem;color:var(--text3);transition:all .12s;z-index:10;
+}
+#tv-panel-toggle:hover{background:var(--bg4);color:var(--text)}
+#tv-content{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden}
+#tv-content > .tc{flex:1;overflow-y:auto;padding:0 14px 14px 22px}
+
+#tv-layout{display:flex;flex-direction:column;gap:0;height:100%;min-height:500px}
 #tv-top{display:flex;gap:12px;flex-shrink:0;margin-bottom:10px;align-items:center;flex-wrap:wrap}
 #tv-videos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex-shrink:0}
 .tv-vid-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);
@@ -657,38 +712,51 @@ td.c{text-align:center}
 <!-- ══════════════════════════════════════════════════════
   PAGE : VIEWER (timeline + vidéos)
 ══════════════════════════════════════════════════════ -->
-<div class="page" id="page-viewer">
-  <div class="ph">Viewer temporel</div>
-  <div class="ps">Visualisation synchronisée vidéo + trackers + grippers — vue live et comparaison avant/après corrections.</div>
+<div class="page" id="page-viewer" style="display:none;flex-direction:column;padding:0;overflow:hidden">
 
-  <!-- Barre de contrôle commune -->
-  <div class="card" style="padding:10px 14px;margin-bottom:10px">
-    <div id="tv-top">
-      <div style="display:flex;gap:6px;align-items:center;flex:1;min-width:220px">
-        <label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Session</label>
-        <select id="tv-sess-sel" class="tv-sel" style="flex:1" onchange="tvSelectSession(this.value)">
-          <option value="">— Sélectionner —</option>
-        </select>
-        <button class="btn" onclick="scanAndShow()" title="Scanner le dossier" style="font-size:.8rem;padding:4px 9px;flex-shrink:0">⟳</button>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <label style="font-size:.78rem;color:var(--text2)">Trackers</label>
-        <select id="tv-trk-mode" class="tv-sel" onchange="tvRebuildCharts()">
-          <option value="speed">Vitesse</option>
-          <option value="xyz">Position XYZ</option>
-          <option value="norm">Norme position</option>
-        </select>
-      </div>
-      <button id="tv-play-btn" onclick="tvTogglePlay()" title="Play/Pause">▶</button>
-      <div style="font-size:.78rem;color:var(--text3)" id="tv-fps-display"></div>
+<div id="tv-page-body">
+
+  <!-- ── Panneau latéral sessions ──────────────────────────── -->
+  <div id="tv-sess-panel">
+    <div id="tv-sess-panel-hdr">
+      <span id="tv-sess-panel-title">Sessions</span>
+      <button id="tv-sess-scan-btn" onclick="tvScanSessions()" title="Scanner le dossier">⟳</button>
+    </div>
+    <div id="tv-sess-list">
+      <div id="tv-sess-empty">Cliquez ⟳ pour<br/>charger les sessions</div>
     </div>
   </div>
 
-  <!-- Onglets Live / Diff / 3D -->
-  <div class="tabs" style="margin-bottom:0">
-    <div class="tab active" id="tv-tab-live"  onclick="tvNavTab('live',this)">▣ Live</div>
-    <div class="tab"        id="tv-tab-diff"  onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
-  </div>
+  <!-- ── Contenu principal ─────────────────────────────────── -->
+  <div id="tv-content">
+    <!-- Bouton toggle panneau -->
+    <button id="tv-panel-toggle" onclick="tvTogglePanel()" title="Afficher/masquer sessions">‹</button>
+
+    <!-- En-tête avec contrôles -->
+    <div style="padding:10px 14px 0 22px;flex-shrink:0">
+      <div id="tv-top" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="font-size:.82rem;font-weight:700;color:var(--text);flex:1;min-width:0;
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="tv-sess-name">
+          — Sélectionnez une session —
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-size:.78rem;color:var(--text2)">Trackers</label>
+          <select id="tv-trk-mode" class="tv-sel" onchange="tvRebuildCharts()">
+            <option value="speed">Vitesse</option>
+            <option value="xyz">Position XYZ</option>
+            <option value="norm">Norme position</option>
+          </select>
+        </div>
+        <button id="tv-play-btn" onclick="tvTogglePlay()" title="Play/Pause">▶</button>
+        <div style="font-size:.78rem;color:var(--text3)" id="tv-fps-display"></div>
+      </div>
+    </div>
+
+    <!-- Onglets Live / Diff -->
+    <div class="tabs" style="margin:6px 14px 0 22px">
+      <div class="tab active" id="tv-tab-live"  onclick="tvNavTab('live',this)">▣ Live</div>
+      <div class="tab"        id="tv-tab-diff"  onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
+    </div>
 
   <!-- ── Onglet LIVE ─────────────────────────────── -->
   <div class="tc active" id="tv-tc-live">
@@ -832,7 +900,9 @@ td.c{text-align:center}
 
   <!-- ── Onglet 3D supprimé : vue 3D maintenant intégrée dans l'onglet Live -->
 
-</div>
+  </div><!-- /tv-content -->
+</div><!-- /tv-page-body -->
+</div><!-- /page-viewer -->
 
 <!-- ══════════════════════════════════════════════════════
   PAGE : VISUALISATION IA SCORES
@@ -1761,18 +1831,66 @@ const TV_COLORS = {
   flux_right: '#f59e0b',
 };
 
-// Remplir le select session à chaque scan
+// ── Panneau latéral sessions ───────────────────────────────────────
+let _tvPanelOpen = true;
+
+function tvTogglePanel() {
+  _tvPanelOpen = !_tvPanelOpen;
+  const panel = ge('tv-sess-panel');
+  const btn   = ge('tv-panel-toggle');
+  panel.classList.toggle('collapsed', !_tvPanelOpen);
+  btn.textContent = _tvPanelOpen ? '‹' : '›';
+  // Resize charts après transition
+  setTimeout(() => Object.values(TV.charts).forEach(ch => ch?.resize()), 200);
+}
+
 function tvRefreshSessions() {
-  const sel = ge('tv-sess-sel');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">— Sélectionner —</option>';
+  const list  = ge('tv-sess-list');
+  const empty = ge('tv-sess-empty');
+  if (!S.sessions.length) {
+    empty.style.display = '';
+    // Effacer les anciens items sauf le message vide
+    list.querySelectorAll('.tv-sess-item').forEach(el => el.remove());
+    return;
+  }
+  empty.style.display = 'none';
+  list.querySelectorAll('.tv-sess-item').forEach(el => el.remove());
+
   S.sessions.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.path;
-    opt.textContent = s.name + (s.meta?.scenario ? ` · ${s.meta.scenario}` : '');
-    sel.appendChild(opt);
+    const ps   = s.pipeline_state;
+    const step = ps?.current_step || '—';
+    const ok   = ps?.success === true;
+    const fail = ps?.success === false && ps?.finished;
+    const run  = ps?.finished === false && ps?.current_step;
+    const dotColor = ok ? 'var(--green)' : fail ? 'var(--red)' : run ? 'var(--orange)' : 'var(--text3)';
+    const scenario = s.meta?.scenario ? s.meta.scenario : '';
+
+    const div = document.createElement('div');
+    div.className = 'tv-sess-item' + (TV.sessPath === s.path ? ' active' : '');
+    div.title = s.path;
+    div.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="tv-sess-dot" style="background:${dotColor}"></div>
+        <div class="tv-sess-item-name">${esc(s.name)}</div>
+      </div>
+      ${scenario ? `<div class="tv-sess-item-meta">${esc(scenario)}</div>` : ''}
+      <div class="tv-sess-item-meta" style="color:var(--text3)">${step}</div>
+    `;
+    div.onclick = () => tvSelectSession(s.path);
+    list.appendChild(div);
   });
-  if (cur) sel.value = cur;
+}
+
+async function tvScanSessions() {
+  const btn = ge('tv-sess-scan-btn');
+  btn.classList.add('scanning');
+  btn.disabled = true;
+  try {
+    await scanAndShow();
+  } finally {
+    btn.classList.remove('scanning');
+    btn.disabled = false;
+  }
 }
 
 async function tvSelectSession(path) {
@@ -1782,8 +1900,14 @@ async function tvSelectSession(path) {
   TV.t_ms = 0;
   TV.frameCache = {};
   tvStopPlay();
-  // Marquer la vue 3D à reconstruire (les trajectoires seront rebuildées à l'affichage)
   TV3D.needsRebuild = true;
+
+  // Mettre à jour le nom affiché + l'item actif dans la liste
+  const sess = S.sessions.find(s => s.path === path);
+  ge('tv-sess-name').textContent = sess ? sess.name : path.split('/').pop();
+  document.querySelectorAll('.tv-sess-item').forEach(el => {
+    el.classList.toggle('active', el.title === path);
+  });
 
   ge('tv-loading').style.display = 'flex';
   ge('tv-layout').style.display = 'none';
@@ -2147,9 +2271,9 @@ function tvUpdateLegend() {
 
 // ── Navigation onglets viewer ──────────────────────────────────────
 function tvNavTab(name, el) {
-  document.querySelectorAll('#page-viewer .tabs:first-of-type .tab')
+  document.querySelectorAll('#tv-content .tabs .tab')
     .forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('#page-viewer > .tc')
+  document.querySelectorAll('#tv-content > .tc')
     .forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   ge(`tv-tc-${name}`)?.classList.add('active');
@@ -2731,7 +2855,7 @@ function nav(name, btn) {
       Object.values(TV.charts).forEach(ch => ch?.resize());
     });
     // Scan auto si aucune session chargée
-    if (!S.sessions.length) scanAndShow();
+    if (!S.sessions.length) tvScanSessions();
   }
 }
 

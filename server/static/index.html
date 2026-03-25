@@ -414,25 +414,34 @@ td.c{text-align:center}
 /* Onglets */
 #tv-tabs{padding:6px 16px 0 24px;flex-shrink:0}
 
-/* Zone onglet */
-.tv-tc{display:none;flex:1;overflow-y:auto;padding:8px 16px 16px 24px;flex-direction:column}
+/* ── Onglets viewer ────────────────────────────────────────────── */
+.tv-tc{display:none;flex:1;min-height:0;overflow-y:auto;
+  padding:8px 16px 16px 24px;flex-direction:column}
 .tv-tc.active{display:flex}
-/* Le live tab ne scrolle pas lui-même : c'est tv-live-main qui scrolle */
+/* live-tab gère son propre scroll via tv-live-main */
 #tv-tc-live{overflow:hidden;padding:0}
 
-/* Layout live : colonne principale + panneau droit */
-#tv-live-inner{display:none;flex-direction:row;gap:0;height:100%;overflow:hidden}
-#tv-live-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:10px 12px 16px 20px}
+/* ── Layout live ───────────────────────────────────────────────── */
+/* flex:1 + height:0 = remplit exactement la hauteur du tv-tc */
+#tv-live-inner{display:none;flex-direction:row;flex:1;min-height:0;overflow:hidden}
+#tv-live-main{flex:1;min-width:0;display:flex;flex-direction:column;
+  gap:8px;overflow-y:auto;padding:10px 12px 16px 20px}
 
-/* Panneau paramètres droit */
+/* ── Panneau paramètres droit ──────────────────────────────────── */
 #tv-right-panel{
   width:220px;flex-shrink:0;background:var(--bg2);
   border-left:1px solid var(--border);
-  display:flex;flex-direction:column;overflow:visible;
-  transition:width .2s ease;position:relative;
+  display:flex;flex-direction:column;
+  overflow:visible;          /* laisse le toggle déborder */
+  transition:width .2s ease;
+  position:relative;
 }
 #tv-right-panel.collapsed{width:0}
-#tv-right-panel-inner{display:flex;flex-direction:column;height:100%;min-width:220px;overflow-y:auto;overflow-x:hidden}
+#tv-right-panel-inner{
+  display:flex;flex-direction:column;
+  height:100%;min-width:220px;
+  overflow-y:auto;overflow-x:hidden;
+}
 #tv-right-panel-hdr{
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 12px 8px;flex-shrink:0;border-bottom:1px solid var(--border);
@@ -448,15 +457,14 @@ td.c{text-align:center}
   font-size:.65rem;color:var(--text3);z-index:20;transition:all .12s;
 }
 #tv-right-toggle:hover{background:var(--bg5);color:var(--text)}
-/* Section paramètres */
 .tv-rp-section{padding:10px 12px 6px;border-bottom:1px solid var(--border)66}
 .tv-rp-section:last-child{border-bottom:none}
 .tv-rp-title{font-size:.64rem;font-weight:800;text-transform:uppercase;
   letter-spacing:.08em;color:var(--text3);margin-bottom:7px}
 .tv-rp-row{display:flex;align-items:center;justify-content:space-between;
-  gap:6px;margin-bottom:5px;font-size:.78rem;color:var(--text2)}
+  gap:6px;margin-bottom:5px}
 .tv-rp-row label{font-size:.75rem;color:var(--text2);flex-shrink:0}
-.tv-rp-row select,.tv-rp-row input[type=range]{flex:1;min-width:0}
+.tv-rp-row select{flex:1;min-width:0}
 .tv-chk-row{display:flex;align-items:center;gap:7px;font-size:.78rem;
   color:var(--text2);margin-bottom:4px;cursor:pointer}
 .tv-chk-row input{accent-color:var(--accent)}
@@ -465,7 +473,7 @@ td.c{text-align:center}
   background:var(--bg3);color:var(--text2);cursor:pointer;transition:all .12s}
 .tv-rp-btn:hover{border-color:var(--border2);color:var(--text)}
 
-/* Grille vidéos — 3 colonnes seulement */
+/* ── Grille vidéos ─────────────────────────────────────────────── */
 #tv-media-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex-shrink:0}
 .tv-vid-wrap{position:relative;background:var(--bg3);border:1px solid var(--border);
   border-radius:var(--rs);overflow:hidden;aspect-ratio:16/9}
@@ -474,76 +482,57 @@ td.c{text-align:center}
 .tv-vid-time{position:absolute;bottom:5px;right:7px;font-size:.66rem;font-family:monospace;
   padding:1px 6px;border-radius:99px;background:#000000bb;color:#bbb;z-index:2}
 .tv-vid-wrap img{width:100%;height:100%;display:block;object-fit:cover;background:var(--bg4)}
+/* placeholder quand pas encore de frame */
+.tv-vid-wrap img[src=""]{background:var(--bg4)}
 
-/* Bloc 3D en bas */
-#tv-3d-block{
-  flex-shrink:0;height:280px;position:relative;
-  background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
-  overflow:hidden;
-}
-#tv-3d-block canvas{width:100%;height:100%;display:block}
-
-/* Timeline */
+/* ── Timeline ──────────────────────────────────────────────────── */
 #tv-scrubber-wrap{flex-shrink:0;padding:6px 0 2px}
-#tv-playhead{height:3px;background:var(--bg5);border-radius:2px;margin-bottom:5px;cursor:pointer;position:relative}
-#tv-playhead-fill{height:100%;background:var(--accent)66;border-radius:2px;width:0%}
-#tv-scrub{width:100%;accent-color:var(--accent);cursor:pointer;height:16px}
-#tv-time-display{display:flex;justify-content:space-between;font-size:.75rem;font-family:monospace;color:var(--text3)}
+#tv-playhead{height:4px;background:var(--bg5);border-radius:2px;
+  margin-bottom:4px;cursor:pointer;position:relative;overflow:hidden}
+#tv-playhead-fill{height:100%;background:var(--accent);border-radius:2px;
+  width:0%;transition:width .05s linear}
+#tv-scrub{width:100%;accent-color:var(--accent);cursor:pointer;height:14px;margin:0}
+#tv-time-display{display:flex;justify-content:space-between;
+  font-size:.74rem;font-family:monospace;color:var(--text3);padding:2px 0}
 
-/* Charts */
-#tv-charts{flex-shrink:0;height:200px;display:flex;flex-direction:column;gap:0;overflow:hidden}
+/* ── Charts ────────────────────────────────────────────────────── */
+#tv-charts{flex-shrink:0;height:200px;display:flex;flex-direction:column;overflow:hidden}
 .tvc-row{position:relative;flex:1;min-height:0;border-bottom:1px solid var(--border)44}
 .tvc-row:last-child{border-bottom:none}
 .tvc-label{position:absolute;top:4px;left:8px;font-size:.63rem;font-weight:700;
   color:var(--text3);text-transform:uppercase;letter-spacing:.06em;z-index:3;pointer-events:none}
 .tvc-canvas-wrap{width:100%;height:100%;position:relative}
 
-/* Légende */
-.tv-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.7rem;padding:4px 0}
+/* ── Légende ───────────────────────────────────────────────────── */
+.tv-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  font-size:.7rem;padding:2px 0 4px}
 .tv-legend-item{display:flex;align-items:center;gap:4px}
 .tv-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 
-/* Play button */
-#tv-play-btn{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);
-  background:var(--bg3);color:var(--text);font-size:.85rem;display:flex;align-items:center;
-  justify-content:center;cursor:pointer;flex-shrink:0;transition:all .12s}
-#tv-play-btn:hover{border-color:var(--accent);color:var(--accent)}
-#tv-play-btn.playing{border-color:var(--accent);background:var(--accent)1a;color:var(--accent)}
+/* ── Bloc 3D ───────────────────────────────────────────────────── */
+#tv-3d-block{
+  flex-shrink:0;height:300px;position:relative;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
+  overflow:hidden;
+}
+#tv-3d-block canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
 
-/* Selector */
-.tv-sel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
-  color:var(--text);padding:4px 8px;font-size:.79rem}
-
-
-/* Cursor line overlay */
-#tv-cursor{position:absolute;top:0;bottom:0;width:1.5px;background:var(--accent);
-  opacity:.85;pointer-events:none;z-index:10;display:none}
-
-/* Timeline scrubber */
-#tv-scrubber-wrap{flex-shrink:0;padding:10px 0 4px;position:relative}
-#tv-scrub{width:100%;accent-color:var(--accent);cursor:pointer}
-#tv-time-display{font-size:.8rem;font-family:monospace;color:var(--text2);
-  display:flex;justify-content:space-between;padding:2px 0 0}
-#tv-playhead{height:3px;background:var(--bg4);border-radius:2px;position:relative;margin-bottom:4px;cursor:pointer}
-#tv-playhead-fill{height:100%;background:var(--accent)55;border-radius:2px;width:0%}
-
-/* Selector dropdown */
-.tv-sel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
-  color:var(--text);padding:5px 9px;font-size:.8rem}
-
-/* Play button */
+/* ── Play button ───────────────────────────────────────────────── */
 #tv-play-btn{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);
   background:var(--bg3);color:var(--text);font-size:.9rem;display:flex;align-items:center;
   justify-content:center;cursor:pointer;flex-shrink:0;transition:all .12s}
 #tv-play-btn:hover{border-color:var(--accent);color:var(--accent)}
-#tv-play-btn.playing{border-color:var(--accent);background:var(--accent)1a;color:var(--accent)}
+#tv-play-btn.playing{border-color:var(--accent);background:var(--accent)22;color:var(--accent)}
 
-/* Legend pills */
-.tv-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.7rem}
-.tv-legend-item{display:flex;align-items:center;gap:4px}
-.tv-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+/* ── Selector ──────────────────────────────────────────────────── */
+.tv-sel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);
+  color:var(--text);padding:4px 8px;font-size:.79rem}
 
-/* Signal config panel */
+/* ── Loading ───────────────────────────────────────────────────── */
+#tv-loading{display:none;align-items:center;justify-content:center;
+  flex:1;min-height:120px;color:var(--text3);font-size:.85rem;flex-direction:column;gap:8px}
+
+/* ── Signal config panel ───────────────────────────────────────── */
 .sc-flux-block{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px}
 .sc-flux-title{font-size:.72rem;font-weight:700;color:var(--text2);text-transform:uppercase;
   letter-spacing:.06em;margin-bottom:6px}
@@ -554,13 +543,6 @@ td.c{text-align:center}
 .sc-col-item input[type=checkbox]{accent-color:var(--accent);cursor:pointer;flex-shrink:0}
 .sc-col-item.sc-selected{color:var(--accent)}
 .sc-default-badge{font-size:.66rem;color:var(--text3);font-style:italic;margin-top:4px}
-
-/* Loading overlay */
-#tv-loading{display:flex;align-items:center;justify-content:center;flex:1;
-  color:var(--text3);font-size:.85rem}
-
-/* Chart containers inside rows */
-.tvc-canvas-wrap{width:100%;height:100%;position:relative}
 
 /* ══ DIFF viewer ═════════════════════════════════════════════════ */
 .diff-pair{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
@@ -2012,14 +1994,11 @@ const TV = {
   duration_ms: 0,
   playing:     false,
   playTimer:   null,
-  playSpeed:   1.0,     // 1x
-  lastFrameT:  0,
+  playSpeed:   1.0,
   charts:      {},      // chart.js instances
-  pendingFrame:{},      // {side: AbortController}
-  frameCache:  {},      // "side:t_ms" → URL blob
-  annotations: {},      // lignes verticales sur les charts
+  annotations: {},
   stream:      null,    // EventSource SSE en cours
-  streaming:   false,   // true si SSE actif
+  streaming:   false,   // true si playback SSE actif
 };
 
 const TV_COLORS = {
@@ -2036,23 +2015,25 @@ const TV_COLORS = {
 // ── Panneau latéral sessions ───────────────────────────────────────
 let _tvPanelOpen = true;
 
+function _tvAfterResize() {
+  // Appelé après fin de transition panneau (200 ms)
+  Object.values(TV.charts).forEach(ch => ch?.resize());
+  tv3dResize();
+}
+
 function tvTogglePanel() {
   _tvPanelOpen = !_tvPanelOpen;
-  const panel = ge('tv-sess-panel');
-  const btn   = ge('tv-panel-toggle');
-  panel.classList.toggle('collapsed', !_tvPanelOpen);
-  btn.textContent = _tvPanelOpen ? '‹' : '›';
-  setTimeout(() => Object.values(TV.charts).forEach(ch => ch?.resize()), 200);
+  ge('tv-sess-panel').classList.toggle('collapsed', !_tvPanelOpen);
+  ge('tv-panel-toggle').textContent = _tvPanelOpen ? '‹' : '›';
+  setTimeout(_tvAfterResize, 210);
 }
 
 let _tvRightPanelOpen = true;
 function tvToggleRightPanel() {
   _tvRightPanelOpen = !_tvRightPanelOpen;
-  const panel = ge('tv-right-panel');
-  const btn   = ge('tv-right-toggle');
-  panel.classList.toggle('collapsed', !_tvRightPanelOpen);
-  btn.textContent = _tvRightPanelOpen ? '›' : '‹';
-  setTimeout(() => Object.values(TV.charts).forEach(ch => ch?.resize()), 200);
+  ge('tv-right-panel').classList.toggle('collapsed', !_tvRightPanelOpen);
+  ge('tv-right-toggle').textContent = _tvRightPanelOpen ? '›' : '‹';
+  setTimeout(_tvAfterResize, 210);
 }
 
 function tvSetSpeed(v) {
@@ -2227,47 +2208,62 @@ function _tvFileIcon(name) {
 async function tvSelectSession(path) {
   if (!path) return;
   tvStopStream();
+  tvStopPlay();
   TV.data = null;
   TV.sessPath = path;
   TV.t_ms = 0;
-  TV.frameCache = {};
-  tvStopPlay();
   TV3D.needsRebuild = true;
 
-  // Mettre à jour le nom affiché + l'item actif dans la liste
   const sess = S.sessions.find(s => s.path === path);
   ge('tv-sess-name').textContent = sess ? sess.name : path.split('/').pop();
-  document.querySelectorAll('.tv-sess-item').forEach(el => {
-    el.classList.toggle('active', el.title === path);
-  });
+  document.querySelectorAll('.tv-sess-item').forEach(el =>
+    el.classList.toggle('active', el.title === path));
 
-  ge('tv-loading').style.display = 'flex';
-  ge('tv-loading').textContent = 'Chargement…';
-  ge('tv-live-inner').style.display = 'none';
+  // Afficher le loading, cacher le contenu
+  const loadEl = ge('tv-loading');
+  const innerEl = ge('tv-live-inner');
+  loadEl.innerHTML = '<span style="animation:pulse .8s infinite">⏳</span>&nbsp;Chargement…';
+  loadEl.style.display = 'flex';
+  innerEl.style.display = 'none';
 
   try {
-    const data = await fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`).then(r=>r.json());
+    const r = await fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data || typeof data !== 'object') throw new Error('Réponse invalide');
+
     TV.data = data;
-    TV.duration_ms = data.duration_ms || 30000;
-    ge('tv-t-dur').textContent = (TV.duration_ms/1000).toFixed(1)+'s';
-    ge('tv-loading').style.display = 'none';
-    ge('tv-live-inner').style.display = 'flex';
-    tvBuildCharts();
-    tvUpdateLegend();
-    // 3D
-    tv3dInitIfNeeded();
+    TV.duration_ms = data.duration_ms || 0;
+    ge('tv-t-dur').textContent = TV.duration_ms > 0
+      ? (TV.duration_ms / 1000).toFixed(1) + 's'
+      : '—';
+    ge('tv-scrub').value = 0;
+    ge('tv-playhead-fill').style.width = '0%';
+    ge('tv-t-cur').textContent = '0.000s';
+
+    // Afficher le contenu
+    loadEl.style.display = 'none';
+    innerEl.style.display = 'flex';
+
     const has3d = !!(data?.tracker?.t_ms?.length);
-    ge('tv3d-empty-msg').style.display = has3d ? 'none' : 'flex';
-    if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
-    // Charger la première frame via SSE (1 seul event)
-    tvStartStream(path, 0, true);
-    // Si l'onglet fichiers est visible, le rafraîchir
+    ge('tv3d-empty-msg').style.display = has3d ? 'none' : '';
+
+    // Attendre que le navigateur ait calculé les dimensions avant d'init charts et 3D
+    requestAnimationFrame(() => {
+      tvBuildCharts();
+      tvUpdateLegend();
+      tv3dInitIfNeeded();
+      if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
+      // Charger la première frame
+      if (TV.duration_ms > 0) tvStartStream(path, 0, true);
+    });
+
     if (ge('tv-pane-files')?.classList.contains('active')) tvLoadFiles(path);
   } catch(e) {
-    ge('tv-loading').style.display = 'flex';
-    ge('tv-loading').textContent = '⚠ ' + e.message;
-    ge('tv-live-inner').style.display = 'none';
-    log('Viewer: '+e.message, 'ERROR');
+    loadEl.innerHTML = `⚠ Erreur : ${esc(e.message)}`;
+    loadEl.style.display = 'flex';
+    innerEl.style.display = 'none';
+    console.error('[Viewer]', e);
   }
 }
 
@@ -2504,70 +2500,82 @@ function tvScrubClick(ev) {
 function tvStartStream(path, t_start, singleFrame) {
   tvStopStream();
   if (!path) return;
-  const baseFps = singleFrame ? 1 : Math.min(30, +(ge('rp-fps')?.value || 10));
-  const fps    = singleFrame ? 1 : Math.max(1, Math.round(baseFps * (TV.playSpeed || 1)));
-  const url    = `/api/session/stream?session_path=${encodeURIComponent(path)}&fps=${fps}&t_start=${t_start.toFixed(1)}`;
-  const es     = new EventSource(url);
+  const baseFps = Math.min(30, +(ge('rp-fps')?.value || 10));
+  const fps = singleFrame ? 1 : Math.max(1, Math.round(baseFps * (TV.playSpeed || 1)));
+  const url = `/api/session/stream?session_path=${encodeURIComponent(path)}&fps=${fps}&t_start=${(+t_start || 0).toFixed(1)}`;
+  const es  = new EventSource(url);
   TV.stream    = es;
   TV.streaming = !singleFrame;
 
   es.onmessage = ev => {
+    // Ignorer si ce stream a déjà été remplacé
+    if (TV.stream !== es) return;
+
     let d;
-    try { d = JSON.parse(ev.data); } catch { return; }
+    try { d = JSON.parse(ev.data); } catch(err) {
+      console.warn('[SSE] parse error', err); return;
+    }
 
     if (d.done) {
-      tvStopStream();
-      tvStopPlay();
+      // Fin de session
+      es.close();
+      if (TV.stream === es) { TV.stream = null; TV.streaming = false; }
+      if (!singleFrame) tvStopPlay();
       return;
     }
 
-    // Mettre à jour le curseur timeline (sans re-fetcher les frames)
-    TV.t_ms = d.t_ms;
-    const pct = TV.duration_ms > 0 ? d.t_ms / TV.duration_ms : 0;
+    // ── Timeline ──────────────────────────────────────────────────
+    const t = +d.t_ms || 0;
+    TV.t_ms = t;
+    const pct = TV.duration_ms > 0 ? t / TV.duration_ms : 0;
     ge('tv-scrub').value = Math.round(pct * 1000);
     ge('tv-playhead-fill').style.width = (pct * 100).toFixed(2) + '%';
-    ge('tv-t-cur').textContent = (d.t_ms / 1000).toFixed(3) + 's';
-    tvDrawCursorLine(d.t_ms);
+    ge('tv-t-cur').textContent = (t / 1000).toFixed(3) + 's';
+    tvDrawCursorLine(t);
 
-    // Frames vidéo depuis le stream
+    // ── Frames vidéo ───────────────────────────────────────────────
     for (const side of ['head', 'left', 'right']) {
       const b64 = d.frames?.[side];
-      if (b64) {
+      if (b64 && b64.length > 10) {   // guard: non-empty
         const img = ge(`tv-img-${side}`);
         if (img) img.src = `data:image/jpeg;base64,${b64}`;
         const timeEl = ge(`tv-vt-${side}`);
-        if (timeEl) timeEl.textContent = (d.t_ms / 1000).toFixed(3) + 's';
+        if (timeEl) timeEl.textContent = (t / 1000).toFixed(3) + 's';
       }
     }
 
-    // Positions 3D tracker
-    if (d.tracker && Object.keys(d.tracker).length) {
-      tv3dUpdateCursor(d.t_ms);
-      // Mise à jour des coords affichées
+    // ── 3D tracker ────────────────────────────────────────────────
+    if (d.tracker && Object.keys(d.tracker).length && TV3D.initialized) {
+      tv3dUpdateCursor(t);
+      // Afficher les coordonnées
       const coordsEl = ge('tv3d-coords');
       if (coordsEl) {
-        const roles = ['head','left','right'];
-        const parts = roles.map(r => {
-          const pos = d.tracker[r];
-          if (!pos) return null;
-          return `${r}: (${pos[0].toFixed(2)},${pos[1].toFixed(2)},${pos[2].toFixed(2)})`;
+        const parts = ['head','left','right'].map(r => {
+          const p = d.tracker[r];
+          return p ? `${r}:(${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)})` : null;
         }).filter(Boolean);
         if (parts.length) {
-          coordsEl.style.display = 'block';
-          coordsEl.textContent = parts.join('  ');
+          coordsEl.style.display = '';
+          coordsEl.textContent = parts.join('   ');
         }
       }
     }
 
-    // Pinces — mise à jour du chart curseur uniquement
+    // ── singleFrame : fermer proprement après le premier event ────
     if (singleFrame) {
-      tvStopStream();
+      es.close();
+      if (TV.stream === es) { TV.stream = null; TV.streaming = false; }
     }
   };
 
   es.onerror = () => {
-    tvStopStream();
-    if (TV.playing) tvStopPlay();
+    // Seulement agir si c'est bien le stream courant
+    if (TV.stream !== es) return;
+    console.warn('[SSE] stream error');
+    es.close();
+    TV.stream    = null;
+    TV.streaming = false;
+    if (!singleFrame && TV.playing) tvStopPlay();
   };
 }
 
@@ -3353,7 +3361,9 @@ function tv3dInit() {
 
   TV3D.scene = new THREE.Scene();
 
-  TV3D.camera = new THREE.PerspectiveCamera(50, wrap.clientWidth / Math.max(1, wrap.clientHeight), 0.001, 1000);
+  // L'élément peut avoir clientWidth=0 si pas encore visible : on prend au minimum 4/3
+  const aspect = wrap.clientWidth > 0 ? wrap.clientWidth / wrap.clientHeight : 4/3;
+  TV3D.camera = new THREE.PerspectiveCamera(50, aspect, 0.001, 1000);
 
   // Lumière ambiante douce
   TV3D.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -3376,18 +3386,24 @@ function tv3dInit() {
   tv3dAnimate();
   TV3D.initialized = true;
 
-  // Resize
+  // Taille initiale (peut être 0 si appelé avant affichage)
+  requestAnimationFrame(tv3dResize);
+
+  // Suivi des changements de taille
   new ResizeObserver(() => tv3dResize()).observe(wrap);
 }
 
 function tv3dResize() {
   const wrap = ge('tv-3d-block');
   if (!wrap || !TV3D.renderer) return;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
   if (w < 10 || h < 10) return;
   TV3D.renderer.setSize(w, h, false);
-  TV3D.camera.aspect = w / h;
-  TV3D.camera.updateProjectionMatrix();
+  if (TV3D.camera) {
+    TV3D.camera.aspect = w / h;
+    TV3D.camera.updateProjectionMatrix();
+  }
 }
 
 function tv3dResetCamera() {

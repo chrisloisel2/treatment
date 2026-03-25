@@ -687,7 +687,6 @@ td.c{text-align:center}
   <div class="tabs" style="margin-bottom:0">
     <div class="tab active" id="tv-tab-live"  onclick="tvNavTab('live',this)">▣ Live</div>
     <div class="tab"        id="tv-tab-diff"  onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
-    <div class="tab"        id="tv-tab-3d"    onclick="tvNavTab('3d',this)">◈ Vue 3D</div>
   </div>
 
   <!-- ── Onglet LIVE ─────────────────────────────── -->
@@ -697,26 +696,50 @@ td.c{text-align:center}
     </div>
 
     <div id="tv-layout" style="display:none">
-      <!-- 3 vignettes vidéo -->
-      <div id="tv-videos" style="margin-top:10px">
-        <div class="tv-vid-wrap" id="tv-wrap-head">
-          <div class="tv-vid-label">HEAD</div>
-          <div class="tv-vid-time" id="tv-vt-head">0ms</div>
-          <img id="tv-img-head" src="" alt="head"/>
-        </div>
-        <div class="tv-vid-wrap" id="tv-wrap-left">
-          <div class="tv-vid-label">LEFT</div>
+      <!-- Rangée principale : 3 vidéos (LEFT | HEAD | RIGHT) + vue 3D -->
+      <div id="tv-main-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:10px;align-items:stretch">
+        <!-- LEFT — gauche -->
+        <div class="tv-vid-wrap" id="tv-wrap-left" style="display:flex;flex-direction:column">
+          <div class="tv-vid-label" style="background:#22d38699">LEFT</div>
           <div class="tv-vid-time" id="tv-vt-left">0ms</div>
-          <img id="tv-img-left" src="" alt="left"/>
+          <img id="tv-img-left" src="" alt="left" style="flex:1;object-fit:cover"/>
         </div>
-        <div class="tv-vid-wrap" id="tv-wrap-right">
-          <div class="tv-vid-label">RIGHT</div>
+        <!-- HEAD — centre -->
+        <div class="tv-vid-wrap" id="tv-wrap-head" style="display:flex;flex-direction:column">
+          <div class="tv-vid-label" style="background:#5b7df599">HEAD</div>
+          <div class="tv-vid-time" id="tv-vt-head">0ms</div>
+          <img id="tv-img-head" src="" alt="head" style="flex:1;object-fit:cover"/>
+        </div>
+        <!-- RIGHT — droite -->
+        <div class="tv-vid-wrap" id="tv-wrap-right" style="display:flex;flex-direction:column">
+          <div class="tv-vid-label" style="background:#f59e0b99">RIGHT</div>
           <div class="tv-vid-time" id="tv-vt-right">0ms</div>
-          <img id="tv-img-right" src="" alt="right"/>
+          <img id="tv-img-right" src="" alt="right" style="flex:1;object-fit:cover"/>
+        </div>
+        <!-- Vue 3D intégrée — même ligne -->
+        <div id="tv-3d-inline-wrap" style="position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);overflow:hidden;min-height:160px">
+          <div style="position:absolute;top:4px;left:6px;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;background:#00000099;color:#fff;z-index:2;text-transform:uppercase;letter-spacing:.04em">3D</div>
+          <canvas id="tv3d-canvas" style="width:100%;height:100%;display:block"></canvas>
+          <div id="tv3d-legend" style="position:absolute;top:4px;right:6px;display:flex;flex-direction:column;gap:3px;font-size:.65rem"></div>
+          <div id="tv3d-coords" style="position:absolute;bottom:4px;left:6px;font-size:.62rem;font-family:monospace;color:var(--text3);background:#00000088;padding:1px 6px;border-radius:4px;display:none"></div>
+          <div id="tv3d-empty-inline" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72rem;color:var(--text3);text-align:center;padding:8px">Chargez une session</div>
+          <!-- Mini contrôles 3D -->
+          <div style="position:absolute;bottom:4px;right:6px;display:flex;gap:4px;z-index:5">
+            <select id="tv3d-mode" class="tv-sel" onchange="tv3dSetMode(this.value)" style="font-size:.65rem;padding:1px 5px;background:#00000099;border-color:#333360">
+              <option value="both">Traj+pos</option>
+              <option value="trajectoire">Trajectoire</option>
+              <option value="curseur">Position</option>
+            </select>
+            <select id="tv3d-axes" class="tv-sel" onchange="tv3dSetAxes(this.value)" style="font-size:.65rem;padding:1px 5px;background:#00000099;border-color:#333360">
+              <option value="xyz">XYZ</option>
+              <option value="xzy">XZY</option>
+            </select>
+            <button class="btn" onclick="tv3dResetCamera()" style="font-size:.62rem;padding:1px 5px;background:#00000099;border-color:#333360" title="Reset caméra">↺</button>
+          </div>
         </div>
       </div>
 
-      <!-- Scrubber -->
+      <!-- Timeline partagée -->
       <div id="tv-scrubber-wrap">
         <div id="tv-playhead" onclick="tvScrubClick(event)">
           <div id="tv-playhead-fill"></div>
@@ -806,36 +829,7 @@ td.c{text-align:center}
     </div>
   </div><!-- /tc diff -->
 
-  <!-- ── Onglet 3D ─────────────────────────────── -->
-  <div class="tc" id="tv-tc-3d">
-    <div id="tv3d-empty" style="padding:40px;text-align:center;color:var(--text3)">
-      Sélectionnez une session pour afficher la vue 3D des trackers.
-    </div>
-    <div id="tv3d-layout" style="display:none;flex-direction:column;gap:8px">
-      <div style="display:flex;gap:8px;align-items:center;padding:6px 0;flex-wrap:wrap">
-        <label style="font-size:.78rem;color:var(--text2)">Affichage</label>
-        <select id="tv3d-mode" class="tv-sel" onchange="tv3dSetMode(this.value)">
-          <option value="trajectoire">Trajectoire complète</option>
-          <option value="curseur">Position au curseur</option>
-          <option value="both">Trajectoire + curseur</option>
-        </select>
-        <label style="font-size:.78rem;color:var(--text2);margin-left:8px">Axes</label>
-        <select id="tv3d-axes" class="tv-sel" onchange="tv3dSetAxes(this.value)">
-          <option value="xyz">X / Y / Z</option>
-          <option value="xzy">X / Z / Y</option>
-        </select>
-        <button class="btn" onclick="tv3dResetCamera()" style="font-size:.75rem;padding:3px 10px">Reset caméra</button>
-        <span style="font-size:.75rem;color:var(--text3);margin-left:4px">Clic + drag: rotation · Scroll: zoom · Clic droit: pan</span>
-      </div>
-      <div id="tv3d-canvas-wrap" style="position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;height:500px">
-        <canvas id="tv3d-canvas" style="width:100%;height:100%;display:block"></canvas>
-        <!-- Légende 3D -->
-        <div id="tv3d-legend" style="position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px;font-size:.72rem"></div>
-        <!-- Coordonnées sous le curseur -->
-        <div id="tv3d-coords" style="position:absolute;bottom:8px;left:10px;font-size:.68rem;font-family:monospace;color:var(--text3);background:#00000088;padding:2px 8px;border-radius:4px;display:none"></div>
-      </div>
-    </div>
-  </div><!-- /tc 3d -->
+  <!-- ── Onglet 3D supprimé : vue 3D maintenant intégrée dans l'onglet Live -->
 
 </div>
 
@@ -1803,6 +1797,17 @@ async function tvSelectSession(path) {
     tvBuildCharts();
     tvRenderAt(0);
     tvUpdateLegend();
+    // Initialiser et construire la vue 3D inline
+    tv3dInitIfNeeded();
+    if (data?.tracker?.t_ms?.length) {
+      ge('tv3d-empty-inline').style.display = 'none';
+      TV3D.needsRebuild = true;
+      tv3dBuild();
+      TV3D.needsRebuild = false;
+      tv3dUpdateCursor(0);
+    } else {
+      ge('tv3d-empty-inline').style.display = 'flex';
+    }
   } catch(e) {
     ge('tv-loading').textContent = '⚠ Erreur: ' + e.message;
     log('Viewer: '+e.message, 'ERROR');
@@ -2155,9 +2160,6 @@ function tvNavTab(name, el) {
     ge('diff-empty').style.display  = hasSess ? 'none' : '';
     ge('diff-btn-wrap').style.display = (hasSess && !hasDiff) ? '' : 'none';
     ge('diff-layout').style.display = hasDiff ? '' : 'none';
-  }
-  if (name === '3d') {
-    tv3dShow();
   }
 }
 
@@ -2852,30 +2854,20 @@ const TV3D_COLORS = {
   right: 0xf59e0b,
 };
 
+// La vue 3D est maintenant intégrée dans l'onglet Live (tv-3d-inline-wrap)
 function tv3dShow() {
-  const data = TV.data;
-  if (!data?.tracker?.t_ms?.length) {
-    ge('tv3d-empty').style.display = '';
-    ge('tv3d-layout').style.display = 'none';
-    return;
-  }
-  ge('tv3d-empty').style.display = 'none';
-  ge('tv3d-layout').style.display = 'flex';
+  // Rien à faire ici — la 3D est toujours visible dans l'onglet Live
+}
 
+function tv3dInitIfNeeded() {
   if (!TV3D.initialized) {
     tv3dInit();
-    TV3D.needsRebuild = true;
   }
-  if (TV3D.needsRebuild) {
-    tv3dBuild();
-    TV3D.needsRebuild = false;
-  }
-  tv3dUpdateCursor(TV.t_ms);
 }
 
 function tv3dInit() {
   const canvas = ge('tv3d-canvas');
-  const wrap   = ge('tv3d-canvas-wrap');
+  const wrap   = ge('tv-3d-inline-wrap');
 
   TV3D.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   TV3D.renderer.setPixelRatio(window.devicePixelRatio);
@@ -2883,7 +2875,7 @@ function tv3dInit() {
 
   TV3D.scene = new THREE.Scene();
 
-  TV3D.camera = new THREE.PerspectiveCamera(50, wrap.clientWidth / wrap.clientHeight, 0.001, 1000);
+  TV3D.camera = new THREE.PerspectiveCamera(50, wrap.clientWidth / Math.max(1, wrap.clientHeight), 0.001, 1000);
 
   // Lumière ambiante douce
   TV3D.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -2911,9 +2903,10 @@ function tv3dInit() {
 }
 
 function tv3dResize() {
-  const wrap = ge('tv3d-canvas-wrap');
+  const wrap = ge('tv-3d-inline-wrap');
   if (!wrap || !TV3D.renderer) return;
   const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w < 10 || h < 10) return;
   TV3D.renderer.setSize(w, h, false);
   TV3D.camera.aspect = w / h;
   TV3D.camera.updateProjectionMatrix();
@@ -3123,11 +3116,11 @@ function tv3dUpdateLegend() {
   }).join('');
 }
 
-// Hook : quand le curseur timeline bouge, mettre à jour la vue 3D si active
+// Hook : quand le curseur timeline bouge, mettre à jour la vue 3D inline (toujours visible dans Live)
 const _origTvRenderAt = tvRenderAt;
 tvRenderAt = function(t_ms) {
   _origTvRenderAt(t_ms);
-  if (ge('tv-tc-3d')?.classList.contains('active')) {
+  if (TV3D.initialized) {
     tv3dUpdateCursor(t_ms);
   }
 };

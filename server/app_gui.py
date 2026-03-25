@@ -323,7 +323,7 @@ class ConfidenceBadge(QLabel):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class DiscoveryWorker(QThread):
-    """Découvre les sessions dans /mnt/ingest."""
+    """Découvre les sessions dans /home/exoria/ingest."""
     result   = pyqtSignal(list)   # list of session Path strings
     error    = pyqtSignal(str)
 
@@ -546,7 +546,7 @@ class IngestionPanel(QWidget):
         layout.addWidget(self.btn_scan)
 
         # ── Liste des sessions ──
-        grp_sess = QGroupBox("Sessions dans /mnt/ingest")
+        grp_sess = QGroupBox("Sessions dans /home/exoria/ingest")
         vl = QVBoxLayout(grp_sess)
         self.lbl_count = QLabel("— sessions")
         self.lbl_count.setStyleSheet(f"color:{DARK['text_dim']};")
@@ -614,7 +614,7 @@ class IngestionPanel(QWidget):
             self.list_sessions.addItem(item)
 
         self.lbl_count.setText(f"{len(sessions)} session(s) trouvée(s)")
-        self.log.log(f"[Ingestion] {len(sessions)} sessions dans /mnt/ingest", "OK")
+        self.log.log(f"[Ingestion] {len(sessions)} sessions dans /home/exoria/ingest", "OK")
         self.btn_scan.setEnabled(True)
         self.list_sessions.selectAll()
         self.sessions_changed.emit(sessions)
@@ -1364,9 +1364,9 @@ class PipelinePanel(QWidget):
         self.chk_write_mode.setToolTip(
             "Si coché, la session validée sera copiée dans /mnt/silver après traitement."
         )
-        self.chk_delete_after = QCheckBox("Supprimer de /mnt/ingest après store")
+        self.chk_delete_after = QCheckBox("Supprimer de /home/exoria/ingest après store")
         self.chk_delete_after.setToolTip(
-            "ATTENTION : supprime définitivement la session de /mnt/ingest après copie vers silver.\n"
+            "ATTENTION : supprime définitivement la session de /home/exoria/ingest après copie vers silver.\n"
             "Nécessite que le mode écriture soit activé."
         )
         self.chk_delete_after.setEnabled(False)
@@ -1449,7 +1449,7 @@ class PipelinePanel(QWidget):
             from PyQt6.QtWidgets import QMessageBox
             ans = QMessageBox.warning(
                 self, "Confirmation suppression",
-                f"La session sera supprimée de /mnt/ingest après copie vers /mnt/silver.\n\n"
+                f"La session sera supprimée de /home/exoria/ingest après copie vers /mnt/silver.\n\n"
                 f"Session : {Path(source_path).name}\n\nContinuer ?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -1629,7 +1629,7 @@ def main():
     win.show()
 
     win.log.log("SyncML Studio démarré.", "OK")
-    win.log.log("1. Déposez vos sessions dans /mnt/ingest, puis scannez dans « Ingestion ».", "DIM")
+    win.log.log("1. Déposez vos sessions dans /home/exoria/ingest, puis scannez dans « Ingestion ».", "DIM")
     win.log.log("2. Lancez la pipeline dans « Pipeline » (mode safe par défaut).", "DIM")
     win.log.log("   → Cochez « Mode écriture » pour produire le résultat dans /mnt/silver.", "DIM")
     win.log.log("   → Cochez « Supprimer de ingest » pour nettoyer après store (opt-in).", "DIM")

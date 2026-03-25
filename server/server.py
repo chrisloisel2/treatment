@@ -5,7 +5,7 @@ SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
   /mnt/datasets  → source brute, lecture seule
-  /mnt/ingest    → espace de travail (copie de travail)
+  /home/exoria/ingest    → espace de travail (copie de travail)
   /mnt/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -283,7 +283,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /mnt/ingest (sessions déposées par l'opérateur)
+        # Découverte dans /home/exoria/ingest (sessions déposées par l'opérateur)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
             if s.is_dir() and not s.name.startswith("_")
@@ -725,7 +725,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /mnt/ingest
+    session:       str        # chemin dans /home/exoria/ingest
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -734,7 +734,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:            str          # nom ou chemin de session dans /mnt/ingest
+    session:            str          # nom ou chemin de session dans /home/exoria/ingest
     write_mode:         bool  = False
     delete_after_store: bool  = False
     force_flux:         bool  = False
@@ -805,7 +805,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /mnt/ingest."""
+    """Lance un entraînement asynchrone sur les sessions de /home/exoria/ingest."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -826,7 +826,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /mnt/ingest."""
+    """Lance une inférence asynchrone sur une session de /home/exoria/ingest."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -870,13 +870,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/ingest."""
+    """Lance la pipeline complète (9 étapes) sur une session de /home/exoria/ingest."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/ingest
+    # req.session peut être un nom ou un chemin complet dans /home/exoria/ingest
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -891,7 +891,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /mnt/ingest en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /home/exoria/ingest en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)

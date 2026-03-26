@@ -7,7 +7,7 @@ GROUP_NAME="ia"
 
 APP_DIR="/home/exoria/treatment"
 WORK_DIR="/mnt/storage/mistral"
-PYTHON_BIN="/usr/bin/python3"
+PYTHON_BIN="python3"
 PORT="8000"
 HOST="0.0.0.0"
 

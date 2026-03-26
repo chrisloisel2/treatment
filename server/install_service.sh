@@ -5,7 +5,7 @@ SERVICE_NAME="treatment"
 USER_NAME="ia"
 GROUP_NAME="ia"
 
-APP_DIR="/Users/christopher/Downloads/sync_test_1/treatment"
+APP_DIR="/home/ia/treatment"
 WORK_DIR="/mnt/storage/mistral"
 PYTHON_BIN="/usr/bin/python3"
 PORT="8000"

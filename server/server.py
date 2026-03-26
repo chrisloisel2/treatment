@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /home/ia/workbench  → source brute, lecture seule
-  /home/ia/workbench/    → espace de travail (copie de travail)
+  /mnt/storage/mistral  → source brute, lecture seule
+  /mnt/storage/mistral/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -107,11 +107,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/home/ia/workbench")
+    INGEST_DIR = Path("/mnt/storage/mistral")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/home/ia/workbench"
+DEFAULT_WATCH_DIR = "/mnt/storage/mistral"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -283,7 +283,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /home/ia/workbench/ (sessions déposées par l'opérateur)
+        # Découverte dans /mnt/storage/mistral/ (sessions déposées par l'opérateur)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
             if s.is_dir() and not s.name.startswith("_")
@@ -302,6 +302,7 @@ def _worker_scan(job: Job):
             has_gripper  = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
             has_flux_csv = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
             has_jsonl    = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
+            has_subtitle = (s / "episode_subtitle.json").exists()
             # Statut pipeline
             pipeline_steps = {}
             pipeline_done  = False
@@ -328,6 +329,7 @@ def _worker_scan(job: Job):
                 "has_gripper":    has_gripper,
                 "has_flux_csv":   has_flux_csv,
                 "has_jsonl":      has_jsonl,
+                "has_subtitle":   has_subtitle,
                 "meta":           meta,
                 "last_result":    last_result,
                 "pipeline_done":  pipeline_done,
@@ -710,7 +712,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /home/ia/workbench/
+    session:       str        # chemin dans /mnt/storage/mistral/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -719,7 +721,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:            str          # nom ou chemin de session dans /home/ia/workbench/
+    session:            str          # nom ou chemin de session dans /mnt/storage/mistral/
     write_mode:         bool  = False
     delete_after_store: bool  = False
     force_flux:         bool  = False
@@ -772,7 +774,7 @@ async def health():
 
 @app.post("/api/scan")
 async def scan():
-    """Lance un scan asynchrone de /home/ia/workbench."""
+    """Lance un scan asynchrone de /mnt/storage/mistral."""
     job = _new_job("scan")
     threading.Thread(target=_worker_scan, args=(job,), daemon=True).start()
     return {"job_id": job.id}
@@ -790,7 +792,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /home/ia/workbench/."""
+    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/mistral/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -811,7 +813,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /home/ia/workbench/."""
+    """Lance une inférence asynchrone sur une session de /mnt/storage/mistral/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -855,13 +857,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /home/ia/workbench/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/mistral/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /home/ia/workbench/
+    # req.session peut être un nom ou un chemin complet dans /mnt/storage/mistral/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -876,7 +878,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /home/ia/workbench/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /mnt/storage/mistral/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -914,10 +916,13 @@ async def pipeline_state(session_path: str):
 @app.post("/api/pipeline/rollback")
 async def pipeline_rollback(req: PipelineStateRequest):
     """Force un rollback sur une session (restaure les .bak_syncml)."""
-    from pipeline.pipeline import _restore_bak_files, _restore_backup, SessionPipelineState
+    from pipeline.pipeline import _restore_bak_files, _restore_backup, SessionPipelineState, PIPELINE_LOCK_FILE
     sess = Path(req.session_path)
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
+
+    # Supprimer le lock file s'il existe (pipeline interrompue)
+    (sess / PIPELINE_LOCK_FILE).unlink(missing_ok=True)
 
     # Essayer d'abord le backup complet
     ok = _restore_backup(sess, "ia_sync")
@@ -938,6 +943,19 @@ async def pipeline_rollback(req: PipelineStateRequest):
         state.save()
 
     return {"rolled_back": True, "session": str(sess.name)}
+
+
+@app.post("/api/pipeline/unlock")
+async def pipeline_unlock(req: PipelineStateRequest):
+    """Supprime le fichier de lock d'une session sans rollback."""
+    from pipeline.pipeline import PIPELINE_LOCK_FILE
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    lock = sess / PIPELINE_LOCK_FILE
+    existed = lock.exists()
+    lock.unlink(missing_ok=True)
+    return {"unlocked": existed, "session": str(sess.name)}
 
 
 @app.post("/api/watcher/start")
@@ -1815,6 +1833,21 @@ async def session_files(session_path: str):
         "tree":    tree,
         "missing": missing,
     })
+
+
+@app.get("/api/session/file")
+async def session_file(session_path: str, filename: str):
+    """Retourne le contenu JSON d'un fichier dans la session."""
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    # Sécurité : interdire les traversées de répertoire
+    target = (sess / filename).resolve()
+    if not str(target).startswith(str(sess.resolve())):
+        raise HTTPException(403, "Accès refusé")
+    if not target.exists():
+        raise HTTPException(404, f"{filename} introuvable dans la session")
+    return JSONResponse(json.loads(target.read_text(encoding="utf-8")))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

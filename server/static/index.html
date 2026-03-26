@@ -1150,7 +1150,9 @@
 			justify-content: center;
 		}
 
-		#steps-modal-backdrop.open { display: flex }
+		#steps-modal-backdrop.open {
+			display: flex
+		}
 
 		#steps-modal {
 			background: var(--bg2);
@@ -1163,10 +1165,26 @@
 			box-shadow: 0 8px 32px #0008;
 		}
 
-		#steps-modal h3 { margin: 0 0 3px; font-size: .88rem; color: var(--text) }
-		#steps-modal .sm-sub { font-size: .72rem; color: var(--text3); margin-bottom: 12px }
-		#steps-modal .sm-section { font-size: .7rem; font-weight: 700; color: var(--text3);
-			text-transform: uppercase; letter-spacing: .06em; margin-bottom: 7px }
+		#steps-modal h3 {
+			margin: 0 0 3px;
+			font-size: .88rem;
+			color: var(--text)
+		}
+
+		#steps-modal .sm-sub {
+			font-size: .72rem;
+			color: var(--text3);
+			margin-bottom: 12px
+		}
+
+		#steps-modal .sm-section {
+			font-size: .7rem;
+			font-weight: 700;
+			color: var(--text3);
+			text-transform: uppercase;
+			letter-spacing: .06em;
+			margin-bottom: 7px
+		}
 
 		/* Boutons action rapide */
 		.step-quick-grid {
@@ -1175,35 +1193,74 @@
 			gap: 6px;
 			margin-bottom: 14px;
 		}
+
 		.step-quick-btn {
-			display: flex; flex-direction: column; align-items: center; justify-content: center;
-			gap: 2px; padding: 8px 4px;
-			background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
-			font-size: .72rem; color: var(--text2); cursor: pointer;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			gap: 2px;
+			padding: 8px 4px;
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			font-size: .72rem;
+			color: var(--text2);
+			cursor: pointer;
 			transition: background .12s, border-color .12s, color .12s;
-			text-align: center; line-height: 1.3;
+			text-align: center;
+			line-height: 1.3;
 		}
-		.step-quick-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff }
-		.step-quick-btn .sq-ico { font-size: 1rem; line-height: 1 }
+
+		.step-quick-btn:hover {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: #fff
+		}
+
+		.step-quick-btn .sq-ico {
+			font-size: 1rem;
+			line-height: 1
+		}
 
 		/* Checkboxes combinaison */
 		.step-chk-row {
-			display: flex; flex-wrap: wrap; gap: 5px 8px; margin-bottom: 12px
+			display: flex;
+			flex-wrap: wrap;
+			gap: 5px 8px;
+			margin-bottom: 12px
 		}
+
 		.step-chk-row label {
-			display: flex; align-items: center; gap: 4px;
-			font-size: .74rem; color: var(--text2);
-			background: var(--bg3); border: 1px solid var(--border);
-			border-radius: 4px; padding: 3px 8px;
-			cursor: pointer; user-select: none;
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			font-size: .74rem;
+			color: var(--text2);
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 4px;
+			padding: 3px 8px;
+			cursor: pointer;
+			user-select: none;
 			transition: background .12s, border-color .12s;
 		}
-		.step-chk-row label:has(input:checked) {
-			background: var(--accent); border-color: var(--accent); color: #fff;
-		}
-		.step-chk-row label input { display: none }
 
-		.sm-btns { display: flex; gap: 8px; justify-content: flex-end }
+		.step-chk-row label:has(input:checked) {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: #fff;
+		}
+
+		.step-chk-row label input {
+			display: none
+		}
+
+		.sm-btns {
+			display: flex;
+			gap: 8px;
+			justify-content: flex-end
+		}
 
 		/* Divider */
 		.div {
@@ -1310,6 +1367,231 @@
 			text-transform: uppercase;
 			letter-spacing: .08em;
 			color: var(--text3)
+		}
+
+
+		/* ══ PAGE ANNOTATEUR ════════════════════════════════════════════════ */
+		#page-annotator {
+			display: none;
+			flex-direction: row;
+			overflow: hidden
+		}
+
+		#page-annotator.active {
+			display: flex;
+			flex: 1;
+			height: 100%
+		}
+
+		#an-sess-panel {
+			width: 220px;
+			flex-shrink: 0;
+			background: var(--bg2);
+			border-right: 1px solid var(--border);
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		#an-sess-panel-inner {
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+			min-width: 220px
+		}
+
+		#an-sess-panel-hdr {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 10px 12px 8px;
+			flex-shrink: 0;
+			border-bottom: 1px solid var(--border);
+			font-size: .68rem;
+			font-weight: 800;
+			text-transform: uppercase;
+			letter-spacing: .08em;
+			color: var(--text3)
+		}
+
+		#an-sess-scan-btn {
+			font-size: .72rem;
+			padding: 2px 8px;
+			border-radius: var(--rs);
+			border: 1px solid var(--border);
+			background: var(--bg3);
+			color: var(--text2);
+			cursor: pointer;
+			transition: all .12s;
+			line-height: 1.4;
+		}
+
+		#an-sess-scan-btn:hover {
+			border-color: var(--accent);
+			color: var(--accent)
+		}
+
+		#an-sess-scan-btn.scanning {
+			color: var(--orange);
+			border-color: var(--orange)88
+		}
+
+		#an-sess-list {
+			flex: 1;
+			overflow-y: auto;
+			padding: 4px 0
+		}
+
+		.an-sess-item {
+			padding: 8px 12px;
+			cursor: pointer;
+			margin: 2px 6px;
+			border-radius: var(--rs);
+			border-left: 2px solid transparent;
+			transition: background .1s, border-color .1s;
+		}
+
+		.an-sess-item:hover {
+			background: var(--bg4)
+		}
+
+		.an-sess-item.active {
+			background: var(--bg4);
+			border-left-color: var(--accent)
+		}
+
+		.an-sess-item-name {
+			font-size: .77rem;
+			font-weight: 600;
+			color: var(--text);
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis
+		}
+
+		.an-sess-item-meta {
+			font-size: .67rem;
+			color: var(--text3);
+			margin-top: 1px;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis
+		}
+
+		#an-content {
+			flex: 1;
+			min-width: 0;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		#an-toolbar {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			flex-shrink: 0;
+			padding: 10px 16px 0 24px;
+		}
+
+		#an-sess-name {
+			flex: 1;
+			font-size: .85rem;
+			font-weight: 700;
+			color: var(--text);
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis
+		}
+
+		#an-body {
+			flex: 1;
+			overflow: hidden;
+			position: relative;
+			display: flex;
+			flex-direction: column
+		}
+
+		/* ── Pistes d'annotation ───────────────────────────────────────── */
+		.an-track {
+			margin-bottom: 28px
+		}
+
+		.an-track-label {
+			font-size: .72rem;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: .06em;
+			color: var(--text3);
+			margin-bottom: 6px
+		}
+
+		.an-timeline {
+			position: relative;
+			height: 36px;
+			background: var(--bg3);
+			border-radius: 6px;
+			overflow: hidden;
+		}
+
+		.an-segment {
+			position: absolute;
+			top: 0;
+			height: 100%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: .68rem;
+			font-weight: 600;
+			color: #ffffffdd;
+			overflow: hidden;
+			white-space: nowrap;
+			text-overflow: ellipsis;
+			cursor: default;
+			border-right: 1px solid #00000022;
+			transition: filter .1s;
+			padding: 0 4px;
+			box-sizing: border-box;
+		}
+
+		.an-segment:hover {
+			filter: brightness(1.2)
+		}
+
+		.an-ruler {
+			position: relative;
+			height: 18px;
+			margin-top: 2px;
+			font-size: .6rem;
+			color: var(--text3);
+		}
+
+		.an-ruler-tick {
+			position: absolute;
+			top: 0;
+			transform: translateX(-50%);
+			white-space: nowrap;
+		}
+
+		.an-legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin-top: 14px;
+			font-size: .7rem;
+		}
+
+		.an-legend-item {
+			display: flex;
+			align-items: center;
+			gap: 5px;
+		}
+
+		.an-legend-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 3px;
+			flex-shrink: 0;
 		}
 
 		#tv-sess-scan-btn {
@@ -2231,6 +2513,9 @@
 				<button class="nav-btn" onclick="nav('viz',this)">
 					<span class="ico">◑</span>IA Scores
 				</button>
+				<button class="nav-btn" onclick="nav('annotator',this)">
+					<span class="ico">✎</span>Annotateur
+				</button>
 				<button class="nav-btn" onclick="nav('jobs',this)">
 					<span class="ico">◷</span>Jobs
 					<span class="nav-badge" id="nb-jobs">0</span>
@@ -2259,8 +2544,9 @@
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:250px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Répertoire</label>
 								<span id="cfg-root-display"
-									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/home/ia/workbench</span>
-								<input type="hidden" id="cfg-root" value="/home/ia/workbench" />
+									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/mnt/storage/mistral
+								</span>
+								<input type="hidden" id="cfg-root" value="/mnt/storage/mistral" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -2357,6 +2643,8 @@
 						</button>
 						<button class="btn" onclick="openStepsModal('all')">▶ Tout traiter</button>
 						<button class="btn d" onclick="rollbackSelected()">↩ Rollback sélectionnées</button>
+						<button class="btn d" onclick="unlockSelected()"
+							title="Supprime le fichier .pipeline_lock des sessions bloquées">🔓 Déverrouiller</button>
 						<div style="flex:1"></div>
 						<label style="font-size:.78rem;color:var(--text2)">
 							<input type="checkbox" id="chk-force-flux" style="margin-right:4px" />
@@ -2390,7 +2678,8 @@
 								↩ Rollback
 							</button>
 							<div style="flex:1"></div>
-							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0 sélectionnée(s)</span>
+							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0
+								sélectionnée(s)</span>
 						</div>
 					</div>
 				</div>
@@ -2557,6 +2846,7 @@
 						<div id="tv-tabs" class="tabs">
 							<div class="tab active" onclick="tvNavTab('live',this)">▣ Live</div>
 							<div class="tab" onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
+							<div class="tab" id="tv-tc-tab-actions" onclick="tvNavTab('actions',this)">⚙ Actions</div>
 						</div>
 
 						<!-- ── Onglet LIVE ──────────────────────────────────── -->
@@ -2771,7 +3061,8 @@
 										</div>
 										<div class="card" style="padding:12px">
 											<div class="card-h" style="color:var(--green)">✓ Après correction (conf =
-												<span id="diff-fix-conf">—</span>)</div>
+												<span id="diff-fix-conf">—</span>)
+											</div>
 											<div style="height:220px"><canvas id="diff-ch-fix-after"></canvas></div>
 										</div>
 									</div>
@@ -2789,8 +3080,85 @@
 							</div>
 						</div><!-- /tv-tc-diff -->
 
+						<!-- ── Onglet ACTIONS ─────────────────────────────────── -->
+						<div class="tv-tc" id="tv-tc-actions">
+							<div id="tv-actions-empty" style="padding:40px;text-align:center;color:var(--text3)">
+								Sélectionnez une session pour accéder aux actions.
+							</div>
+							<div id="tv-actions-inner" style="display:none;padding:16px;flex-direction:column;gap:12px">
+
+								<!-- Pipeline -->
+								<div class="card" style="padding:14px">
+									<div class="card-h">Pipeline</div>
+									<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+										<button class="btn p" onclick="tvActionRun()">▶ Lancer la pipeline</button>
+										<button class="btn d" onclick="tvActionRollback()">↩ Rollback</button>
+										<button class="btn d" onclick="tvActionUnlock()">🔓 Déverrouiller</button>
+									</div>
+									<div style="margin-top:10px">
+										<div style="font-size:.73rem;color:var(--text3);margin-bottom:5px">Étapes à
+											exécuter (laisser vide = toutes)</div>
+										<div id="tv-actions-steps" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+									</div>
+								</div>
+
+								<!-- État pipeline -->
+								<div class="card" style="padding:14px">
+									<div class="card-h"
+										style="display:flex;align-items:center;justify-content:space-between">
+										<span>État pipeline</span>
+										<button class="btn sm" onclick="tvActionRefreshState()"
+											style="font-size:.7rem">⟳ Actualiser</button>
+									</div>
+									<div id="tv-actions-state"
+										style="margin-top:8px;font-size:.75rem;color:var(--text2)">—</div>
+								</div>
+
+							</div>
+						</div><!-- /tv-tc-actions -->
+
 					</div><!-- /tv-content -->
 				</div><!-- /page-viewer -->
+
+
+				<!-- ══════════════════════════════════════════════════════
+  PAGE : ANNOTATEUR
+══════════════════════════════════════════════════════ -->
+				<div class="page" id="page-annotator">
+
+					<!-- ── Panneau sessions (gauche) ───────────────────── -->
+					<div id="an-sess-panel">
+						<div id="an-sess-panel-inner">
+							<div id="an-sess-panel-hdr">
+								<span>Explorateur</span>
+								<button id="an-sess-scan-btn" onclick="anScanSessions()">⟳ Scanner</button>
+							</div>
+							<div id="an-sess-list">
+								<div id="an-sess-empty">Cliquez « Scanner »<br />pour charger les sessions</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- ── Zone principale ─────────────────────────────── -->
+					<div id="an-content">
+
+						<div id="an-toolbar">
+							<div id="an-sess-name">— Sélectionnez une session —</div>
+						</div>
+
+						<div id="an-body">
+							<div id="an-loading"
+								style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:.85rem">
+								Sélectionnez une session dans le panneau gauche.
+							</div>
+							<div id="an-inner" style="display:none;padding:20px;overflow:auto;height:100%">
+								<div id="an-tracks"></div>
+							</div>
+						</div>
+
+					</div>
+
+				</div><!-- /page-annotator -->
 
 				<!-- ══════════════════════════════════════════════════════
   PAGE : VISUALISATION IA SCORES
@@ -2854,7 +3222,7 @@
 						<div class="card">
 							<div class="card-h">Chemins</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/home/ia/workbench" />
+								<input type="text" id="s-root" value="/mnt/storage/mistral" />
 							</div>
 							<div class="fr"><label>Modèle IA</label>
 								<input type="text" id="s-model" value="_sync_ml_model" />
@@ -2905,6 +3273,8 @@
 			<div id="sess-drawer-title">—</div>
 			<button class="btn sm" onclick="closeDrawer()">✕</button>
 			<button class="btn sm d" id="btn-drawer-rollback" onclick="rollbackDrawer()">↩ Rollback</button>
+			<button class="btn sm d" id="btn-drawer-unlock" onclick="unlockDrawer()"
+				title="Supprime le .pipeline_lock">🔓</button>
 			<button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
 		</div>
 		<div id="sess-drawer-body"></div>
@@ -2958,7 +3328,7 @@
 			drawerSess: null,
 			watcher: { running: false },
 			cfg: {
-				root: '/home/ia/workbench', model: '_sync_ml_model', nas: '',
+				root: '/mnt/storage/mistral', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200
 			}
 		};
@@ -3133,7 +3503,7 @@
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
-			const root = S.cfg.root || ge('s-root').value || '/home/ia/workbench';
+			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/mistral			';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
 			try {
@@ -3233,7 +3603,7 @@
 			ge('steps-modal-backdrop').classList.remove('open');
 			_stepsModalTarget = null;
 		}
-		function stepsModalSelectAll()  { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = true); }
+		function stepsModalSelectAll() { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = true); }
 		function stepsModalSelectNone() { ge('steps-chk-row').querySelectorAll('input').forEach(i => i.checked = false); }
 
 		async function stepsModalConfirm() {
@@ -3552,6 +3922,27 @@
 			} catch (e) { log('Rollback: ' + e.message, 'ERROR'); }
 		}
 
+		async function unlockDrawer() {
+			if (!S.drawerSess) return;
+			try {
+				const r = await api('POST', '/api/pipeline/unlock', { session_path: S.drawerSess.path });
+				log(`Déverrouillé: ${S.drawerSess.name}${r.unlocked ? '' : ' (pas de lock)'}`, 'OK');
+			} catch (e) { log('Unlock: ' + e.message, 'ERROR'); }
+		}
+
+		async function unlockSelected() {
+			const sel = S.sessions.filter(s => S.selected.has(s.path));
+			if (!sel.length) { alert('Sélectionnez des sessions.'); return; }
+			let n = 0;
+			for (const sess of sel) {
+				try {
+					const r = await api('POST', '/api/pipeline/unlock', { session_path: sess.path });
+					if (r.unlocked) n++;
+				} catch (e) { log(`Unlock ${sess.name}: ${e.message}`, 'ERROR'); }
+			}
+			log(`${n} session(s) déverrouillée(s) sur ${sel.length}`, 'OK');
+		}
+
 		// ══════════════════════════════════════════════════════════════════
 		// Sessions page
 		// ══════════════════════════════════════════════════════════════════
@@ -3593,11 +3984,11 @@
 		function _updateSessActions() {
 			const n = S.selected.size;
 			const btnRun = ge('btn-sess-run');
-			const btnRb  = ge('btn-sess-rollback');
-			const cnt    = ge('sess-sel-count');
+			const btnRb = ge('btn-sess-rollback');
+			const cnt = ge('sess-sel-count');
 			if (btnRun) btnRun.disabled = n === 0;
-			if (btnRb)  btnRb.disabled  = n === 0;
-			if (cnt)    cnt.textContent = `${n} sélectionnée(s)`;
+			if (btnRb) btnRb.disabled = n === 0;
+			if (cnt) cnt.textContent = `${n} sélectionnée(s)`;
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -4586,6 +4977,9 @@
 				ge('diff-btn-wrap').style.display = (hasSess && !hasDiff) ? '' : 'none';
 				ge('diff-layout').style.display = hasDiff ? '' : 'none';
 			}
+			if (name === 'actions') {
+				tvActionsRender();
+			}
 		}
 
 		function diffNavTab(name, el) {
@@ -4595,6 +4989,105 @@
 				.forEach(t => t.classList.remove('active'));
 			el.classList.add('active');
 			ge(`diff-tc-${name}`)?.classList.add('active');
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// ACTIONS — Pipeline depuis le viewer
+		// ══════════════════════════════════════════════════════════════════
+
+		function tvActionsRender() {
+			const hasSess = !!TV.sessPath;
+			ge('tv-actions-empty').style.display = hasSess ? 'none' : '';
+			ge('tv-actions-inner').style.display = hasSess ? 'flex' : 'none';
+			if (!hasSess) return;
+
+			// Rendre les checkboxes d'étapes
+			const stepsDiv = ge('tv-actions-steps');
+			if (stepsDiv && !stepsDiv.children.length) {
+				stepsDiv.innerHTML = ALL_STEPS.map(s => `
+					<label style="display:flex;align-items:center;gap:4px;font-size:.74rem;background:var(--bg2);padding:3px 8px;border-radius:5px;cursor:pointer">
+						<input type="checkbox" value="${s}" style="margin:0"> ${s}
+					</label>`).join('');
+			}
+
+			tvActionRefreshState();
+		}
+
+		function _tvActionSelectedSteps() {
+			return [...document.querySelectorAll('#tv-actions-steps input:checked')].map(cb => cb.value);
+		}
+
+		async function tvActionRun() {
+			if (!TV.sessPath) return;
+			const steps = _tvActionSelectedSteps();
+			const sess = S.sessions.find(s => s.path === TV.sessPath);
+			const root = S.cfg?.root || ge('cfg-root')?.value || '';
+			const body = { session: TV.sessPath, root };
+			if (steps.length) body.steps = steps;
+			try {
+				const { job_id } = await api('POST', '/api/pipeline/run', body);
+				if (sess) sess.job_id = job_id;
+				log(`Pipeline lancée: ${sess?.name || TV.sessPath} (job ${job_id})`, 'OK');
+				tvActionRefreshState();
+			} catch (e) { log('Pipeline: ' + e.message, 'ERROR'); }
+		}
+
+		async function tvActionRollback() {
+			if (!TV.sessPath) return;
+			const sess = S.sessions.find(s => s.path === TV.sessPath);
+			if (!confirm(`Rollback sur ${sess?.name || TV.sessPath} ?`)) return;
+			try {
+				await api('POST', '/api/pipeline/rollback', { session_path: TV.sessPath });
+				log(`Rollback: ${sess?.name || TV.sessPath}`, 'OK');
+				if (sess) await loadSessionPipelineState(sess);
+				tvActionRefreshState();
+			} catch (e) { log('Rollback: ' + e.message, 'ERROR'); }
+		}
+
+		async function tvActionUnlock() {
+			if (!TV.sessPath) return;
+			const sess = S.sessions.find(s => s.path === TV.sessPath);
+			try {
+				const r = await api('POST', '/api/pipeline/unlock', { session_path: TV.sessPath });
+				log(`Déverrouillé: ${sess?.name || TV.sessPath}${r.unlocked ? '' : ' (pas de lock)'}`, 'OK');
+				tvActionRefreshState();
+			} catch (e) { log('Unlock: ' + e.message, 'ERROR'); }
+		}
+
+		async function tvActionRefreshState() {
+			if (!TV.sessPath) return;
+			const el = ge('tv-actions-state');
+			if (!el) return;
+			try {
+				const state = await api('GET', `/api/pipeline/state?session_path=${encodeURIComponent(TV.sessPath)}`);
+				const sess = S.sessions.find(s => s.path === TV.sessPath);
+				if (sess) sess.pipeline_state = state;
+
+				if (!state || !state.steps) { el.innerHTML = '<span style="color:var(--text3)">Aucun état disponible</span>'; return; }
+
+				const STATUS_COLOR = { done: 'var(--green)', failed: 'var(--red)', running: '#f59e0b', skipped: 'var(--text3)', rolled_back: '#a78bfa' };
+				const STATUS_IC = { done: '✓', failed: '✗', running: '⟳', skipped: '—', rolled_back: '↩' };
+				const rows = ALL_STEPS.map(name => {
+					const s = state.steps[name];
+					if (!s) return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bg2)">
+						<span style="color:var(--text3)">${name}</span><span style="color:var(--text3);font-size:.7rem">—</span></div>`;
+					const col = STATUS_COLOR[s.status] || 'var(--text2)';
+					const ic = STATUS_IC[s.status] || '?';
+					const msg = s.message ? `<span style="color:var(--text3);font-size:.68rem;margin-left:6px">${esc(s.message.slice(0, 60))}</span>` : '';
+					return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bg2)">
+						<span>${name}</span>
+						<span style="color:${col};font-size:.75rem">${ic} ${s.status}${msg}</span>
+					</div>`;
+				}).join('');
+
+				const overall = state.finished
+					? (state.success ? '<span style="color:var(--green)">✓ Terminée avec succès</span>' : '<span style="color:var(--red)">✗ Échouée</span>')
+					: '<span style="color:#f59e0b">⟳ En cours / non terminée</span>';
+
+				el.innerHTML = `<div style="margin-bottom:8px">${overall}</div>${rows}`;
+			} catch (e) {
+				el.innerHTML = `<span style="color:var(--red)">Erreur: ${esc(e.message)}</span>`;
+			}
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -4885,6 +5378,10 @@
 				ge('diff-empty').style.display = 'none';
 				ge('diff-btn-wrap').style.display = '';
 			}
+			// Rafraîchir l'onglet Actions si actif
+			if (ge('tv-tc-actions')?.classList.contains('active')) {
+				tvActionsRender();
+			}
 		};
 
 		// ══════════════════════════════════════════════════════════════════
@@ -5062,7 +5559,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/home/ia/workbench';
+				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/mistral				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -5097,7 +5594,7 @@
 		// Settings save
 		// ══════════════════════════════════════════════════════════════════
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/home/ia/workbench';
+			S.cfg.root = ge('s-root').value || '/mnt/storage/mistral			';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -5114,7 +5611,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/home/ia/workbench';
+				const root = c.root || '/mnt/storage/mistral				';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -5163,7 +5660,7 @@
 			ge('page-' + name)?.classList.add('active');
 			btn?.classList.add('active');
 			// Viewer actif : supprimer padding/scroll du #main
-			ge('main').classList.toggle('viewer-active', name === 'viewer');
+			ge('main').classList.toggle('viewer-active', name === 'viewer' || name === 'annotator');
 			if (name === 'viewer') {
 				tvRefreshSessions();
 				requestAnimationFrame(() => Object.values(TV.charts).forEach(ch => ch?.resize()));
@@ -5227,6 +5724,7 @@
 			renderSessionsList();
 			tvRefreshSessions();
 			scRefreshSessions();
+			anRefreshSessions();
 			renderJobsList();
 			updateNavBadges();
 		}
@@ -5261,323 +5759,7 @@
 			log('SyncML Studio démarré', 'OK');
 			log('Étapes: scan → tracker → vidéo → flux CSV → IA sync → validation → NAS', 'DIM');
 		});
-
-		// ══════════════════════════════════════════════════════════════════
-		// VUE 3D — Three.js
-		// ══════════════════════════════════════════════════════════════════
-
-		const TV3D = {
-			renderer: null,
-			scene: null,
-			camera: null,
-			animId: null,
-			isDragging: false,
-			isRightDrag: false,
-			lastMouse: { x: 0, y: 0 },
-			spherical: { theta: 0.5, phi: 1.0, r: 3.0 },
-			target: { x: 0, y: 0, z: 0 },
-			trajLines: {},
-			trajPts: {},
-			cursors: {},
-			mode: 'both',
-			axesMode: 'xyz',
-			initialized: false,
-		};
-
-		const TV3D_COLORS = { head: 0x5b7df5, left: 0x22d386, right: 0xf59e0b };
-
-		function tv3dInitIfNeeded() {
-			if (!TV3D.initialized) tv3dInit();
-		}
-
-		function tv3dInit() {
-			const canvas = ge('tv3d-canvas');
-			const wrap = ge('tv-3d-block');
-			if (!canvas || !wrap) return;
-
-			TV3D.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-			TV3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-			TV3D.renderer.setClearColor(0x13132a, 1);
-
-			TV3D.scene = new THREE.Scene();
-
-			const w = wrap.clientWidth || 600;
-			const h = wrap.clientHeight || 300;
-			TV3D.camera = new THREE.PerspectiveCamera(50, w / h, 0.001, 1000);
-
-			TV3D.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-			const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-			dir.position.set(2, 4, 3);
-			TV3D.scene.add(dir);
-
-			const axH = new THREE.AxesHelper(0.3);
-			axH.name = 'axesHelper';
-			TV3D.scene.add(axH);
-
-			const grid = new THREE.GridHelper(2, 20, 0x252545, 0x252545);
-			grid.name = 'grid';
-			TV3D.scene.add(grid);
-
-			// Camera par défaut (avant que les données arrivent)
-			TV3D.spherical = { theta: 0.6, phi: 0.9, r: 2.5 };
-			TV3D.target = { x: 0, y: 0, z: 0 };
-			tv3dApplyCamera();
-
-			tv3dAttachControls(canvas, wrap);
-			TV3D.initialized = true;
-
-			// Lancer le rendu
-			tv3dAnimate();
-
-			// Resize initial + observer
-			requestAnimationFrame(tv3dResize);
-			new ResizeObserver(() => tv3dResize()).observe(wrap);
-		}
-
-		function tv3dResize() {
-			const wrap = ge('tv-3d-block');
-			if (!wrap || !TV3D.renderer || !TV3D.camera) return;
-			const w = wrap.clientWidth, h = wrap.clientHeight;
-			if (w < 10 || h < 10) return;
-			TV3D.renderer.setSize(w, h, false);
-			TV3D.camera.aspect = w / h;
-			TV3D.camera.updateProjectionMatrix();
-		}
-
-		function tv3dResetCamera() {
-			if (!TV3D.initialized) return;
-			TV3D.spherical = { theta: 0.6, phi: 0.9, r: 2.5 };
-			TV3D.target = { x: 0, y: 0, z: 0 };
-			tv3dApplyCamera();
-		}
-
-		function tv3dApplyCamera() {
-			if (!TV3D.camera) return;
-			const { theta, phi, r } = TV3D.spherical;
-			const { x: tx, y: ty, z: tz } = TV3D.target;
-			TV3D.camera.position.set(
-				tx + r * Math.sin(phi) * Math.sin(theta),
-				ty + r * Math.cos(phi),
-				tz + r * Math.sin(phi) * Math.cos(theta)
-			);
-			TV3D.camera.lookAt(tx, ty, tz);
-		}
-
-		function tv3dAttachControls(canvas) {
-			canvas.addEventListener('mousedown', e => {
-				TV3D.isDragging = true;
-				TV3D.isRightDrag = e.button === 2;
-				TV3D.lastMouse = { x: e.clientX, y: e.clientY };
-			});
-			window.addEventListener('mousemove', e => {
-				if (!TV3D.isDragging || !TV3D.camera) return;
-				const dx = e.clientX - TV3D.lastMouse.x;
-				const dy = e.clientY - TV3D.lastMouse.y;
-				TV3D.lastMouse = { x: e.clientX, y: e.clientY };
-				if (TV3D.isRightDrag) {
-					const right = new THREE.Vector3(), up = new THREE.Vector3();
-					TV3D.camera.matrix.extractBasis(right, up, new THREE.Vector3());
-					const f = TV3D.spherical.r * 0.0015;
-					TV3D.target.x -= right.x * dx * f;
-					TV3D.target.y -= up.y * dy * f;
-					TV3D.target.z -= right.z * dx * f;
-				} else {
-					TV3D.spherical.theta -= dx * 0.005;
-					TV3D.spherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, TV3D.spherical.phi + dy * 0.005));
-				}
-				tv3dApplyCamera();
-			});
-			window.addEventListener('mouseup', () => { TV3D.isDragging = false; });
-			canvas.addEventListener('wheel', e => {
-				e.preventDefault();
-				TV3D.spherical.r = Math.max(0.01, TV3D.spherical.r * (1 + e.deltaY * 0.001));
-				tv3dApplyCamera();
-			}, { passive: false });
-			canvas.addEventListener('contextmenu', e => e.preventDefault());
-		}
-
-		function tv3dAnimate() {
-			requestAnimationFrame(tv3dAnimate);
-			if (TV3D.renderer && TV3D.scene && TV3D.camera) {
-				TV3D.renderer.render(TV3D.scene, TV3D.camera);
-			}
-		}
-
-		// ── Construit les trajectoires à partir de TV.data.tracker ─────────
-		function tv3dBuild() {
-			if (!TV3D.initialized) return;
-
-			const raw = TV.data?.tracker;
-			if (!raw?.t_ms?.length) {
-				ge('tv3d-empty-msg').style.display = '';
-				ge('tv3d-empty-msg').textContent = 'Pas de données tracker';
-				return;
-			}
-
-			// Nettoyer anciens objets
-			for (const role of ['head', 'left', 'right']) {
-				if (TV3D.trajLines[role]) { TV3D.scene.remove(TV3D.trajLines[role]); TV3D.trajLines[role] = null; }
-				if (TV3D.cursors[role]) { TV3D.scene.remove(TV3D.cursors[role]); TV3D.cursors[role] = null; }
-				TV3D.trajPts[role] = null;
-			}
-
-			// Quels rôles ont des XYZ ?
-			const roles = ['head', 'left', 'right'].filter(r =>
-				Array.isArray(raw[`${r}_x`]) && raw[`${r}_x`].length > 0
-			);
-			if (!roles.length) {
-				ge('tv3d-empty-msg').style.display = '';
-				ge('tv3d-empty-msg').textContent = `Colonnes XYZ manquantes (clés: ${Object.keys(raw).join(', ')})`;
-				return;
-			}
-			ge('tv3d-empty-msg').style.display = 'none';
-
-			// Centroïde global
-			let cx = 0, cy = 0, cz = 0, n = 0;
-			for (const r of roles) {
-				const xs = raw[`${r}_x`], ys = raw[`${r}_y`], zs = raw[`${r}_z`];
-				for (let i = 0; i < xs.length; i++) { cx += xs[i]; cy += ys[i]; cz += zs[i]; n++; }
-			}
-			if (n) { cx /= n; cy /= n; cz /= n; }
-			TV3D.target = { x: cx, y: cy, z: cz };
-
-			// Rayon max (pour grille + caméra)
-			let R = 0.05;
-			for (const r of roles) {
-				const xs = raw[`${r}_x`], ys = raw[`${r}_y`], zs = raw[`${r}_z`];
-				for (let i = 0; i < xs.length; i++) {
-					const d = Math.sqrt((xs[i] - cx) ** 2 + (ys[i] - cy) ** 2 + (zs[i] - cz) ** 2);
-					if (d > R) R = d;
-				}
-			}
-			TV3D.spherical.r = R * 3.5;
-
-			// Grille centrée, sous les données
-			TV3D.scene.children.filter(c => c.name === 'grid').forEach(g => TV3D.scene.remove(g));
-			const grid = new THREE.GridHelper(R * 4, 20, 0x252545, 0x1a1a36);
-			grid.position.set(cx, cy - R, cz);
-			grid.name = 'grid';
-			TV3D.scene.add(grid);
-
-			// Axes helper centré sur les données
-			TV3D.scene.children.filter(c => c.name === 'axesHelper').forEach(a => TV3D.scene.remove(a));
-			const axH = new THREE.AxesHelper(R * 0.5);
-			axH.position.set(cx, cy, cz);
-			axH.name = 'axesHelper';
-			TV3D.scene.add(axH);
-
-			// Trajectoires + sphères
-			for (const role of roles) {
-				const [ax1, ax2, ax3] = tv3dGetAxes(role, raw);
-				if (!ax1?.length) continue;
-
-				// Downsample (max 3000 pts par ligne pour perf)
-				const stride = Math.max(1, Math.ceil(ax1.length / 3000));
-				const pts = [];
-				for (let i = 0; i < ax1.length; i += stride) pts.push(new THREE.Vector3(ax1[i], ax2[i], ax3[i]));
-				if (pts.at(-1) !== undefined) {
-					const last = new THREE.Vector3(ax1.at(-1), ax2.at(-1), ax3.at(-1));
-					if (!pts.at(-1).equals(last)) pts.push(last);
-				}
-
-				// Stocker les points pour mise à jour progressive du drawRange
-				TV3D.trajPts[role] = pts;
-
-				// Créer la géométrie avec tous les points mais drawRange = 0 au départ
-				const positions = new Float32Array(pts.length * 3);
-				for (let i = 0; i < pts.length; i++) {
-					positions[i * 3]     = pts[i].x;
-					positions[i * 3 + 1] = pts[i].y;
-					positions[i * 3 + 2] = pts[i].z;
-				}
-				const geo = new THREE.BufferGeometry();
-				geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-				geo.setDrawRange(0, 0);
-				const mat = new THREE.LineBasicMaterial({ color: TV3D_COLORS[role], linewidth: 2, opacity: 0.8, transparent: true });
-				const line = new THREE.Line(geo, mat);
-				TV3D.scene.add(line);
-				TV3D.trajLines[role] = line;
-
-				// Sphère curseur (taille proportionnelle, minimum visible)
-				const sr = Math.max(0.008, R * 0.04);
-				const sphere = new THREE.Mesh(
-					new THREE.SphereGeometry(sr, 10, 10),
-					new THREE.MeshPhongMaterial({ color: TV3D_COLORS[role], emissive: TV3D_COLORS[role], emissiveIntensity: 0.6 })
-				);
-				sphere.position.set(ax1[0], ax2[0], ax3[0]);
-				TV3D.scene.add(sphere);
-				TV3D.cursors[role] = sphere;
-			}
-
-			tv3dApplyCamera();
-			tv3dApplyMode();
-			tv3dUpdateLegend();
-		}
-
-		// Retourne les 3 axes selon axesMode
-		function tv3dGetAxes(role, data) {
-			const xs = data[`${role}_x`], ys = data[`${role}_y`], zs = data[`${role}_z`];
-			if (!xs) return [null, null, null];
-			return TV3D.axesMode === 'xzy' ? [xs, zs, ys] : [xs, ys, zs];
-		}
-
-		// Déplace les sphères à la position t_ms (recherche binaire)
-		function tv3dUpdateCursor(t_ms) {
-			if (!TV3D.initialized) return;
-			const data = TV.data?.tracker;
-			if (!data?.t_ms?.length) return;
-			const ts = data.t_ms;
-
-			// Recherche binaire
-			let lo = 0, hi = ts.length - 1;
-			while (lo < hi) { const mid = (lo + hi) >> 1; if (ts[mid] < t_ms) lo = mid + 1; else hi = mid; }
-			const best = (lo > 0 && Math.abs(ts[lo - 1] - t_ms) < Math.abs(ts[lo] - t_ms)) ? lo - 1 : lo;
-
-			const parts = [];
-			for (const role of ['head', 'left', 'right']) {
-				const sphere = TV3D.cursors[role];
-				const line = TV3D.trajLines[role];
-				const pts = TV3D.trajPts[role];
-				const [ax1, ax2, ax3] = tv3dGetAxes(role, data);
-				if (!sphere || !ax1 || best >= ax1.length) continue;
-				sphere.position.set(ax1[best], ax2[best], ax3[best]);
-				parts.push(`${role}: (${ax1[best].toFixed(3)}, ${ax2[best].toFixed(3)}, ${ax3[best].toFixed(3)})`);
-
-				// Mettre à jour le drawRange : afficher seulement les points déjà parcourus
-				if (line && pts) {
-					const stride = Math.max(1, Math.ceil(ax1.length / pts.length));
-					const ptIdx = Math.min(Math.floor(best / stride) + 1, pts.length);
-					line.geometry.setDrawRange(0, ptIdx);
-				}
-			}
-			const coordEl = ge('tv3d-coords');
-			if (coordEl && parts.length) { coordEl.textContent = parts.join('  |  '); coordEl.style.display = ''; }
-		}
-
-		function tv3dApplyMode() {
-			const mode = TV3D.mode;
-			for (const role of ['head', 'left', 'right']) {
-				if (TV3D.trajLines[role]) TV3D.trajLines[role].visible = (mode !== 'curseur');
-				if (TV3D.cursors[role]) TV3D.cursors[role].visible = (mode !== 'trajectoire');
-			}
-		}
-
-		function tv3dSetMode(val) { TV3D.mode = val; tv3dApplyMode(); }
-		function tv3dSetAxes(val) { TV3D.axesMode = val; tv3dBuild(); tv3dUpdateCursor(TV.t_ms); }
-
-		function tv3dUpdateLegend() {
-			const leg = ge('tv3d-legend');
-			if (!leg) return;
-			const roles = ['head', 'left', 'right'].filter(r => TV3D.cursors[r]);
-			leg.innerHTML = roles.map(role => {
-				const hex = '#' + TV3D_COLORS[role].toString(16).padStart(6, '0');
-				return `<div style="display:flex;align-items:center;gap:5px;background:#00000099;padding:2px 8px;border-radius:99px">
-      <div style="width:10px;height:10px;border-radius:50%;background:${hex}"></div>
-      <span style="color:#dde0f5">${role}</span>
-    </div>`;
-			}).join('');
-		}
 	</script>
+	<script src="/static/tv3d.js"></script>
+	<script src="/static/annotator.js"></script>
 </body>
-
-</html>

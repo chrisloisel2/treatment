@@ -3281,12 +3281,28 @@
 				<div class="page" id="page-jobs">
 					<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
 						<div>
-							<div class="ph">Jobs</div>
-							<div class="ps" style="margin:0">Tâches asynchrones</div>
+							<div class="ph">Jobs &amp; Workers</div>
+							<div class="ps" style="margin:0">Tâches asynchrones · Pool de processus</div>
 						</div>
 						<div style="flex:1"></div>
-						<button class="btn sm d" onclick="clearJobs()">Purger</button>
+						<button class="btn sm" onclick="refreshPoolStatus()" title="Rafraîchir l'état du pool">↺ Pool</button>
+						<button class="btn sm r" onclick="resetPool()" title="Arrêter et recréer le pool de processus">⊘ Reset pool</button>
+						<button class="btn sm d" onclick="clearJobs()">Purger terminés</button>
 					</div>
+
+					<!-- Pool status -->
+					<div id="pool-panel" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:.78rem">
+						<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+							<span style="color:var(--text2);font-weight:600">Process pool</span>
+							<span>Workers : <b id="pool-workers">—</b></span>
+							<span>Processus actifs : <b id="pool-procs">—</b></span>
+							<span>File d'attente : <b id="pool-queue">—</b></span>
+							<span style="color:var(--text2);font-weight:600;margin-left:10px">Threads</span>
+							<span>Actifs : <b id="pool-threads">—</b></span>
+						</div>
+						<div id="pool-threads-list" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
+					</div>
+
 					<div id="jobs-list"></div>
 				</div>
 
@@ -3354,10 +3370,8 @@
 			<button class="btn sm d" id="btn-drawer-rollback" onclick="rollbackDrawer()">↩ Rollback</button>
 			<button class="btn sm d" id="btn-drawer-unlock" onclick="unlockDrawer()"
 				title="Supprime le .pipeline_lock">🔓</button>
-			<button class="btn sm" id="btn-drawer-check-sync" onclick="checkSyncDrawer()"
-				title="Vérifie le décalage vidéo/capteurs (rapide, sans job)">⏱ Sync</button>
 			<button class="btn sm" id="btn-drawer-verify" onclick="verifyDrawer()"
-				title="Vérifie trackers + désynchronisation et marque la session si problème">⚠ Vérifier</button>
+				title="Lance check_sync + verify (trackers, désync, labels) et écrit les résultats dans metadata">⚙ Vérification</button>
 			<button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
 		</div>
 		<div id="sess-drawer-body"></div>
@@ -3510,6 +3524,18 @@
 					handleJobUpdate(m.job);
 					renderJobsList();
 					updateNavBadges();
+					break;
+				case 'job_deleted':
+					delete S.jobs[m.job_id];
+					renderJobsList();
+					updateNavBadges();
+					break;
+				case 'pool_reset':
+					Object.values(S.jobs).forEach(j => {
+						if (j.status === 'running') j.status = 'error';
+					});
+					renderJobsList();
+					refreshPoolStatus();
 					break;
 				case 'log':
 					log(m.entry.msg, m.entry.level); break;
@@ -3990,37 +4016,97 @@
       <div style="font-size:.75rem;color:var(--green)">✓ Stocké: ${ps.nas_path}</div>`;
 			}
 
-			// Bloc vérification (issues trackers + désync)
+			// ── Bloc vérifications metadata ──────────────────────────────────
 			const verif = sess.meta?.verification;
-			if (verif) {
-				const hasIss = verif.has_issues;
-				const color = hasIss ? 'var(--red)' : 'var(--green)';
-				const icon = hasIss ? '✗' : '✓';
+			const labelVerif = sess.meta?.camera_label_verification;
+			const metaFull = sess.meta || {};
+			const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated;
+			if (hasAnyVerif) {
 				html += `<div class="div" style="margin:8px 0"></div>
-      <div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">⚠ Vérification</div>
-      <div style="font-size:.75rem;color:${color};margin-bottom:4px">
-        ${icon} ${hasIss ? verif.issues.length + ' problème(s) détecté(s)' : 'Aucun problème critique'}
-        ${verif.warnings?.length ? `<span style="color:var(--orange)"> + ${verif.warnings.length} avertissement(s)</span>` : ''}
-      </div>`;
-				if (hasIss) {
-					verif.issues.forEach(iss => {
-						html += `<div style="font-size:.72rem;color:var(--red);padding:2px 0 2px 8px;border-left:2px solid var(--red)44;margin-bottom:3px">${esc(iss)}</div>`;
-					});
-				}
-				if (verif.warnings?.length) {
-					verif.warnings.forEach(w => {
-						html += `<div style="font-size:.72rem;color:var(--orange);padding:2px 0 2px 8px;border-left:2px solid var(--orange)44;margin-bottom:3px">${esc(w)}</div>`;
-					});
-				}
-				// Stats clés
-				const stats = verif.stats || {};
-				const statParts = [];
-				if (stats.tracker_dt_ms) statParts.push(`dt=${stats.tracker_dt_ms}ms`);
-				if (stats.tracker_lr_dist_mean_m) statParts.push(`L-R=${stats.tracker_lr_dist_mean_m}m`);
-				if (stats.video_max_delay_ms) statParts.push(`vid_delay=${stats.video_max_delay_ms}ms`);
-				if (statParts.length) html += `<div style="font-size:.7rem;color:var(--text3);margin-top:4px">${statParts.join(' · ')}</div>`;
-			}
+      <div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">⚙ Vérifications</div>`;
 
+				// — check_sync —
+				const syncDelay = verif?.stats?.video_max_delay_ms;
+				if (syncDelay != null) {
+					const syncOk = syncDelay <= 500;
+					const delays = verif?.stats?.camera_delays_ms || {};
+					const delayStr = Object.entries(delays).map(([c,v]) => `${c}:${v}ms`).join(' ');
+					html += `<div style="font-size:.75rem;margin-bottom:3px">
+        <span style="color:var(--text3)">check_sync</span>
+        <span style="color:${syncOk ? 'var(--green)' : 'var(--red)'};margin-left:6px">${syncOk ? '✓' : '✗'} délai max ${syncDelay}ms${delayStr ? ' (' + esc(delayStr) + ')' : ''}</span>
+      </div>`;
+				}
+
+				// — verify (trackers + désync) —
+				if (verif) {
+					const hasIss = verif.has_issues;
+					const color = hasIss ? 'var(--red)' : 'var(--green)';
+					const icon = hasIss ? '✗' : '✓';
+					html += `<div style="font-size:.75rem;margin-bottom:3px">
+        <span style="color:var(--text3)">verify</span>
+        <span style="color:${color};margin-left:6px">${icon} ${hasIss ? verif.issues.length + ' problème(s)' : 'OK'}${verif.warnings?.length ? ` <span style="color:var(--orange)">+${verif.warnings.length} avert.</span>` : ''}</span>
+      </div>`;
+					if (hasIss) {
+						verif.issues.forEach(iss => {
+							html += `<div style="font-size:.71rem;color:var(--red);padding:2px 0 2px 8px;border-left:2px solid var(--red)44;margin-bottom:2px">${esc(iss)}</div>`;
+						});
+					}
+					if (verif.warnings?.length) {
+						verif.warnings.forEach(w => {
+							html += `<div style="font-size:.71rem;color:var(--orange);padding:2px 0 2px 8px;border-left:2px solid var(--orange)44;margin-bottom:2px">${esc(w)}</div>`;
+						});
+					}
+					// Stats tracker + vidéo
+					const stats = verif.stats || {};
+					const statParts = [];
+					if (stats.tracker_rows) statParts.push(`${stats.tracker_rows} lignes`);
+					if (stats.tracker_dt_ms) statParts.push(`dt=${stats.tracker_dt_ms}ms`);
+					if (stats.tracker_gaps_200ms) statParts.push(`gaps=${stats.tracker_gaps_200ms}`);
+					if (stats.tracker_lr_dist_mean_m != null) statParts.push(`L-R=${stats.tracker_lr_dist_mean_m}m`);
+					if (stats.video_max_delay_ms != null) statParts.push(`vid_delay=${stats.video_max_delay_ms}ms`);
+					if (statParts.length) html += `<div style="font-size:.7rem;color:var(--text3);margin:3px 0 4px 2px">${statParts.join(' · ')}</div>`;
+				}
+
+				// — verify_labels —
+				if (labelVerif) {
+					const lblOk = labelVerif.global_ok;
+					const lblConf = labelVerif.confidence != null ? ` conf ${(labelVerif.confidence * 100).toFixed(0)}%` : '';
+					html += `<div style="font-size:.75rem;margin-bottom:3px">
+        <span style="color:var(--text3)">verify_labels</span>
+        <span style="color:${lblOk ? 'var(--green)' : 'var(--red)'};margin-left:6px">${lblOk ? '✓' : '✗'}${esc(lblConf)}</span>
+      </div>`;
+					if (labelVerif.verdicts?.length) {
+						labelVerif.verdicts.forEach(v => {
+							const ok = v.label_correct ?? v.ok;
+							const declared = v.declared_label ?? v.label;
+							const predicted = v.predicted_label ?? v.predicted;
+							html += `<div style="font-size:.71rem;color:var(--text3);padding:1px 0 1px 8px;border-left:2px solid ${ok ? 'var(--green)' : 'var(--red)'}44;margin-bottom:2px">
+          ${esc(declared)} → ${esc(predicted)} <span style="color:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? '✓' : '✗'}</span>
+        </div>`;
+						});
+					}
+					if (labelVerif.summary) html += `<div style="font-size:.7rem;color:var(--text3);margin:2px 0 4px 2px">${esc(labelVerif.summary)}</div>`;
+				}
+
+				// — validate (ia_sync) —
+				if (metaFull.ia_sync_validated) {
+					const nRel = metaFull.ia_sync_n_reliable;
+					const avgScore = metaFull.ia_sync_avg_score;
+					const shifts = metaFull.ia_sync_shifts_ms || {};
+					html += `<div style="font-size:.75rem;margin-bottom:3px">
+        <span style="color:var(--text3)">validate (ia_sync)</span>
+        <span style="color:var(--green);margin-left:6px">✓${nRel != null ? ` ${nRel} paires` : ''}${avgScore != null ? ` score=${avgScore}` : ''}</span>
+      </div>`;
+					if (Object.keys(shifts).length) {
+						for (const [k, v] of Object.entries(shifts)) {
+							const col = Math.abs(v) < 50 ? 'var(--green)' : Math.abs(v) < 200 ? 'var(--orange)' : 'var(--red)';
+							html += `<div style="font-size:.71rem;color:var(--text3);padding:1px 0 1px 8px;border-left:2px solid var(--border)44;margin-bottom:2px;display:flex;justify-content:space-between">
+          <span>${esc(k)}</span><span style="color:${col};font-family:monospace">${(+v).toFixed(1)}ms</span>
+        </div>`;
+						}
+					}
+				}
+			}
 			body.innerHTML = html;
 		}
 
@@ -4045,75 +4131,69 @@
 			} catch (e) { log('Rollback: ' + e.message, 'ERROR'); }
 		}
 
-		async function checkSyncDrawer() {
-			if (!S.drawerSess) return;
-			const btn = ge('btn-drawer-check-sync');
-			btn.disabled = true;
-			btn.textContent = '⏳ Sync…';
-			try {
-				const r = await api('POST', '/api/pipeline/check_sync', { session_path: S.drawerSess.path });
-				if (r.status === 'ok') {
-					const d = r.result;
-					const details = Object.entries(d.camera_delays_ms || {})
-						.map(([c, v]) => `${c}: +${v}ms`).join(', ');
-					log(`✓ Sync OK — délai max=${d.max_delay_ms}ms (${details})`, 'OK');
-					btn.textContent = '✓ OK';
-					btn.style.color = 'var(--green)';
-				} else {
-					const err = r.error || 'Décalage détecté';
-					log(`✗ ${err}`, 'ERROR');
-					btn.textContent = '✗ DÉCALAGE';
-					btn.style.color = 'var(--red)';
-				}
-				// Rafraîchir le drawer pour afficher le nouveau statut check_sync
-				await loadSessionPipelineState(S.drawerSess);
-				renderDrawerContent(S.drawerSess);
-				renderPipelineBoard();
-			} catch (e) {
-				log('check_sync: ' + e.message, 'ERROR');
-				btn.textContent = '⏱ Sync';
-			} finally {
-				btn.disabled = false;
-				setTimeout(() => { btn.textContent = '⏱ Sync'; btn.style.color = ''; }, 4000);
-			}
-		}
-
 		async function verifyDrawer() {
 			if (!S.drawerSess) return;
 			const btn = ge('btn-drawer-verify');
 			btn.disabled = true;
-			btn.textContent = '⏳ Analyse…';
+			btn.textContent = '⏳…';
+			if (!S.drawerSess.meta) S.drawerSess.meta = {};
+			let hasErrors = false;
+
+			// 1. check_sync
 			try {
-				const r = await api('POST', '/api/pipeline/verify', { session_path: S.drawerSess.path });
-				const res = r.result || {};
-				const issues = res.issues || [];
-				const warnings = res.warnings || [];
-				// Mettre à jour le meta local immédiatement
-				if (!S.drawerSess.meta) S.drawerSess.meta = {};
-				S.drawerSess.meta.verification = res;
-				// Mettre à jour l'index global
-				const idx = S.sessions.findIndex(s => s.path === S.drawerSess.path);
-				if (idx >= 0) S.sessions[idx].meta = S.drawerSess.meta;
-				if (r.status === 'ok') {
-					log(`✓ Vérification OK${warnings.length ? ` — ${warnings.length} avertissement(s)` : ''}`, 'OK');
-					btn.textContent = '✓ OK';
-					btn.style.color = 'var(--green)';
+				btn.textContent = '⏳ Sync…';
+				const rs = await api('POST', '/api/pipeline/check_sync', { session_path: S.drawerSess.path });
+				const syncRes = rs.result || {};
+				if (!S.drawerSess.meta.verification) S.drawerSess.meta.verification = { stats: {} };
+				if (!S.drawerSess.meta.verification.stats) S.drawerSess.meta.verification.stats = {};
+				S.drawerSess.meta.verification.stats.video_max_delay_ms = syncRes.max_delay_ms ?? null;
+				S.drawerSess.meta.verification.stats.camera_delays_ms = syncRes.camera_delays_ms ?? null;
+				if (rs.status === 'decalage') {
+					hasErrors = true;
+					log(`✗ check_sync — ${rs.error || 'Décalage vidéo détecté'}`, 'ERROR');
 				} else {
-					const summary = r.error || issues.join(' | ') || 'Problèmes détectés';
-					log(`✗ ${summary}`, 'ERROR');
-					btn.textContent = '✗ Issues';
-					btn.style.color = 'var(--red)';
+					log(`✓ check_sync OK — délai max=${syncRes.max_delay_ms ?? '?'}ms`, 'OK');
 				}
-				renderDrawerContent(S.drawerSess);
-				renderPipelineBoard();
-				renderSessionsList();
 			} catch (e) {
-				log('verify: ' + e.message, 'ERROR');
-				btn.textContent = '⚠ Vérifier';
-			} finally {
-				btn.disabled = false;
-				setTimeout(() => { btn.textContent = '⚠ Vérifier'; btn.style.color = ''; }, 5000);
+				hasErrors = true;
+				log('check_sync: ' + e.message, 'ERROR');
 			}
+
+			// 2. verify (trackers + désync)
+			try {
+				btn.textContent = '⏳ Verify…';
+				const rv = await api('POST', '/api/pipeline/verify', { session_path: S.drawerSess.path });
+				const res = rv.result || {};
+				S.drawerSess.meta.verification = {
+					...S.drawerSess.meta.verification,
+					...res,
+					stats: { ...(S.drawerSess.meta.verification?.stats || {}), ...(res.stats || {}) },
+				};
+				if (rv.status !== 'ok') {
+					hasErrors = true;
+					const issues = res.issues || [];
+					log(`✗ verify — ${rv.error || issues.join(' | ') || 'Problèmes détectés'}`, 'ERROR');
+				} else {
+					const w = res.warnings?.length || 0;
+					log(`✓ verify OK${w ? ` — ${w} avertissement(s)` : ''}`, 'OK');
+				}
+			} catch (e) {
+				hasErrors = true;
+				log('verify: ' + e.message, 'ERROR');
+			}
+
+			// Propager à l'index global + rafraîchir
+			const idx = S.sessions.findIndex(s => s.path === S.drawerSess.path);
+			if (idx >= 0) S.sessions[idx].meta = S.drawerSess.meta;
+			await loadSessionPipelineState(S.drawerSess);
+			renderDrawerContent(S.drawerSess);
+			renderPipelineBoard();
+			renderSessionsList();
+
+			btn.disabled = false;
+			btn.textContent = hasErrors ? '✗ Issues' : '✓ OK';
+			btn.style.color = hasErrors ? 'var(--red)' : 'var(--green)';
+			setTimeout(() => { btn.textContent = '⚙ Vérification'; btn.style.color = ''; }, 5000);
 		}
 
 		async function unlockDrawer() {
@@ -4154,10 +4234,50 @@
 				const meta = s.meta || {};
 				const sc = syncScore(s.pipeline_state);
 				const _steps = s.pipeline_state?.steps || {};
-				const _checkCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
-				const _camSt   = _steps['detect']?.status;
-				const _gripSt  = _steps['verify']?.status;
-				const _syncSt  = _steps['check_sync']?.status;
+				const _stepCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
+				const _verif = s.meta?.verification;
+				const _labelVerif = s.meta?.camera_label_verification;
+
+				// check_sync : délai vidéo/capteurs
+				const _videoDelay = _verif?.stats?.video_max_delay_ms;
+				const _syncSt = _steps['check_sync']?.status;
+				const _syncTitle = _videoDelay != null ? `Délai max ${_videoDelay}ms` : 'check_sync non exécuté';
+				const _syncCls = _videoDelay != null
+					? (_videoDelay <= 500 ? 'chk-ok' : 'chk-fail')
+					: (_syncSt === 'done' ? 'chk-ok' : _syncSt === 'failed' ? 'chk-fail' : 'chk-pending');
+
+				// verify trackers
+				const _verifSt = _steps['verify']?.status;
+				const _gripIssues = (_verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
+				const _gripTitle = _verif
+					? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0,2).join('; ') : 'Trackers OK')
+					: 'verify non exécuté';
+				const _gripCls = _verif ? (_gripIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_verifSt);
+
+				// verify vidéo/désync
+				const _videoIssues = (_verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
+				const _videoSt = _steps['video']?.status;
+				const _videoTitle = _verif ? (_videoIssues ? 'Problème désync vidéo' : 'Vidéo OK') : 'verify non exécuté';
+				const _videoCls = _verif ? (_videoIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_videoSt);
+
+				// verify_labels : labels caméras
+				const _labelSt = _steps['verify_labels']?.status;
+				const _labelConf = _labelVerif?.confidence != null ? ` (conf ${(_labelVerif.confidence * 100).toFixed(0)}%)` : '';
+				const _labelTitle = _labelVerif != null
+					? (_labelVerif.global_ok ? `Labels OK${_labelConf}` : `Labels incorrects${_labelConf}`)
+					: 'verify_labels non exécuté';
+				const _labelCls = _labelVerif != null
+					? (_labelVerif.global_ok ? 'chk-ok' : 'chk-fail')
+					: _stepCls(_labelSt);
+
+				// validate (ia_sync)
+				const _validSt = _steps['validate']?.status;
+				const _iaScore = meta.ia_sync_avg_score;
+				const _iaTitle = meta.ia_sync_validated
+					? `IA sync validé — score ${_iaScore != null ? _iaScore : '?'}`
+					: 'validate non exécuté';
+				const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
+
 				div.innerHTML = `
       <div class="si-name">${s.name}</div>
       <div class="si-chips">
@@ -4167,9 +4287,11 @@
         <span class="chip ${s.has_jsonl ? 'ok' : 'miss'}">jsonl</span>
       </div>
       <div class="si-checks">
-        <span class="si-check ${_checkCls(_camSt)}"><span class="si-dot"></span>checkcamera</span>
-        <span class="si-check ${_checkCls(_gripSt)}"><span class="si-dot"></span>checkgripper</span>
-        <span class="si-check ${_checkCls(_syncSt)}"><span class="si-dot"></span>checksynch</span>
+        <span class="si-check ${_syncCls}" title="${_syncTitle}"><span class="si-dot"></span>sync</span>
+        <span class="si-check ${_gripCls}" title="${_gripTitle}"><span class="si-dot"></span>trackers</span>
+        <span class="si-check ${_videoCls}" title="${_videoTitle}"><span class="si-dot"></span>vidéo</span>
+        <span class="si-check ${_labelCls}" title="${_labelTitle}"><span class="si-dot"></span>labels</span>
+        <span class="si-check ${_validCls}" title="${_iaTitle}"><span class="si-dot"></span>ia_sync</span>
       </div>
       ${meta.scenario ? `<span class="b dim" style="margin-left:6px">${meta.scenario}</span>` : ''}
       ${sc ? `<span class="si-score"><span class="sb ${sc.grade}">${sc.grade}</span><span style="color:var(--text3)">${sc.score}/100</span></span>` : ''}
@@ -5727,6 +5849,7 @@
 				const elapsed = j.started_at && j.ended_at
 					? ((new Date(j.ended_at) - new Date(j.started_at)) / 1000).toFixed(1) + 's' : j.started_at ? '…' : '—';
 				const sessName = j.result?.session || '';
+				const isActive = j.status === 'running' || j.status === 'pending';
 				const div = document.createElement('div');
 				div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);margin-bottom:5px;font-size:.78rem';
 				div.innerHTML = `
@@ -5734,13 +5857,16 @@
       <span class="b ${stCls}">${j.status}</span>
       <span style="color:var(--text2);min-width:80px">${kl}</span>
       ${sessName ? `<span style="color:var(--text3);font-size:.72rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sessName}</span>` : '<span style="flex:1"></span>'}
-      <div style="width:120px;flex-shrink:0">
+      <div style="width:100px;flex-shrink:0">
         <div class="prw" style="height:5px">
           <div class="prf ${j.status === 'done' ? 'g' : j.status === 'error' ? 'r' : ''}" style="width:${j.progress}%"></div>
         </div>
+        <div style="color:var(--text3);font-size:.65rem;text-align:right">${Math.round(j.progress)}%</div>
       </div>
-      <span style="color:var(--text3);flex-shrink:0">${elapsed}</span>
-      ${j.status === 'error' ? `<span style="color:var(--red)" title="${esc((j.error || '').slice(0, 200))}">⚠</span>` : ''}
+      <span style="color:var(--text3);flex-shrink:0;min-width:36px;text-align:right">${elapsed}</span>
+      ${j.status === 'error' ? `<span style="color:var(--red)" title="${esc((j.error || '').slice(0, 200))}">⚠</span>` : '<span style="width:14px"></span>'}
+      ${isActive ? `<button class="btn sm r" style="padding:1px 6px;font-size:.65rem" title="Annuler ce job" onclick="cancelJob('${j.id}')">⊘</button>` : '<span style="width:30px"></span>'}
+      <button class="btn sm d" style="padding:1px 6px;font-size:.65rem" title="Supprimer ce job" onclick="deleteJob('${j.id}')">✕</button>
     `;
 				list.appendChild(div);
 			});
@@ -5748,8 +5874,44 @@
 
 		async function clearJobs() {
 			await api('DELETE', '/api/jobs');
-			S.jobs = {};
+			Object.keys(S.jobs).forEach(id => {
+				if (['done','error'].includes(S.jobs[id].status)) delete S.jobs[id];
+			});
 			renderJobsList();
+		}
+
+		async function deleteJob(id) {
+			try { await api('DELETE', `/api/jobs/${id}`); } catch(e) {}
+			delete S.jobs[id];
+			renderJobsList();
+			updateNavBadges();
+		}
+
+		async function cancelJob(id) {
+			try { await api('POST', `/api/jobs/${id}/cancel`); } catch(e) { log(e?.error || String(e), 'ERROR'); }
+		}
+
+		async function refreshPoolStatus() {
+			try {
+				const d = await api('GET', '/api/pool/status');
+				ge('pool-workers').textContent = d.pool?.max_workers ?? '—';
+				ge('pool-procs').textContent   = d.pool?.processes  ?? '—';
+				ge('pool-queue').textContent   = d.pool?.pending_work ?? '—';
+				ge('pool-threads').textContent = d.n_threads ?? '—';
+				const tl = ge('pool-threads-list');
+				tl.innerHTML = (d.active_threads || []).map(t =>
+					`<span style="font-size:.65rem;padding:1px 6px;border-radius:99px;background:var(--bg4);border:1px solid var(--border);color:${t.alive ? 'var(--green)' : 'var(--text3)'}">${esc(t.name)}</span>`
+				).join('');
+			} catch(e) { log('Pool status error: ' + e, 'ERROR'); }
+		}
+
+		async function resetPool() {
+			if (!confirm('Réinitialiser le pool ? Les jobs en cours seront annulés.')) return;
+			try {
+				await api('POST', '/api/pool/reset');
+				log('Pool réinitialisé', 'OK');
+				setTimeout(refreshPoolStatus, 500);
+			} catch(e) { log('Reset pool error: ' + e, 'ERROR'); }
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -5870,6 +6032,7 @@
 				tvRefreshSessions();
 				requestAnimationFrame(() => Object.values(TV.charts).forEach(ch => ch?.resize()));
 			}
+			if (name === 'jobs') refreshPoolStatus();
 		}
 
 		function vtab(name, el) {

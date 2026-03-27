@@ -669,6 +669,9 @@ def _run_pipeline_in_process(source_path: str, params: dict,
 # Pool de processus partagé pour le batch (max = nb CPU - 1, min = 2)
 _PROCESS_POOL: Optional[concurrent.futures.ProcessPoolExecutor] = None
 _PROCESS_POOL_LOCK = threading.Lock()
+# Futures actifs : job_id → Future (pour annulation)
+_POOL_FUTURES: Dict[str, concurrent.futures.Future] = {}
+_POOL_FUTURES_LOCK = threading.Lock()
 
 
 def _get_process_pool() -> concurrent.futures.ProcessPoolExecutor:
@@ -709,10 +712,14 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
             source_path, params, write_mode, force_flux,
             delete_after_store, steps_whitelist,
         )
+        with _POOL_FUTURES_LOCK:
+            _POOL_FUTURES[job.id] = fut
         try:
             result = fut.result()  # bloque ce thread (pas le GIL global)
         finally:
             stop_poll.set()
+            with _POOL_FUTURES_LOCK:
+                _POOL_FUTURES.pop(job.id, None)
 
         # Rejouer les logs collectés dans le process
         for entry in result.get("logs", []):
@@ -1134,6 +1141,94 @@ async def clear_jobs():
             del _jobs[k]
             _job_file(k).unlink(missing_ok=True)
     return {"cleared": len(done)}
+
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job(job_id: str):
+    """Supprime un job individuel (tous statuts)."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, f"Job {job_id} introuvable")
+        del _jobs[job_id]
+        _job_file(job_id).unlink(missing_ok=True)
+    await _broadcast({"type": "job_deleted", "job_id": job_id})
+    return {"deleted": job_id}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """Annule un job en cours (marque ERROR + annule le future si possible)."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, f"Job {job_id} introuvable")
+        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+            raise HTTPException(400, f"Job {job_id} déjà terminé (status={job.status})")
+        job.status   = JobStatus.ERROR
+        job.ended_at = _now()
+        job.error    = "Annulé par l'utilisateur"
+        _persist_job(job)
+    await _broadcast({"type": "job_update", "job": _job_to_dict(job)})
+    # Annuler le future dans le process pool si possible
+    fut = _POOL_FUTURES.get(job_id)
+    if fut:
+        fut.cancel()
+        _POOL_FUTURES.pop(job_id, None)
+    return {"cancelled": job_id}
+
+
+@app.get("/api/pool/status")
+async def pool_status():
+    """Retourne l'état du pool de processus et des threads actifs."""
+    pool = _PROCESS_POOL
+    pool_info = {}
+    if pool is not None:
+        pool_info = {
+            "max_workers":  pool._max_workers,
+            "processes":    len(pool._processes),
+            "pending_work": pool._work_queue.qsize() if hasattr(pool, "_work_queue") else None,
+        }
+    active_threads = [
+        {"name": t.name, "daemon": t.daemon, "alive": t.is_alive()}
+        for t in threading.enumerate()
+        if t.name not in ("MainThread",) and not t.name.startswith("asyncio")
+    ]
+    with _jobs_lock:
+        running = [_job_to_dict(j) for j in _jobs.values() if j.status == JobStatus.RUNNING]
+        pending = [_job_to_dict(j) for j in _jobs.values() if j.status == JobStatus.PENDING]
+    return {
+        "pool":           pool_info,
+        "active_threads": active_threads,
+        "n_threads":      len(active_threads),
+        "running_jobs":   running,
+        "pending_jobs":   pending,
+    }
+
+
+@app.post("/api/pool/reset")
+async def pool_reset():
+    """Arrête le pool de processus existant et en crée un nouveau."""
+    global _PROCESS_POOL
+    _POOL_FUTURES.clear()
+    with _PROCESS_POOL_LOCK:
+        old = _PROCESS_POOL
+        _PROCESS_POOL = None
+    if old is not None:
+        try:
+            old.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+    # Marquer les jobs RUNNING comme annulés
+    with _jobs_lock:
+        for job in _jobs.values():
+            if job.status == JobStatus.RUNNING:
+                job.status   = JobStatus.ERROR
+                job.ended_at = _now()
+                job.error    = "Pool réinitialisé par l'utilisateur"
+                _persist_job(job)
+    await _broadcast({"type": "pool_reset"})
+    return {"reset": True}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

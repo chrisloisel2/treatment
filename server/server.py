@@ -2184,6 +2184,327 @@ async def session_file(session_path: str, filename: str):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Export
+# ──────────────────────────────────────────────────────────────────────────────
+
+class ExportDestLocal(BaseModel):
+    path: str
+
+class ExportDestS3(BaseModel):
+    bucket: str
+    prefix: str = ""
+    region: str = "eu-west-1"
+    access_key: str
+    secret_key: str
+
+class ExportDestSftp(BaseModel):
+    host: str
+    port: int = 22
+    user: str
+    password: str
+    remote_path: str
+
+class LeRobotOptions(BaseModel):
+    enabled: bool = False
+    dataset_name: str = "robot_dataset"
+    robot_type: str = "so100"
+    fps: int = 30
+    push_to_hub: bool = False
+    hf_token: str = ""
+    repo_id: str = ""
+
+class ExportRequest(BaseModel):
+    sessions: List[str]
+    dest_type: str                          # "local" | "s3" | "sftp"
+    dest_local: Optional[ExportDestLocal] = None
+    dest_s3: Optional[ExportDestS3] = None
+    dest_sftp: Optional[ExportDestSftp] = None
+    lerobot: Optional[LeRobotOptions] = None
+
+
+def _worker_export(job: Job, req: ExportRequest):
+    """Worker d'export : copie les sessions vers la destination configurée,
+    avec conversion optionnelle au format LeRobot v3."""
+    import shutil
+
+    sessions = req.sessions
+    total = len(sessions)
+    _log_job(job, f"Export de {total} session(s) — destination: {req.dest_type}", "INFO")
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+
+    exported = []
+    errors = []
+
+    for i, sess_path in enumerate(sessions):
+        sess = Path(sess_path)
+        if not sess.exists():
+            errors.append(f"{sess_path}: introuvable")
+            _log_job(job, f"[{i+1}/{total}] SKIP {sess.name} — dossier introuvable", "WARN")
+            continue
+
+        sess_name = sess.name
+        _log_job(job, f"[{i+1}/{total}] Export {sess_name}…", "INFO")
+
+        try:
+            # ── Conversion LeRobot v3 ────────────────────────────────────────
+            if req.lerobot and req.lerobot.enabled:
+                sess_path = _convert_lerobot(job, sess, req.lerobot)
+
+            # ── Destination ─────────────────────────────────────────────────
+            if req.dest_type == "local":
+                _export_local(job, Path(sess_path), req.dest_local, sess_name)
+            elif req.dest_type == "s3":
+                _export_s3(job, Path(sess_path), req.dest_s3, sess_name)
+            elif req.dest_type == "sftp":
+                _export_sftp(job, Path(sess_path), req.dest_sftp, sess_name)
+            else:
+                raise ValueError(f"dest_type inconnu: {req.dest_type}")
+
+            exported.append(sess_name)
+            _log_job(job, f"[{i+1}/{total}] ✓ {sess_name}", "OK")
+
+        except Exception as e:
+            errors.append(f"{sess_name}: {e}")
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess_name}: {e}", "ERROR")
+
+        _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+    result = {"exported": exported, "errors": errors, "total": total}
+    status = JobStatus.DONE if not errors else JobStatus.ERROR
+    err_msg = "; ".join(errors) if errors else None
+    _update_job(job, status=status, ended_at=_now(), progress=100.0, result=result, error=err_msg)
+    _log_job(job, f"Export terminé — {len(exported)}/{total} OK, {len(errors)} erreur(s)", "OK" if not errors else "WARN")
+
+
+def _convert_lerobot(job: Job, sess: Path, opts: LeRobotOptions) -> str:
+    """Convertit une session au format LeRobot v3 HuggingFace dans un dossier temp."""
+    import tempfile, shutil
+
+    _log_job(job, f"  → Conversion LeRobot v3 : {sess.name}", "INFO")
+    tmp_dir = Path(tempfile.mkdtemp(prefix="lerobot_"))
+    dataset_dir = tmp_dir / opts.dataset_name / sess.name
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Structure LeRobot v3 ─────────────────────────────────────────────────
+    # meta/info.json
+    meta_dir = dataset_dir / "meta"
+    meta_dir.mkdir(exist_ok=True)
+
+    # Chercher les fichiers CSV de la session
+    csv_files = list(sess.glob("*.csv"))
+    video_files = list(sess.glob("*.mp4"))
+
+    # Construire info.json (format LeRobot v3)
+    features: dict = {}
+    for csv_f in csv_files:
+        col_name = csv_f.stem.replace("-", "_").replace(" ", "_")
+        features[col_name] = {"dtype": "float32", "shape": [1], "names": None}
+    for vid_f in video_files:
+        feat_key = f"observation.images.{vid_f.stem}"
+        features[feat_key] = {
+            "dtype": "video",
+            "shape": [opts.fps, 480, 640, 3],
+            "names": ["time", "height", "width", "channel"],
+            "video_info": {"video.fps": opts.fps, "video.codec": "av1", "video.pix_fmt": "yuv420p"}
+        }
+
+    info = {
+        "codebase_version": "v2.1",
+        "robot_type": opts.robot_type,
+        "total_episodes": 1,
+        "total_frames": 0,
+        "total_tasks": 1,
+        "total_videos": len(video_files),
+        "total_chunks": 1,
+        "chunks_size": 1000,
+        "fps": opts.fps,
+        "splits": {"train": f"0:{1}"},
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+        "features": features,
+    }
+    (meta_dir / "info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # tasks.jsonl
+    (meta_dir / "tasks.jsonl").write_text(
+        json.dumps({"task_index": 0, "task": f"episode from {sess.name}"}) + "\n",
+        encoding="utf-8"
+    )
+
+    # episodes.jsonl
+    (meta_dir / "episodes.jsonl").write_text(
+        json.dumps({"episode_index": 0, "tasks": [0], "length": 0}) + "\n",
+        encoding="utf-8"
+    )
+
+    # Copier les vidéos dans videos/chunk-000/<key>/episode_000000.mp4
+    if video_files:
+        for vid_f in video_files:
+            vid_key = f"observation.images.{vid_f.stem}"
+            vid_out = dataset_dir / "videos" / "chunk-000" / vid_key
+            vid_out.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(vid_f, vid_out / "episode_000000.mp4")
+            _log_job(job, f"    vidéo copiée : {vid_f.name}", "INFO")
+
+    # Copier les CSV et autres fichiers de données dans data/
+    data_dir = dataset_dir / "data" / "chunk-000"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for f in csv_files:
+        shutil.copy2(f, data_dir / f.name)
+
+    # Copier les fichiers JSON de métadonnées
+    for jf in sess.glob("*.json"):
+        shutil.copy2(jf, meta_dir / jf.name)
+
+    # Push HuggingFace Hub si demandé
+    if opts.push_to_hub and opts.hf_token and opts.repo_id:
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=opts.hf_token)
+            api.create_repo(repo_id=opts.repo_id, repo_type="dataset", exist_ok=True)
+            api.upload_folder(folder_path=str(dataset_dir), repo_id=opts.repo_id, repo_type="dataset")
+            _log_job(job, f"    ✓ Poussé sur HF Hub : {opts.repo_id}", "OK")
+        except Exception as e:
+            _log_job(job, f"    ✗ HF Hub push échoué : {e}", "WARN")
+
+    return str(dataset_dir)
+
+
+def _export_local(job: Job, src: Path, dest: ExportDestLocal, sess_name: str):
+    import shutil
+    out = Path(dest.path) / sess_name
+    if out.exists():
+        shutil.rmtree(out)
+    shutil.copytree(str(src), str(out))
+    _log_job(job, f"    → local: {out}", "INFO")
+
+
+def _export_s3(job: Job, src: Path, dest: ExportDestS3, sess_name: str):
+    try:
+        import boto3
+    except ImportError:
+        raise RuntimeError("boto3 non installé — pip install boto3")
+    session = boto3.Session(
+        aws_access_key_id=dest.access_key,
+        aws_secret_access_key=dest.secret_key,
+        region_name=dest.region,
+    )
+    s3 = session.client("s3")
+    prefix = (dest.prefix.rstrip("/") + "/" + sess_name + "/").lstrip("/")
+    n = 0
+    for f in src.rglob("*"):
+        if f.is_file():
+            key = prefix + str(f.relative_to(src)).replace("\\", "/")
+            s3.upload_file(str(f), dest.bucket, key)
+            n += 1
+    _log_job(job, f"    → S3 s3://{dest.bucket}/{prefix} ({n} fichiers)", "INFO")
+
+
+def _export_sftp(job: Job, src: Path, dest: ExportDestSftp, sess_name: str):
+    try:
+        import paramiko
+    except ImportError:
+        raise RuntimeError("paramiko non installé — pip install paramiko")
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(dest.host, port=dest.port, username=dest.user, password=dest.password)
+    sftp = ssh.open_sftp()
+    remote_base = dest.remote_path.rstrip("/") + "/" + sess_name
+    n = 0
+    for f in src.rglob("*"):
+        if f.is_file():
+            rel = str(f.relative_to(src)).replace("\\", "/")
+            remote_path = remote_base + "/" + rel
+            # Créer les répertoires parents distants
+            remote_dir = remote_path.rsplit("/", 1)[0]
+            parts = remote_dir.split("/")
+            cur = ""
+            for p in parts:
+                if not p:
+                    continue
+                cur = (cur + "/" + p) if cur else ("/" + p)
+                try:
+                    sftp.stat(cur)
+                except FileNotFoundError:
+                    sftp.mkdir(cur)
+            sftp.put(str(f), remote_path)
+            n += 1
+    sftp.close()
+    ssh.close()
+    _log_job(job, f"    → SFTP {dest.host}:{remote_base} ({n} fichiers)", "INFO")
+
+
+@app.post("/api/export")
+async def export_sessions(req: ExportRequest):
+    """Lance un job d'export asynchrone pour les sessions sélectionnées."""
+    if not req.sessions:
+        raise HTTPException(400, "Aucune session fournie")
+    if req.dest_type not in ("local", "s3", "sftp"):
+        raise HTTPException(400, f"dest_type invalide: {req.dest_type}")
+    job = _new_job("export")
+    threading.Thread(target=_worker_export, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reject
+# ──────────────────────────────────────────────────────────────────────────────
+
+class RejectRequest(BaseModel):
+    sessions: List[str]
+    reject_path: str
+
+
+def _worker_reject(job: Job, req: RejectRequest):
+    import shutil
+    dest_root = Path(req.reject_path)
+    total = len(req.sessions)
+    _log_job(job, f"Rejet de {total} session(s) vers {dest_root}", "WARN")
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+
+    moved, errors = [], []
+    for i, sess_path in enumerate(req.sessions):
+        sess = Path(sess_path)
+        if not sess.exists():
+            errors.append(f"{sess_path}: introuvable")
+            _log_job(job, f"[{i+1}/{total}] SKIP {sess.name} — introuvable", "WARN")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
+        try:
+            dest_root.mkdir(parents=True, exist_ok=True)
+            dest = dest_root / sess.name
+            if dest.exists():
+                # Évite l'écrasement silencieux : suffixe timestamp
+                dest = dest_root / f"{sess.name}_{int(time.time())}"
+            shutil.move(str(sess), str(dest))
+            moved.append(sess.name)
+            _log_job(job, f"[{i+1}/{total}] ✓ {sess.name} → {dest}", "OK")
+        except Exception as e:
+            errors.append(f"{sess.name}: {e}")
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name}: {e}", "ERROR")
+        _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+    result = {"moved": moved, "errors": errors, "total": total}
+    status = JobStatus.DONE if not errors else JobStatus.ERROR
+    _update_job(job, status=status, ended_at=_now(), progress=100.0,
+                result=result, error="; ".join(errors) if errors else None)
+    _log_job(job, f"Rejet terminé — {len(moved)}/{total} déplacée(s), {len(errors)} erreur(s)",
+             "OK" if not errors else "WARN")
+
+
+@app.post("/api/reject")
+async def reject_sessions(req: RejectRequest):
+    """Déplace les sessions sélectionnées vers le dossier de rejet."""
+    if not req.sessions:
+        raise HTTPException(400, "Aucune session fournie")
+    if not req.reject_path:
+        raise HTTPException(400, "reject_path manquant")
+    job = _new_job("reject")
+    threading.Thread(target=_worker_reject, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # WebSocket
 # ──────────────────────────────────────────────────────────────────────────────
 

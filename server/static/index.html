@@ -4293,33 +4293,28 @@
 				}
 			}
 
-			// ── Caméras + Remap ─────────────────────────────────────────────
+			// ── Caméras (swap physique) ─────────────────────────────────────
 			const cameras = meta.cameras;
-			const existingRemap = meta.camera_remap || {};
 			if (cameras && Object.keys(cameras).length) {
 				const slots = ['head', 'left', 'right'];
 				const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
-				// Build map position->serial from metadata.cameras
-				const posByCam = {};
-				Object.values(cameras).forEach(c => { if (c.position) posByCam[c.position] = c.serial || '?'; });
+				// Build map position→serial from metadata.cameras
+				const serialByPos = {};
+				Object.values(cameras).forEach(c => { if (c.position) serialByPos[c.position] = c.serial || '?'; });
 				html += `<div class="div" style="margin:8px 0"></div>
 				  <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Caméras</div>
 				  <table style="width:100%;font-size:.75rem;border-collapse:collapse">
-				    <thead>
-				      <tr>
-				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Slot affiché</th>
-				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Serial</th>
-				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Source vidéo</th>
-				      </tr>
-				    </thead>
+				    <thead><tr>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Slot</th>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Serial</th>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Renommer vers</th>
+				    </tr></thead>
 				    <tbody>`;
 				slots.forEach(slot => {
 					const col = slotColors[slot];
-					const serial = posByCam[slot] || '—';
-					const curSrc = existingRemap[slot] || slot;
-					const isRemapped = curSrc !== slot;
+					const serial = serialByPos[slot] || '—';
 					const opts = slots.map(s =>
-						`<option value="${s}"${s === curSrc ? ' selected' : ''}>${s}${s === slot ? ' (défaut)' : ''}</option>`
+						`<option value="${s}"${s === slot ? ' selected' : ''}>${s}</option>`
 					).join('');
 					html += `<tr style="border-bottom:1px solid var(--border)22">
 					  <td style="padding:4px 4px 4px 0">
@@ -4327,71 +4322,35 @@
 					  </td>
 					  <td style="padding:4px;color:var(--text2);font-family:monospace;font-size:.7rem">${serial}</td>
 					  <td style="padding:4px 0">
-					    <div style="display:flex;align-items:center;gap:6px">
-					      <select data-drawer-remap-slot="${slot}" data-sess-path="${esc(sess.path)}"
-					        style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.72rem;padding:2px 5px;cursor:pointer${isRemapped ? ';border-color:var(--orange)' : ''}">
-					        ${opts}
-					      </select>
-					      ${isRemapped ? `<span style="font-size:.65rem;color:var(--orange)" title="Remappé">↺</span>` : ''}
-					    </div>
+					    <select data-drawer-remap-slot="${slot}"
+					      style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.72rem;padding:2px 5px;cursor:pointer">
+					      ${opts}
+					    </select>
 					  </td>
 					</tr>`;
 				});
 				html += `</tbody></table>
 				  <div style="display:flex;gap:6px;margin-top:8px">
-				    <button class="btn sm" style="flex:1" onclick="drawerRemapReset('${esc(sess.path)}')">Réinitialiser</button>
+				    <button class="btn sm" style="flex:1" onclick="drawerRemapReset('${esc(sess.path)}')">Annuler</button>
 				    <button class="btn sm p" style="flex:1" onclick="drawerRemapApply('${esc(sess.path)}')">Appliquer</button>
 				  </div>`;
 			}
-
 			body.innerHTML = html;
 		}
 
-		// Apply camera remap from drawer selects
 		function drawerRemapApply(sessPath) {
 			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-remap-slot]');
-			const remap = {};
-			selects.forEach(sel => { remap[sel.dataset.drawerRemapSlot] = sel.value; });
-			// Check if it's identity remap
-			const isIdentity = ['head','left','right'].every(s => (remap[s] || s) === s);
-			if (isIdentity) { drawerRemapReset(sessPath); return; }
-			// Find compatible sessions
-			const sess = S.sessions.find(s => s.path === sessPath);
-			const currentSerials = _getCameraSerials(sess?.meta);
-			const compatible = S.sessions.filter(s => s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials);
-			if (compatible.length > 0 && currentSerials) {
-				_pendingRemap = remap;
-				_pendingRemapSessPath = sessPath;
-				ge('tv-remap-propagate-msg').textContent =
-					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras (serials: ${currentSerials}). Appliquer ce remapping à toutes ?`;
-				ge('tv-remap-propagate-modal').classList.add('open');
-			} else {
-				_applyRemapDrawer(sessPath, remap);
-			}
+			const mapping = { head: 'head', left: 'left', right: 'right' };
+			selects.forEach(sel => { mapping[sel.dataset.drawerRemapSlot] = sel.value; });
+			if (['head','left','right'].every(s => mapping[s] === s)) return; // identity
+			_promptSwap(sessPath, mapping);
 		}
 
-		async function drawerRemapReset(sessPath) {
-			try {
-				await fetch(`/api/session/camera_remap?session_path=${encodeURIComponent(sessPath)}`, { method: 'DELETE' });
-				const sess = S.sessions.find(s => s.path === sessPath);
-				if (sess?.meta) delete sess.meta.camera_remap;
-				// Reload drawer
-				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
-				// If current TV session, reload remap
-				if (TV.sessPath === sessPath) { tvLoadCameraRemap({}); _tvReloadVideosWithRemap(); }
-				log('Remap réinitialisé', 'OK');
-			} catch(e) { log('Reset remap: ' + e.message, 'ERROR'); }
+		function drawerRemapReset(sessPath) {
+			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-remap-slot]');
+			selects.forEach(sel => { sel.value = sel.dataset.drawerRemapSlot; });
 		}
 
-		let _pendingRemapSessPath = null;
-
-		async function _applyRemapDrawer(sessPath, remap) {
-			await _applyRemap(sessPath, remap, TV.sessPath === sessPath);
-			const sess = S.sessions.find(s => s.path === sessPath);
-			if (sess?.meta) sess.meta.camera_remap = remap;
-			if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
-			log('Remap appliqué', 'OK');
-		}
 
 		function renderDrawerSteps(steps, current) {
 			if (!S.drawerSess) return;
@@ -4884,7 +4843,6 @@
 			// Vidéo native
 			vidInfo: {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
 			vidReady: {},      // { head: bool, left: bool, right: bool }
-			camRemap: {},      // { slot: source } e.g. {head: "left", left: "head"}
 		};
 
 		const TV_COLORS = {
@@ -5109,7 +5067,6 @@
 			TV.t_ms = 0;
 			TV.vidInfo = {};
 			TV.vidReady = {};
-			TV.camRemap = {};
 			TV3D.needsRebuild = true;
 
 			const sess = S.sessions.find(s => s.path === path);
@@ -5149,17 +5106,13 @@
 				ge('tv-playhead-fill').style.width = '0%';
 				ge('tv-t-cur').textContent = '0.000s';
 
-				// Charger le remap caméra depuis metadata
-				tvLoadCameraRemap(data.meta?.camera_remap);
-
-				// Brancher les vidéos natives (en appliquant le remap)
+				// Brancher les vidéos natives
 				for (const side of ['head', 'left', 'right']) {
 					const v = ge(`tv-vid-${side}`);
 					const ovl = ge(`tv-ovl-${side}`);
 					if (!v) continue;
-					const src = TV.camRemap[side] || side;
-					if (TV.vidInfo[src]?.available) {
-						const url = `/api/session/video/${src}?session_path=${encodeURIComponent(path)}`;
+					if (TV.vidInfo[side]?.available) {
+						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(path)}`;
 						v.src = url;
 						v.load();
 						v.oncanplay = () => {
@@ -5198,28 +5151,14 @@
 		}
 
 
-		// ── Camera Remap ──────────────────────────────────────────────────
-		// TV.camRemap = { slot: source } e.g. { head: "left", left: "head", right: "right" }
-		// Persisted in metadata.json["camera_remap"]
-
-		function tvLoadCameraRemap(remapFromMeta) {
-			TV.camRemap = remapFromMeta && typeof remapFromMeta === 'object' ? { ...remapFromMeta } : {};
-			for (const slot of ['head', 'left', 'right']) {
-				const src = TV.camRemap[slot] || slot;
-				const srcEl = ge(`tv-remap-src-${slot}`);
-				if (srcEl) srcEl.textContent = src;
-				const sel = ge(`tv-remap-sel-${slot}`);
-				if (sel) sel.value = src;
-				const btn = ge(`tv-remap-btn-${slot}`);
-				if (btn) btn.classList.toggle('remapped', src !== slot);
-			}
-		}
+		// ── Camera Swap ──────────────────────────────────────────────────
+		// Renomme physiquement les fichiers (.mp4, .jsonl, _flux.csv) et
+		// met à jour metadata.json["cameras"], puis recharge la session.
 
 		function tvRemapToggle(slot, e) {
 			e.stopPropagation();
 			const panel = ge(`tv-remap-panel-${slot}`);
 			if (!panel) return;
-			// Close all other panels first
 			for (const s of ['head', 'left', 'right']) {
 				if (s !== slot) ge(`tv-remap-panel-${s}`)?.classList.remove('open');
 			}
@@ -5228,39 +5167,37 @@
 
 		function tvRemapCancel(slot) {
 			ge(`tv-remap-panel-${slot}`)?.classList.remove('open');
-			// Reset select to current value
+			// Reset select to identity
 			const sel = ge(`tv-remap-sel-${slot}`);
-			if (sel) sel.value = TV.camRemap[slot] || slot;
+			if (sel) sel.value = slot;
 		}
 
-		// Called when user clicks "Appliquer" on a slot
+		function tvLoadCameraRemap() {
+			// No-op: state is now purely on disk, selects always default to identity
+			for (const slot of ['head', 'left', 'right']) {
+				const sel = ge(`tv-remap-sel-${slot}`);
+				if (sel) sel.value = slot;
+				const srcEl = ge(`tv-remap-src-${slot}`);
+				if (srcEl) srcEl.textContent = slot;
+				ge(`tv-remap-btn-${slot}`)?.classList.remove('remapped');
+			}
+		}
+
+		// Called when user clicks "Appliquer" on a TV viewer slot
 		let _pendingRemap = null;
+		let _pendingRemapSessPath = null;
+
 		function tvRemapApply(slot) {
 			const sel = ge(`tv-remap-sel-${slot}`);
 			if (!sel || !TV.sessPath) return;
 			ge(`tv-remap-panel-${slot}`)?.classList.remove('open');
 			const newSrc = sel.value;
-			// Build new full remap (all 3 slots)
-			const newRemap = { head: TV.camRemap.head || 'head', left: TV.camRemap.left || 'left', right: TV.camRemap.right || 'right' };
-			newRemap[slot] = newSrc;
-			_pendingRemap = newRemap;
-			// Find sessions with same camera serials
-			const currentSess = S.sessions.find(s => s.path === TV.sessPath);
-			const currentSerials = _getCameraSerials(currentSess?.meta);
-			const compatible = S.sessions.filter(s => {
-				if (s.path === TV.sessPath) return false;
-				return _getCameraSerials(s.meta) === currentSerials;
-			});
-			if (compatible.length > 0 && currentSerials) {
-				// Show propagation modal
-				ge('tv-remap-propagate-msg').textContent =
-					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras (serials: ${currentSerials}). Appliquer ce remapping à toutes ces sessions ?`;
-				ge('tv-remap-propagate-modal').classList.add('open');
-			} else {
-				// Apply only to current session
-				_applyRemap(TV.sessPath, _pendingRemap, true);
-				_pendingRemap = null;
-			}
+			if (newSrc === slot) return; // no change
+			// Build full permutation mapping: swap slot ↔ newSrc, others identity
+			const mapping = { head: 'head', left: 'left', right: 'right' };
+			mapping[slot] = newSrc;
+			mapping[newSrc] = slot;
+			_promptSwap(TV.sessPath, mapping);
 		}
 
 		function _getCameraSerials(meta) {
@@ -5273,71 +5210,58 @@
 			return serials || null;
 		}
 
-		async function _applyRemap(sessPath, remap, reloadIfCurrent) {
-			try {
-				await api('POST', '/api/session/camera_remap', { session_path: sessPath, remap });
-				if (reloadIfCurrent && sessPath === TV.sessPath) {
-					// Update live remap and reload videos
-					tvLoadCameraRemap(remap);
-					_tvReloadVideosWithRemap();
-				}
-			} catch(e) {
-				console.error('[Remap]', e);
+		function _promptSwap(sessPath, mapping) {
+			_pendingRemap = mapping;
+			_pendingRemapSessPath = sessPath;
+			const sess = S.sessions.find(s => s.path === sessPath);
+			const currentSerials = _getCameraSerials(sess?.meta);
+			const compatible = S.sessions.filter(s =>
+				s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
+			);
+			if (compatible.length > 0 && currentSerials) {
+				ge('tv-remap-propagate-msg').textContent =
+					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras (serials : ${currentSerials}). Appliquer ce renommage à toutes ces sessions ?`;
+				ge('tv-remap-propagate-modal').classList.add('open');
+			} else {
+				_doSwap(sessPath, mapping, true);
+				_pendingRemap = null;
+				_pendingRemapSessPath = null;
 			}
 		}
 
-		function _tvReloadVideosWithRemap() {
-			if (!TV.sessPath) return;
-			for (const side of ['head', 'left', 'right']) {
-				const v = ge(`tv-vid-${side}`);
-				const ovl = ge(`tv-ovl-${side}`);
-				if (!v) continue;
-				const src = TV.camRemap[side] || side;
-				v.pause();
-				if (TV.vidInfo[src]?.available) {
-					const url = `/api/session/video/${src}?session_path=${encodeURIComponent(TV.sessPath)}`;
-					v.src = url;
-					v.load();
-					TV.vidReady[side] = false;
-					v.oncanplay = () => {
-						TV.vidReady[side] = true;
-						ovl?.classList.add('hidden');
-						tvSeekVideos(TV.t_ms);
-					};
-					ovl?.classList.remove('hidden');
-				} else {
-					v.removeAttribute('src');
-					v.load();
-					TV.vidReady[side] = false;
-					if (ovl) ovl.textContent = 'Pas de vidéo';
-					ovl?.classList.remove('hidden');
+		async function _doSwap(sessPath, mapping, reloadIfCurrent) {
+			try {
+				const res = await api('POST', '/api/session/camera_swap', { session_path: sessPath, mapping });
+				// Update in-memory meta cameras positions
+				const sess = S.sessions.find(s => s.path === sessPath);
+				if (sess) await loadSessionPipelineState(sess);
+				if (reloadIfCurrent && TV.sessPath === sessPath) {
+					await tvSelectSession(sessPath);
 				}
+				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
+			} catch(e) {
+				log('Swap caméras : ' + e.message, 'ERROR');
 			}
 		}
 
 		async function tvRemapPropagate(toAll) {
 			ge('tv-remap-propagate-modal').classList.remove('open');
 			if (!_pendingRemap) return;
-			const remap = _pendingRemap;
-			// Origin: drawer or TV viewer?
-			const fromDrawer = _pendingRemapSessPath !== null;
-			const originPath = _pendingRemapSessPath || TV.sessPath;
+			const mapping = _pendingRemap;
+			const sessPath = _pendingRemapSessPath;
 			_pendingRemap = null;
 			_pendingRemapSessPath = null;
-			// Apply to originating session
-			await _applyRemapDrawer(originPath, remap);
+			await _doSwap(sessPath, mapping, true);
 			if (toAll) {
-				const originSess = S.sessions.find(s => s.path === originPath);
+				const originSess = S.sessions.find(s => s.path === sessPath);
 				const currentSerials = _getCameraSerials(originSess?.meta);
-				const compatible = S.sessions.filter(s => {
-					if (s.path === originPath) return false;
-					return _getCameraSerials(s.meta) === currentSerials;
-				});
+				const compatible = S.sessions.filter(s =>
+					s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
+				);
 				for (const sess of compatible) {
-					await _applyRemap(sess.path, remap, TV.sessPath === sess.path);
-					if (sess.meta) sess.meta.camera_remap = remap;
+					await _doSwap(sess.path, mapping, false);
 				}
-				log(`Remap appliqué à ${compatible.length + 1} sessions`, 'OK');
+				log(`Renommage appliqué à ${compatible.length + 1} sessions`, 'OK');
 			}
 		}
 
@@ -5352,9 +5276,8 @@
 		function tvSeekVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				const src = TV.camRemap[side] || side;
-				if (!v || !TV.vidInfo[src]?.available) continue;
-				const t0 = TV.vidInfo[src].t0_s || 0;
+				if (!v || !TV.vidInfo[side]?.available) continue;
+				const t0 = TV.vidInfo[side].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				if (Math.abs(v.currentTime - targetSec) > 0.04) {
 					v.currentTime = targetSec;
@@ -5661,9 +5584,8 @@
 		function tvSyncVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				const src = TV.camRemap[side] || side;
-				if (!v || !TV.vidInfo[src]?.available || !TV.vidReady[side]) continue;
-				const t0 = TV.vidInfo[src].t0_s || 0;
+				if (!v || !TV.vidInfo[side]?.available || !TV.vidReady[side]) continue;
+				const t0 = TV.vidInfo[side].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				// Si dérive > 150ms on force le seek (sinon la vidéo suit le playback naturellement)
 				if (Math.abs(v.currentTime - targetSec) > 0.15) {
@@ -5687,8 +5609,7 @@
 			// Jouer toutes les vidéos natives en parallèle
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				const src = TV.camRemap[side] || side;
-				if (v && TV.vidInfo[src]?.available && TV.vidReady[side]) {
+				if (v && TV.vidInfo[side]?.available && TV.vidReady[side]) {
 					v.playbackRate = TV.playSpeed || 1;
 					v.play().catch(() => { });
 				}

@@ -1619,48 +1619,119 @@ async def session_video_info(session_path: str):
     return JSONResponse(result)
 
 
-class CameraRemapRequest(BaseModel):
+class CameraSwapRequest(BaseModel):
     session_path: str
-    remap: dict  # e.g. {"head": "left", "left": "head", "right": "right"}
+    # mapping complet slot→nouvelle_source, e.g. {"head": "left", "left": "head", "right": "right"}
+    mapping: dict
 
 
-@app.post("/api/session/camera_remap")
-async def session_camera_remap(req: CameraRemapRequest):
+@app.post("/api/session/camera_swap")
+async def session_camera_swap(req: CameraSwapRequest):
     """
-    Sauvegarde un remapping caméra dans metadata.json["camera_remap"].
-    remap = { slot_affiché: source_réelle } e.g. {"head": "left", "left": "head", "right": "right"}
+    Renomme physiquement les fichiers vidéo (.mp4, .jsonl, _flux.csv) pour appliquer
+    un échange de caméras, puis met à jour metadata.json["cameras"] en conséquence.
+
+    req.mapping = { slot_destination: slot_source_actuel }
+    Exemple : {"head": "left", "left": "head", "right": "right"}
+      → le fichier left.mp4 devient head.mp4, head.mp4 devient left.mp4, right.* inchangé
+
+    L'opération est atomique via fichiers temporaires : en cas d'erreur partielle,
+    les originaux sont restaurés.
     """
     sess = Path(req.session_path)
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
-    meta_path = sess / "metadata.json"
-    meta = {}
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text())
-        except Exception:
-            pass
-    meta["camera_remap"] = req.remap
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
-    return JSONResponse({"ok": True})
 
+    mapping = req.mapping  # { dest: src }
+    sides = ("head", "left", "right")
 
-@app.delete("/api/session/camera_remap")
-async def session_camera_remap_delete(session_path: str):
-    """Supprime le remapping caméra de metadata.json."""
-    sess = Path(session_path)
-    if not sess.exists():
-        raise HTTPException(404, "Session introuvable")
-    meta_path = sess / "metadata.json"
-    if not meta_path.exists():
-        return JSONResponse({"ok": True})
+    # Valider le mapping : doit être une permutation valide des 3 côtés
+    if set(mapping.keys()) != set(sides) or set(mapping.values()) != set(sides):
+        raise HTTPException(400, "Le mapping doit être une permutation complète de head/left/right")
+
+    # Si identité, rien à faire
+    if all(mapping[s] == s for s in sides):
+        return JSONResponse({"ok": True, "renamed": []})
+
+    vid_dir = sess / "videos"
+    extensions = [".mp4", ".jsonl", "_flux.csv"]
+
+    # Construire la liste des renommages nécessaires (seulement les côtés qui changent)
+    # On passe par des noms temporaires pour éviter les collisions (ex: head↔left)
+    renames: list[tuple[Path, Path]] = []  # (src_path, dst_path)
+    tmp_renames: list[tuple[Path, Path]] = []  # (original, tmp)
+
+    for dst_side, src_side in mapping.items():
+        if src_side == dst_side:
+            continue
+        for ext in extensions:
+            src_name = f"{src_side}{ext}"
+            dst_name = f"{dst_side}{ext}"
+            src_path = vid_dir / src_name
+            dst_path = vid_dir / dst_name
+            if src_path.exists():
+                renames.append((src_path, dst_path))
+
+    if not renames:
+        return JSONResponse({"ok": True, "renamed": []})
+
+    # Étape 1 : déplacer tous les fichiers source vers des noms temporaires
+    tmp_map: dict[Path, Path] = {}  # original_src → tmp_path
     try:
-        meta = json.loads(meta_path.read_text())
-    except Exception:
-        return JSONResponse({"ok": True})
-    meta.pop("camera_remap", None)
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
-    return JSONResponse({"ok": True})
+        for src_path, dst_path in renames:
+            if src_path not in tmp_map:
+                tmp_path = src_path.with_name(f"__swap_tmp_{src_path.name}")
+                src_path.rename(tmp_path)
+                tmp_map[src_path] = tmp_path
+    except Exception as e:
+        # Restaurer ce qui a déjà été déplacé
+        for orig, tmp in tmp_map.items():
+            if tmp.exists():
+                tmp.rename(orig)
+        raise HTTPException(500, f"Erreur lors du déplacement temporaire : {e}")
+
+    # Étape 2 : déplacer les temporaires vers leurs destinations finales
+    done: list[tuple[Path, Path]] = []
+    try:
+        for src_path, dst_path in renames:
+            tmp_path = tmp_map[src_path]
+            tmp_path.rename(dst_path)
+            done.append((src_path, dst_path))
+    except Exception as e:
+        # Restaurer les temporaires restants
+        for orig, tmp in tmp_map.items():
+            if tmp.exists():
+                tmp.rename(orig)
+        raise HTTPException(500, f"Erreur lors du renommage final : {e}")
+
+    # Étape 3 : mettre à jour metadata.json["cameras"] (échanger les positions)
+    meta_path = sess / "metadata.json"
+    renamed_files = [str(dst_path.name) for _, dst_path in done]
+    try:
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            if "cameras" in meta:
+                # Reconstruire cameras avec les nouvelles positions
+                # mapping[dst] = src → la caméra qui était à src va maintenant à dst
+                # On cherche dans cameras quelle entrée a position == src_side
+                new_cameras = {}
+                for cam_id, cam_info in meta["cameras"].items():
+                    cam_pos = cam_info.get("position")
+                    # Trouver si ce cam_pos est une source dans le mapping
+                    new_pos = next(
+                        (dst for dst, src in mapping.items() if src == cam_pos),
+                        cam_pos
+                    )
+                    new_cameras[cam_id] = {**cam_info, "position": new_pos}
+                meta["cameras"] = new_cameras
+            # Nettoyer un éventuel camera_remap résiduel
+            meta.pop("camera_remap", None)
+            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    except Exception as e:
+        # Les fichiers sont déjà renommés, on signale juste l'erreur metadata
+        return JSONResponse({"ok": True, "renamed": renamed_files, "meta_warning": str(e)})
+
+    return JSONResponse({"ok": True, "renamed": renamed_files})
 
 
 @app.get("/api/session/frame")

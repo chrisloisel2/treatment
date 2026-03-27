@@ -54,6 +54,13 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     warnings.warn("scikit-learn non disponible — pas de raffinement GBR.")
 
+try:
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Constantes
@@ -103,12 +110,13 @@ METRIC_WEIGHTS = {
 }
 
 # Consensus
-MIN_CONFIDENCE_APPLY = 0.40   # seuil pour qu'une paire vote dans le consensus
-OUTLIER_SIGMA        = 2.0    # seuil rejet outlier (en écarts-type pondérés)
-MIN_PAIRS_CONSENSUS  = 1      # nb minimum de paires valides pour appliquer
+MIN_CONFIDENCE_APPLY  = 0.30   # seuil pour qu'une paire vote dans le consensus
+OUTLIER_SIGMA         = 2.0    # seuil rejet outlier (en écarts-type pondérés)
+MIN_PAIRS_CONSENSUS   = 1      # nb minimum de paires valides pour appliquer
+MAX_DELTA_START_MS    = 5000.0 # Δstart > N ms → paire ignorée (référentiels incompatibles)
 
 # Validation post-correction
-VALIDATION_MAX_LAG_MS = 30.0  # lag résiduel max acceptable après correction
+VALIDATION_MAX_LAG_MS = 2000.0  # fenêtre de validation (doit couvrir tout le domaine)
 VALIDATION_MIN_CORR   = 0.35  # corrélation minimale acceptable
 
 # Drift
@@ -211,14 +219,16 @@ def _smooth(x: np.ndarray, sigma_ms: float, resample_ms: float = RESAMPLE_MS) ->
 
 
 def _quat_angular_velocity(qw, qx, qy, qz, dt_s: np.ndarray) -> np.ndarray:
-    """Vitesse angulaire approchée depuis quaternions successifs (rad/s)."""
-    # Produit conjugué q[i]* × q[i+1] → angle de rotation
+    """Vitesse angulaire approchée depuis quaternions successifs (rad/s).
+    dt_s a taille N-1 (diff des timestamps), quat ont taille N.
+    """
+    # dot produit entre q[i] et q[i+1] → taille N-1
     dot = qw[:-1]*qw[1:] + qx[:-1]*qx[1:] + qy[:-1]*qy[1:] + qz[:-1]*qz[1:]
     dot = np.clip(dot, -1.0, 1.0)
-    angle = 2.0 * np.arccos(np.abs(dot))  # angle en radians
-    dt = np.where(dt_s[:-1] > 1e-6, dt_s[:-1], 1e-3)
-    ang_vel = angle / dt
-    return np.concatenate([[0.0], ang_vel])
+    angle = 2.0 * np.arccos(np.abs(dot))  # taille N-1
+    dt = np.where(dt_s > 1e-6, dt_s, 1e-3)  # dt_s est déjà N-1
+    ang_vel = angle / dt                      # taille N-1
+    return np.concatenate([[0.0], ang_vel])   # taille N
 
 
 def _build_tracker_signal_rich(df: pd.DataFrame, pos: str,
@@ -242,15 +252,18 @@ def _build_tracker_signal_rich(df: pd.DataFrame, pos: str,
     z = pd.to_numeric(df[xyz_cols[2]], errors="coerce").to_numpy(np.float64)
 
     dt_s = np.diff(t_ms) / 1000.0
-    dt_s = np.where(dt_s > 1e-6, dt_s, np.median(dt_s[dt_s > 1e-6]) if (dt_s > 1e-6).any() else 1e-3)
+    valid_dt = dt_s[dt_s > 1e-6]
+    median_dt_s = float(np.median(valid_dt)) if len(valid_dt) else 1e-3
+    dt_s = np.where(dt_s > 1e-6, dt_s, median_dt_s)
 
     dist = np.sqrt(np.diff(x)**2 + np.diff(y)**2 + np.diff(z)**2)
     speed = np.concatenate([[0.0], dist / dt_s])
 
-    # Accélération et jerk
-    speed_sm = _smooth(speed, 15.0, 1000.0 / max(1.0, float(np.mean(1000.0 / dt_s.clip(1)))))
-    accel = np.abs(np.gradient(speed_sm, t_ms / 1000.0))
-    jerk  = np.abs(np.gradient(accel,   t_ms / 1000.0))
+    # Accélération et jerk — utilise le pas médian en ms pour le lissage
+    median_dt_ms = median_dt_s * 1000.0
+    speed_sm = _smooth(speed, 15.0, max(median_dt_ms, 0.5))
+    accel = np.abs(np.gradient(speed_sm, median_dt_s))
+    jerk  = np.abs(np.gradient(accel,   median_dt_s))
 
     # Énergie rotationnelle (si quaternions disponibles)
     ang_vel = np.zeros(len(t_ms))
@@ -395,13 +408,21 @@ def load_cameras(session_path: Path) -> Dict[str, Signal]:
     capture_unit = _load_jsonl_capture_unit(session_path)
 
     for cam in CAMERAS:
-        # Cherche le flux CSV en priorité
-        flux_csv = session_path / "videos" / f"{cam}_flux.csv"
-        jsonl_path = session_path / "videos" / f"{cam}.jsonl"
-        if not jsonl_path.exists():
-            jsonl_path = session_path / f"{cam}.jsonl"
+        # Cherche le flux CSV en priorité (videos/ puis racine)
+        flux_csv = next((p for p in [
+            session_path / "videos" / f"{cam}_flux.csv",
+            session_path / f"{cam}_flux.csv",
+        ] if p.exists()), None)
+        # JSONL : racine d'abord, puis videos/
+        jsonl_path = next((p for p in [
+            session_path / f"{cam}.jsonl",
+            session_path / "videos" / f"{cam}.jsonl",
+        ] if p.exists()), None)
 
-        if flux_csv.exists():
+        if flux_csv is None and jsonl_path is None:
+            continue
+
+        if flux_csv is not None:
             df = pd.read_csv(flux_csv)
             sig = _build_video_signal_rich(df)
 
@@ -417,7 +438,7 @@ def load_cameras(session_path: Path) -> Dict[str, Signal]:
                 source = "flux_csv_abs"
             else:
                 # Fallback : ancrage via première capture_time du JSONL
-                t_start_j = _jsonl_first_ts(jsonl_path) if jsonl_path.exists() else None
+                t_start_j = _jsonl_first_ts(jsonl_path) if jsonl_path is not None else None
                 if t_start_j is not None and capture_unit == "nanoseconds":
                     t_start_j = t_start_j / 1e6
                 elif t_start_j is not None and capture_unit == "microseconds":
@@ -434,7 +455,7 @@ def load_cameras(session_path: Path) -> Dict[str, Signal]:
                 source=source, activity=float(np.std(sig)),
             )
 
-        elif jsonl_path.exists():
+        elif jsonl_path is not None:
             # Fallback : inter-frame intervals comme proxy de mouvement
             recs = []
             with open(jsonl_path, "r", errors="replace") as f:
@@ -810,6 +831,14 @@ def analyze_pair(ref: Signal, tgt: Signal) -> PairResult:
     res = PairResult(ref_name=ref.name, tgt_name=tgt.name)
     res.delta_start_ms = tgt.t_start_abs_ms - ref.t_start_abs_ms
 
+    # Pour les paires gripper : Δstart > MAX_DELTA_START_MS = horloge incompatible → skip
+    # Pour les paires caméra : le Δstart peut être grand (caméra démarre avant tracker) → OK
+    is_gripper_pair = "gripper" in tgt.name
+    if is_gripper_pair and abs(res.delta_start_ms) > MAX_DELTA_START_MS:
+        print(f"    [SKIP Δstart={res.delta_start_ms:+.0f}ms > ±{MAX_DELTA_START_MS:.0f}ms]", end=" ")
+        res.confidence = 0.0
+        return res
+
     # ── PASSE 1 : Gross search ──────────────────────────────────────────────
     gross_cands = np.arange(-GROSS_MAX_LAG_MS, GROSS_MAX_LAG_MS + GROSS_STEP_MS, GROSS_STEP_MS)
     gross_scores = _sweep(ref, tgt, res.delta_start_ms, gross_cands, SMOOTH_SIGMA_COARSE)
@@ -889,18 +918,21 @@ def compute_consensus(results: List[PairResult],
     if len(pairs_to_use) < MIN_PAIRS_CONSENSUS:
         return None
 
-    offsets = np.array([r.offset_rec_ms for r in pairs_to_use])
+    # Vote sur le résidu seul (subpixel_lag_ms), pas sur le total_offset.
+    # Le Δstart est déjà encodé dans les timestamps absolus — on ne corrige
+    # que l'erreur résiduelle de synchronisation.
+    residuals = np.array([r.subpixel_lag_ms for r in pairs_to_use])
     weights = np.array([r.confidence for r in pairs_to_use])
     weights = weights / weights.sum()
 
     # Moyenne pondérée initiale
-    w_mean = float(np.dot(weights, offsets))
-    w_std  = float(np.sqrt(np.dot(weights, (offsets - w_mean)**2)))
+    w_mean = float(np.dot(weights, residuals))
+    w_std  = float(np.sqrt(np.dot(weights, (residuals - w_mean)**2)))
 
     # Rejet des outliers
     kept, rejected = [], []
-    for r, off, w in zip(pairs_to_use, offsets, weights * weights.sum()):
-        z = abs(off - w_mean) / (w_std + 1e-6)
+    for r, res_val, w in zip(pairs_to_use, residuals, weights * weights.sum()):
+        z = abs(res_val - w_mean) / (w_std + 1e-6)
         if z <= OUTLIER_SIGMA:
             kept.append(r)
         else:
@@ -909,7 +941,7 @@ def compute_consensus(results: List[PairResult],
     if not kept:
         kept = pairs_to_use  # garde tout si tout rejeté
 
-    offsets_k = np.array([r.offset_rec_ms for r in kept])
+    offsets_k = np.array([r.subpixel_lag_ms for r in kept])
     weights_k = np.array([r.confidence for r in kept])
     weights_k = weights_k / weights_k.sum()
 
@@ -991,6 +1023,8 @@ def _backup_session(session_path: Path) -> None:
     files_to_backup = [
         session_path / "tracker_positions.csv",
         *(session_path / "videos" / f"{cam}.jsonl" for cam in CAMERAS),
+        *(session_path / "videos" / f"{cam}_flux.csv" for cam in CAMERAS),
+        *(session_path / f"{cam}_flux.csv" for cam in CAMERAS),
         *(session_path / f"gripper_{s}_data.csv" for s in ("left", "right")),
     ]
     for f in files_to_backup:
@@ -1011,44 +1045,27 @@ def _restore_backup(session_path: Path) -> None:
 def apply_offset(session_path: Path, offset_ms: float, dry_run: bool,
                  capture_unit: str = "milliseconds") -> None:
     """
-    Applique offset_ms à tous les fichiers de la session :
-    - tracker_positions.csv : timestamp_ns, time_seconds, timestamp
-    - videos/{cam}.jsonl : capture_time
-    - gripper_{side}_data.csv : timestamp_ns, time_seconds
+    Applique offset_ms aux caméras JSONL et aux grippers uniquement.
+    Le tracker est la référence absolue — il n'est JAMAIS modifié.
+
+    Sémantique : subpixel_lag_ms = décalage residuel de la cible (cam/gripper)
+    par rapport au tracker. Si subpixel_lag_ms = -24 ms, la caméra est 24 ms en
+    avance. Pour corriger : on ajoute +24 ms aux timestamps caméra.
+    cam_delta = -offset_ms (car offset_ms = subpixel_lag_ms < 0 → cam_delta > 0).
     """
     if abs(offset_ms) < 0.05:
         print(f"  [SKIP] offset {offset_ms:+.3f} ms < 0.05 ms — rien à faire")
         return
 
-    delta_ns = int(round(offset_ms * 1_000_000))
-    delta_s  = offset_ms / 1000.0
-
-    # ── Tracker CSV ─────────────────────────────────────────────────────────
-    trk = session_path / "tracker_positions.csv"
-    if trk.exists():
-        df = pd.read_csv(trk)
-        if "timestamp_ns" in df.columns:
-            df["timestamp_ns"] = pd.to_numeric(df["timestamp_ns"], errors="coerce") + delta_ns
-        if "time_seconds" in df.columns:
-            df["time_seconds"] = pd.to_numeric(df["time_seconds"], errors="coerce") + delta_s
-        if "timestamp" in df.columns:
-            df["timestamp"] = _shift_iso(df["timestamp"], delta_ns)
-        if not dry_run:
-            df.to_csv(trk, index=False)
-        print(f"  [tracker] {offset_ms:+.3f} ms")
+    # cam_delta : valeur à AJOUTER aux capture_time (unités caméra)
+    # Sémantique de subpixel_lag_ms = cand optimal dans _sweep :
+    #   tgt_t = tgt.t_ms_rel + Δstart + cand
+    # Si cand = +X est optimal, la caméra a besoin d'être décalée de +X ms.
+    # Donc on AJOUTE offset_ms aux timestamps caméra (cam_delta = +offset_ms).
+    # Tracker est la référence → on ne le touche pas.
+    cam_delta_ms = offset_ms  # en ms
 
     # ── Caméras JSONL ────────────────────────────────────────────────────────
-    # L'offset est appliqué au tracker → on ajuste les capture_times caméra
-    # dans le sens INVERSE pour maintenir l'alignement absolu.
-    # (le tracker avance de offset_ms → la caméra recule d'autant)
-    if capture_unit == "nanoseconds":
-        cam_delta = -delta_ns / 1e6  # en ms
-    elif capture_unit == "microseconds":
-        cam_delta = -offset_ms  # en µs (mais on stocke en µs)
-        cam_delta_units = -offset_ms * 1000.0  # µs
-    else:  # milliseconds
-        cam_delta = -offset_ms
-
     for cam in CAMERAS:
         for jsonl_path in [
             session_path / "videos" / f"{cam}.jsonl",
@@ -1065,20 +1082,46 @@ def apply_offset(session_path: Path, offset_ms: float, dry_run: bool,
                     try:
                         rec = json.loads(line)
                         if capture_unit == "nanoseconds":
-                            rec["capture_time"] = rec["capture_time"] - delta_ns
+                            # capture_time est en ns → ajouter -offset_ms en ns
+                            rec["capture_time"] = rec["capture_time"] + int(round(cam_delta_ms * 1_000_000))
                         elif capture_unit == "microseconds":
-                            rec["capture_time"] = rec["capture_time"] - int(round(offset_ms * 1000.0))
-                        else:
-                            rec["capture_time"] = rec["capture_time"] + cam_delta
+                            # capture_time est en µs → ajouter -offset_ms en µs
+                            rec["capture_time"] = rec["capture_time"] + int(round(cam_delta_ms * 1_000.0))
+                        else:  # milliseconds
+                            rec["capture_time"] = rec["capture_time"] + cam_delta_ms
                         lines_out.append(json.dumps(rec))
                     except (json.JSONDecodeError, KeyError):
                         lines_out.append(line)
             if not dry_run:
                 jsonl_path.write_text("\n".join(lines_out) + "\n", encoding="utf-8")
-            print(f"  [cam_{cam}] {cam_delta:+.3f} ms ({capture_unit})")
+            print(f"  [cam_{cam}] {cam_delta_ms:+.3f} ms ({capture_unit})")
+            break  # premier trouvé suffit
+
+    # ── Flux CSV (timestamp_abs_ms) ───────────────────────────────────────────
+    # Les flux CSV contiennent timestamp_abs_ms dérivé des capture_time JSONL.
+    # On les met à jour dans le même sens que les caméras.
+    for cam in CAMERAS:
+        for flux_path in [
+            session_path / "videos" / f"{cam}_flux.csv",
+            session_path / f"{cam}_flux.csv",
+        ]:
+            if not flux_path.exists():
+                continue
+            df = pd.read_csv(flux_path)
+            if "timestamp_abs_ms" in df.columns:
+                df["timestamp_abs_ms"] = (
+                    pd.to_numeric(df["timestamp_abs_ms"], errors="coerce") + cam_delta_ms
+                )
+                if not dry_run:
+                    df.to_csv(flux_path, index=False)
+                print(f"  [flux_{cam}] {cam_delta_ms:+.3f} ms (timestamp_abs_ms)")
             break  # premier trouvé suffit
 
     # ── Grippers ─────────────────────────────────────────────────────────────
+    # Même logique : grippers alignés sur tracker → décaler dans le même sens
+    # que les caméras (cam_delta_ms = -offset_ms)
+    grip_delta_ns = int(round(cam_delta_ms * 1_000_000))
+    grip_delta_s  = cam_delta_ms / 1000.0
     for side in ("left", "right"):
         grip = session_path / f"gripper_{side}_data.csv"
         if not grip.exists():
@@ -1086,16 +1129,16 @@ def apply_offset(session_path: Path, offset_ms: float, dry_run: bool,
         df = pd.read_csv(grip)
         for col in ("timestamp_ns", "t_ms_corrected_ns"):
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce") + delta_ns
+                df[col] = pd.to_numeric(df[col], errors="coerce") + grip_delta_ns
         if "time_seconds" in df.columns:
-            df["time_seconds"] = pd.to_numeric(df["time_seconds"], errors="coerce") + delta_s
+            df["time_seconds"] = pd.to_numeric(df["time_seconds"], errors="coerce") + grip_delta_s
         if "t_ms" in df.columns:
-            df["t_ms"] = pd.to_numeric(df["t_ms"], errors="coerce") + offset_ms
+            df["t_ms"] = pd.to_numeric(df["t_ms"], errors="coerce") + cam_delta_ms
         if "timestamp" in df.columns:
-            df["timestamp"] = _shift_iso(df["timestamp"], delta_ns)
+            df["timestamp"] = _shift_iso(df["timestamp"], grip_delta_ns)
         if not dry_run:
             df.to_csv(grip, index=False)
-        print(f"  [gripper_{side}] {offset_ms:+.3f} ms")
+        print(f"  [gripper_{side}] {cam_delta_ms:+.3f} ms")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1130,7 +1173,8 @@ def plot_diagnostic(results: List[PairResult], consensus: Optional[ConsensusResu
                              linestyle="--", label=f"pic={r.gross_lag_ms:+.0f}ms")
         ax_gross.set_title(f"{r.ref_name}↔{r.tgt_name} — Gross", fontsize=8)
         ax_gross.set_xlabel("Décalage (ms)", fontsize=7)
-        ax_gross.legend(fontsize=7)
+        if ax_gross.get_legend_handles_labels()[0]:
+            ax_gross.legend(fontsize=7)
         ax_gross.grid(True, alpha=0.2)
 
         # Courbe fine
@@ -1144,7 +1188,8 @@ def plot_diagnostic(results: List[PairResult], consensus: Optional[ConsensusResu
             ax_fine.axvline(0.0, color="#aaa", lw=0.8, linestyle=":")
         ax_fine.set_title(f"{r.ref_name}↔{r.tgt_name} — Fine", fontsize=8)
         ax_fine.set_xlabel("Décalage résiduel (ms)", fontsize=7)
-        ax_fine.legend(fontsize=7)
+        if ax_fine.get_legend_handles_labels()[0]:
+            ax_fine.legend(fontsize=7)
         ax_fine.grid(True, alpha=0.2)
 
         # Superposition des signaux après correction
@@ -1170,7 +1215,8 @@ def plot_diagnostic(results: List[PairResult], consensus: Optional[ConsensusResu
                     ax_sig.set_facecolor("#fff8f0")
         ax_sig.set_title(f"Signaux superposés (après correction)", fontsize=8)
         ax_sig.set_xlabel("Temps (s)", fontsize=7)
-        ax_sig.legend(fontsize=6, loc="upper right")
+        if ax_sig.get_legend_handles_labels()[0]:
+            ax_sig.legend(fontsize=6, loc="upper right")
         ax_sig.grid(True, alpha=0.2)
 
     # Ligne de synthèse
@@ -1323,11 +1369,13 @@ def align_session(session_path: Path,
         signals_post.update(load_cameras(session_path))
         post_score = compute_session_score(signals_post, 0.0)
     else:
+        # En dry-run, on simule le décalage des caméras (cam_delta = +offset_to_apply)
+        # validate_alignment ajoute offset_ms au timeline caméra → passer +offset_to_apply
         post_score = compute_session_score(signals_all, offset_to_apply)
     print(f"  Score post-correction : {post_score:.1f}/100")
 
-    # Rollback si dégradation
-    if not dry_run and post_score < pre_score - 5.0 and post_score < 30.0:
+    # Rollback si dégradation significative
+    if not dry_run and post_score < pre_score - 5.0:
         print(f"  ⚠ Score dégradé ({pre_score:.1f} → {post_score:.1f}) — ROLLBACK")
         _restore_backup(session_path)
         status = "needs_review"
@@ -1407,6 +1455,37 @@ def align_session(session_path: Path,
 # Batch
 # ══════════════════════════════════════════════════════════════════════════════
 
+def upload_session_to_s3(session_path: Path, bucket: str, prefix: str) -> None:
+    """Upload les fichiers de sortie d'une session vers S3."""
+    if not BOTO3_AVAILABLE:
+        print("  [S3] boto3 non disponible — pip install boto3", file=sys.stderr)
+        return
+
+    s3 = boto3.client("s3")
+    files_to_upload = [
+        session_path / "tracker_positions.csv",
+        session_path / "align_pro_report.json",
+        session_path / "align_pro_diagnostic.png",
+        session_path / "metadata.json",
+        *(session_path / "videos" / f"{cam}.jsonl" for cam in CAMERAS),
+        *(session_path / f"gripper_{s}_data.csv" for s in ("left", "right")),
+    ]
+
+    uploaded = 0
+    for local_path in files_to_upload:
+        if not local_path.exists():
+            continue
+        key = f"{prefix}/{session_path.name}/{local_path.name}".lstrip("/")
+        try:
+            s3.upload_file(str(local_path), bucket, key)
+            print(f"  [S3] s3://{bucket}/{key}")
+            uploaded += 1
+        except (BotoCoreError, ClientError) as e:
+            print(f"  [S3] ERREUR upload {local_path.name}: {e}", file=sys.stderr)
+
+    print(f"  [S3] {uploaded} fichier(s) uploadé(s) → s3://{bucket}/{prefix}/{session_path.name}/")
+
+
 def find_sessions(root: Path) -> List[Path]:
     """Trouve les sessions (dossiers avec tracker_positions.csv)."""
     sessions = []
@@ -1445,6 +1524,8 @@ Exemples :
     p.add_argument("--validate-only",action="store_true", help="Score sans correction")
     p.add_argument("--force",        action="store_true", help="Re-traite sessions déjà corrigées")
     p.add_argument("--no-plot",      action="store_true", help="Désactive les graphes PNG")
+    p.add_argument("--s3-bucket",    default=None,        help="Bucket S3 de destination (ex: mon-bucket)")
+    p.add_argument("--s3-prefix",    default="",          help="Préfixe clé S3 (ex: sessions/2026)")
     return p.parse_args()
 
 
@@ -1482,6 +1563,8 @@ def main() -> int:
                               validate_only=args.validate_only,
                               force=args.force, make_plot=make_plot)
             reports.append(r)
+            if args.s3_bucket and not args.dry_run:
+                upload_session_to_s3(s, args.s3_bucket, args.s3_prefix)
 
         # Résumé global
         print(f"\n{'═'*70}")
@@ -1520,11 +1603,20 @@ def main() -> int:
             out = root / "align_pro_batch_report.json"
             out.write_text(json.dumps(global_report, indent=2, ensure_ascii=False))
             print(f"\n  Rapport global : {out}")
+            if args.s3_bucket:
+                key = f"{args.s3_prefix}/align_pro_batch_report.json".lstrip("/")
+                try:
+                    boto3.client("s3").upload_file(str(out), args.s3_bucket, key)
+                    print(f"  [S3] s3://{args.s3_bucket}/{key}")
+                except Exception as e:
+                    print(f"  [S3] ERREUR rapport batch: {e}", file=sys.stderr)
 
     else:
         align_session(root, dry_run=args.dry_run,
                       validate_only=args.validate_only,
                       force=args.force, make_plot=make_plot)
+        if args.s3_bucket and not args.dry_run:
+            upload_session_to_s3(root, args.s3_bucket, args.s3_prefix)
 
     return 0
 

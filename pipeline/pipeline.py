@@ -4,13 +4,13 @@
 Pipeline d'ingestion big data — 8 étapes.
 
 Chemins :
-  /mnt/storage/mistral/    — source ET espace de travail. Les sessions sont déposées
+  /mnt/storage/bronze/    — source ET espace de travail. Les sessions sont déposées
                    directement ici par l'opérateur. Tout le traitement se fait
                    sur place, en mode safe (aucune suppression sans confirmation).
  /home/ia/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
 
 Étapes :
-  1. DETECT         — Vérifie l'intégrité minimale de la session dans /mnt/storage/mistral/.
+  1. DETECT         — Vérifie l'intégrité minimale de la session dans /mnt/storage/bronze/.
   2. ROTATE         — Rotation 180° des vidéos (FFmpeg, idempotente)
   3. TRACKER        — Validation du fichier tracker_positions.csv
   4. VIDEO          — Validation des vidéos et fichiers JSONL
@@ -22,9 +22,9 @@ Chemins :
   8. STORE          — Copie vers/home/ia/silver (seulement si write_mode=True)
 
 Chaque session traverse les étapes indépendamment.
-L'état de chaque étape est persisté dans /mnt/storage/mistral//<session>/pipeline_state.json.
+L'état de chaque étape est persisté dans /mnt/storage/bronze//<session>/pipeline_state.json.
 Tout rollback restaure les .bak créés automatiquement.
-Aucune suppression dans /mnt/storage/mistral/ sauf si delete_after_store=True (opt-in explicite).
+Aucune suppression dans /mnt/storage/bronze/ sauf si delete_after_store=True (opt-in explicite).
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ if str(_ROOT) not in sys.path:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Chemins fixes ─────────────────────────────────────────────────────────────
-INGEST_DIR   = Path("/mnt/storage/mistral/")  # source ET espace de travail (déposé par l'opérateur)
+INGEST_DIR   = Path("/mnt/storage/bronze/")  # source ET espace de travail (déposé par l'opérateur)
 SILVER_DIR   = Path("/home/exoria/silver")     # sortie finale validée (écriture explicite)
 MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
 # Alias pour compatibilité rétrograde
@@ -124,14 +124,14 @@ class StepState:
 @dataclass
 class SessionPipelineState:
     session_name:   str
-    session_path:   str           # chemin dans /mnt/storage/mistral/
+    session_path:   str           # chemin dans /mnt/storage/bronze/
     created_at:  str = field(default_factory=lambda: _now())
     updated_at:  str = field(default_factory=lambda: _now())
     current_step: str = "detect"
     finished:    bool = False
     success:     bool = False
     write_mode:  bool = False        # si True, copie vers/home/ia/silver après validation
-    delete_after_store: bool = False # si True, supprime de /mnt/storage/mistral/
+    delete_after_store: bool = False # si True, supprime de /mnt/storage/bronze/
     error:       Optional[str] = None
     steps:       Dict[str, StepState] = field(default_factory=dict)
     # Résultats pour accès rapide
@@ -1319,12 +1319,12 @@ def step_validate(state: SessionPipelineState, log: PipelineLogger,
 
 def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     """
-    Étape 8 — Copie la session traitée de /mnt/storage/mistral/ vers/home/ia/silver.
+    Étape 8 — Copie la session traitée de /mnt/storage/bronze/ vers/home/ia/silver.
     N'est appelée que si write_mode=True dans l'état de session.
     Exclut les fichiers temporaires (.bak, locks, backups).
-    Si delete_after_store=True, supprime la session de /mnt/storage/mistral/ après copie.
+    Si delete_after_store=True, supprime la session de /mnt/storage/bronze/ après copie.
     """
-    sess        = Path(state.session_path)   # dans /mnt/storage/mistral/
+    sess        = Path(state.session_path)   # dans /mnt/storage/bronze/
     silver_path = SILVER_DIR / sess.name
 
     if not SILVER_DIR.exists():
@@ -1376,15 +1376,15 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
         "OK",
     )
 
-    # Suppression de /mnt/storage/mistral/ seulement si opt-in explicite
+    # Suppression de /mnt/storage/bronze/ seulement si opt-in explicite
     deleted = False
     if state.delete_after_store:
         log(f"Suppression de {sess} (delete_after_store=True)…", "WARN")
         shutil.rmtree(sess, ignore_errors=True)
         deleted = True
-        log("Session supprimée de /mnt/storage/mistral/", "OK")
+        log("Session supprimée de /mnt/storage/bronze/", "OK")
     else:
-        log("Session conservée dans /mnt/storage/mistral/ (delete_after_store=False)", "INFO")
+        log("Session conservée dans /mnt/storage/bronze/ (delete_after_store=False)", "INFO")
 
     return {
         "silver_path": str(silver_path),
@@ -1439,8 +1439,8 @@ class PipelineRunner:
 
         if not sess.exists():
             raise FileNotFoundError(
-                f"Session introuvable dans /mnt/storage/mistral/: {sess}\n"
-                "Déposez la session dans /mnt/storage/mistral/ avant de lancer la pipeline."
+                f"Session introuvable dans /mnt/storage/bronze/: {sess}\n"
+                "Déposez la session dans /mnt/storage/bronze/ avant de lancer la pipeline."
             )
 
         # Charger ou créer l'état dans le dossier session
@@ -1554,7 +1554,7 @@ class PipelineRunner:
                 else:
                     state.steps["store"].status  = StepStatus.SKIPPED
                     state.steps["store"].message = "write_mode désactivé — aucune écriture vers/home/ia/silver"
-                    self.log("Store ignoré (write_mode=False) — données disponibles dans /mnt/storage/mistral/", "INFO")
+                    self.log("Store ignoré (write_mode=False) — données disponibles dans /mnt/storage/bronze/", "INFO")
 
             state.finished = True
             state.success  = True
@@ -1661,7 +1661,7 @@ class _StepContext:
 
 class IngestionWatcher:
     """
-    Surveille /mnt/storage/mistral/ et lance la pipeline automatiquement
+    Surveille /mnt/storage/bronze/ et lance la pipeline automatiquement
     sur les nouvelles sessions déposées par l'opérateur.
     Si write_mode=True, les sessions validées sont copiées vers/home/ia/silver.
     """
@@ -1718,7 +1718,7 @@ class IngestionWatcher:
             time.sleep(self.poll_interval)
 
     def _scan(self):
-        """Scanne /mnt/storage/mistral/ pour de nouvelles sessions déposées."""
+        """Scanne /mnt/storage/bronze/ pour de nouvelles sessions déposées."""
         if not self.watch_dir.exists():
             return
         for child in sorted(self.watch_dir.iterdir()):
@@ -1775,7 +1775,7 @@ class IngestionWatcher:
         return list(self._seen)
 
     def enqueue(self, session_path: str):
-        """Enfile manuellement une session (chemin dans /mnt/storage/mistral/)."""
+        """Enfile manuellement une session (chemin dans /mnt/storage/bronze/)."""
         with self._lock:
             self._queue.append(Path(session_path))
 
@@ -2022,7 +2022,7 @@ if __name__ == "__main__":
         "label_min_confidence": args.label_min_confidence,
     }
 
-    # ── Résolution des sessions à traiter (depuis /mnt/storage/mistral/) ────────────
+    # ── Résolution des sessions à traiter (depuis /mnt/storage/bronze/) ────────────
     if args.session:
         source_paths = [INGEST_DIR / args.session]
         if not source_paths[0].is_dir():

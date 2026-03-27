@@ -425,9 +425,11 @@
 			transition: all .15s;
 			white-space: nowrap;
 		}
+
 		.btn-reject-big:hover {
 			background: var(--red)44;
 		}
+
 		.btn-reject-big:disabled {
 			opacity: .35;
 			cursor: not-allowed;
@@ -453,11 +455,13 @@
 			transition: all .15s;
 			box-shadow: 0 4px 18px #16a34a44;
 		}
+
 		.btn-export-big:hover {
 			background: linear-gradient(135deg, #166534 0%, #15803d 100%);
 			box-shadow: 0 6px 24px #16a34a66;
 			transform: translateY(-1px);
 		}
+
 		.btn-export-big:disabled {
 			opacity: .35;
 			cursor: not-allowed;
@@ -476,8 +480,12 @@
 			align-items: center;
 			justify-content: center;
 		}
+
 		#export-modal-backdrop.open,
-		#reject-modal-backdrop.open { display: flex; }
+		#reject-modal-backdrop.open {
+			display: flex;
+		}
+
 		#export-modal {
 			background: var(--bg2);
 			border: 1px solid var(--border);
@@ -488,16 +496,19 @@
 			max-height: 90vh;
 			overflow-y: auto;
 		}
+
 		#export-modal h3 {
 			margin: 0 0 4px;
 			font-size: 1.1rem;
 			color: var(--text);
 		}
+
 		#export-modal .exp-sub {
 			font-size: .8rem;
 			color: var(--text3);
 			margin-bottom: 18px;
 		}
+
 		#export-modal .exp-section {
 			font-size: .7rem;
 			font-weight: 700;
@@ -506,6 +517,7 @@
 			color: var(--text3);
 			margin: 14px 0 8px;
 		}
+
 		#export-modal .exp-btns {
 			display: flex;
 			gap: 8px;
@@ -2340,8 +2352,16 @@
 			gap: 3px;
 			transition: background .15s
 		}
-		.tv-vid-remap-btn:hover { background: #333333ee; color: #fff }
-		.tv-vid-remap-btn.remapped { background: #f59e0bcc; color: #fff }
+
+		.tv-vid-remap-btn:hover {
+			background: #333333ee;
+			color: #fff
+		}
+
+		.tv-vid-remap-btn.remapped {
+			background: #f59e0bcc;
+			color: #fff
+		}
 
 		/* Bouton Sync flottant */
 		#tv-sync-btn {
@@ -2363,9 +2383,20 @@
 			box-shadow: 0 2px 10px #0006;
 			transition: background .15s, opacity .15s;
 		}
-		#tv-sync-btn:hover { filter: brightness(1.15); }
-		#tv-sync-btn:disabled { opacity: .5; cursor: default; filter: none; }
-		#tv-sync-btn.running { background: #f59e0b; }
+
+		#tv-sync-btn:hover {
+			filter: brightness(1.15);
+		}
+
+		#tv-sync-btn:disabled {
+			opacity: .5;
+			cursor: default;
+			filter: none;
+		}
+
+		#tv-sync-btn.running {
+			background: #f59e0b;
+		}
 
 		/* Dropdown remap panel */
 		.tv-remap-panel {
@@ -2383,7 +2414,11 @@
 			flex-direction: column;
 			gap: 6px
 		}
-		.tv-remap-panel.open { display: flex }
+
+		.tv-remap-panel.open {
+			display: flex
+		}
+
 		.tv-remap-panel label {
 			font-size: .68rem;
 			color: var(--text3);
@@ -2391,6 +2426,7 @@
 			letter-spacing: .03em;
 			margin-bottom: 2px
 		}
+
 		.tv-remap-panel select {
 			background: var(--bg3);
 			border: 1px solid var(--border);
@@ -2400,11 +2436,13 @@
 			padding: 3px 6px;
 			cursor: pointer
 		}
+
 		.tv-remap-panel .tv-remap-actions {
 			display: flex;
 			gap: 4px;
 			margin-top: 2px
 		}
+
 		.tv-remap-panel .tv-remap-actions button {
 			flex: 1;
 			font-size: .68rem;
@@ -2415,6 +2453,7 @@
 			background: var(--bg3);
 			color: var(--text)
 		}
+
 		.tv-remap-panel .tv-remap-actions button.primary {
 			background: var(--accent);
 			border-color: var(--accent);
@@ -2431,7 +2470,11 @@
 			align-items: center;
 			justify-content: center
 		}
-		#tv-remap-propagate-modal.open { display: flex }
+
+		#tv-remap-propagate-modal.open {
+			display: flex
+		}
+
 		#tv-remap-propagate-modal .modal-box {
 			background: var(--bg2);
 			border: 1px solid var(--border);
@@ -2441,22 +2484,26 @@
 			width: 90%;
 			box-shadow: 0 8px 32px #0008
 		}
+
 		#tv-remap-propagate-modal h3 {
 			margin: 0 0 8px;
 			font-size: .95rem;
 			color: var(--text)
 		}
+
 		#tv-remap-propagate-modal p {
 			margin: 0 0 14px;
 			font-size: .78rem;
 			color: var(--text2);
 			line-height: 1.5
 		}
+
 		#tv-remap-propagate-modal .modal-btns {
 			display: flex;
 			gap: 8px;
 			justify-content: flex-end
 		}
+
 		#tv-remap-propagate-modal .modal-btns button {
 			padding: 6px 16px;
 			border-radius: 6px;
@@ -2466,6 +2513,7 @@
 			background: var(--bg3);
 			color: var(--text)
 		}
+
 		#tv-remap-propagate-modal .modal-btns button.primary {
 			background: var(--accent);
 			border-color: var(--accent);
@@ -2873,9 +2921,9 @@
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:250px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Répertoire</label>
 								<span id="cfg-root-display"
-									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/mnt/storage/mistral
+									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/mnt/storage/bronze
 								</span>
-								<input type="hidden" id="cfg-root" value="/mnt/storage/mistral" />
+								<input type="hidden" id="cfg-root" value="/mnt/storage/bronze" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3011,8 +3059,12 @@
 							<button class="btn sm" onclick="selAll()">Tout</button>
 							<button class="btn sm" onclick="deselAll()">Aucun</button>
 							<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
-							<button class="btn sm" onclick="selValid()" title="Sélectionner uniquement les sessions sans problème">✓ Valides</button>
-							<button class="btn sm" style="background:var(--red)1a;border-color:var(--red)44;color:var(--red)" onclick="selIssues()" title="Sélectionner uniquement les sessions avec problèmes">⚠ Problèmes</button>
+							<button class="btn sm" onclick="selValid()"
+								title="Sélectionner uniquement les sessions sans problème">✓ Valides</button>
+							<button class="btn sm"
+								style="background:var(--red)1a;border-color:var(--red)44;color:var(--red)"
+								onclick="selIssues()" title="Sélectionner uniquement les sessions avec problèmes">⚠
+								Problèmes</button>
 						</div>
 						<div id="sess-list"></div>
 						<div class="div" style="margin:10px 0 8px"></div>
@@ -3031,7 +3083,8 @@
 
 					<!-- Boutons Export / Rejeter -->
 					<div style="margin-top:16px;display:flex;gap:10px">
-						<button class="btn-export-big" id="btn-export-big" onclick="openExportModal()" disabled style="flex:1">
+						<button class="btn-export-big" id="btn-export-big" onclick="openExportModal()" disabled
+							style="flex:1">
 							⬆ Exporter les sessions sélectionnées
 						</button>
 						<button class="btn-reject-big" id="btn-reject-big" onclick="openRejectModal()" disabled>
@@ -3220,7 +3273,9 @@
 										<div class="tv-vid-wrap" id="tv-wrap-left">
 											<div class="tv-vid-label" style="background:#22d386bb">LEFT</div>
 											<div class="tv-vid-time" id="tv-vt-left">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-left" onclick="tvRemapToggle('left',event)" title="Changer la source vidéo">&#8645;</button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-left"
+												onclick="tvRemapToggle('left',event)"
+												title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-left">
 												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-left">
@@ -3230,7 +3285,8 @@
 												</select>
 												<div class="tv-remap-actions">
 													<button onclick="tvRemapCancel('left')">Annuler</button>
-													<button class="primary" onclick="tvRemapApply('left')">Appliquer</button>
+													<button class="primary"
+														onclick="tvRemapApply('left')">Appliquer</button>
 												</div>
 											</div>
 											<video id="tv-vid-left" preload="auto" muted playsinline></video>
@@ -3239,7 +3295,9 @@
 										<div class="tv-vid-wrap" id="tv-wrap-head">
 											<div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
 											<div class="tv-vid-time" id="tv-vt-head">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-head" onclick="tvRemapToggle('head',event)" title="Changer la source vidéo">&#8645;</button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-head"
+												onclick="tvRemapToggle('head',event)"
+												title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-head">
 												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-head">
@@ -3249,7 +3307,8 @@
 												</select>
 												<div class="tv-remap-actions">
 													<button onclick="tvRemapCancel('head')">Annuler</button>
-													<button class="primary" onclick="tvRemapApply('head')">Appliquer</button>
+													<button class="primary"
+														onclick="tvRemapApply('head')">Appliquer</button>
 												</div>
 											</div>
 											<video id="tv-vid-head" preload="auto" muted playsinline></video>
@@ -3258,7 +3317,9 @@
 										<div class="tv-vid-wrap" id="tv-wrap-right">
 											<div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
 											<div class="tv-vid-time" id="tv-vt-right">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-right" onclick="tvRemapToggle('right',event)" title="Changer la source vidéo">&#8645;</button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-right"
+												onclick="tvRemapToggle('right',event)"
+												title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-right">
 												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-right">
@@ -3268,7 +3329,8 @@
 												</select>
 												<div class="tv-remap-actions">
 													<button onclick="tvRemapCancel('right')">Annuler</button>
-													<button class="primary" onclick="tvRemapApply('right')">Appliquer</button>
+													<button class="primary"
+														onclick="tvRemapApply('right')">Appliquer</button>
 												</div>
 											</div>
 											<video id="tv-vid-right" preload="auto" muted playsinline></video>
@@ -3282,8 +3344,10 @@
 											<h3>Appliquer à d'autres sessions ?</h3>
 											<p id="tv-remap-propagate-msg"></p>
 											<div class="modal-btns">
-												<button onclick="tvRemapPropagate(false)">Seulement cette session</button>
-												<button class="primary" onclick="tvRemapPropagate(true)">Toutes les sessions compatibles</button>
+												<button onclick="tvRemapPropagate(false)">Seulement cette
+													session</button>
+												<button class="primary" onclick="tvRemapPropagate(true)">Toutes les
+													sessions compatibles</button>
 											</div>
 										</div>
 									</div>
@@ -3439,12 +3503,10 @@
 										<!-- Export / Rejet session -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Session actuelle</div>
-											<button class="tv-rp-btn" id="tv-rp-btn-export"
-												onclick="tvViewerExport()"
+											<button class="tv-rp-btn" id="tv-rp-btn-export" onclick="tvViewerExport()"
 												style="background:var(--green)1a;border-color:var(--green)55;color:var(--green);font-weight:600;margin-top:6px"
 												disabled>⬆ Exporter</button>
-											<button class="tv-rp-btn" id="tv-rp-btn-reject"
-												onclick="tvViewerReject()"
+											<button class="tv-rp-btn" id="tv-rp-btn-reject" onclick="tvViewerReject()"
 												style="background:var(--red)1a;border-color:var(--red)55;color:var(--red);font-weight:600;margin-top:4px"
 												disabled>✕ Rejeter</button>
 										</div>
@@ -3454,8 +3516,9 @@
 
 							</div>
 
-						<!-- Bouton Sync flottant -->
-						<button id="tv-sync-btn" onclick="tvActionSync()" title="Resynchroniser les données de cette session">⟳ Sync</button>
+							<!-- Bouton Sync flottant -->
+							<button id="tv-sync-btn" onclick="tvActionSync()"
+								title="Resynchroniser les données de cette session">⟳ Sync</button>
 
 						</div><!-- /tv-tc-live -->
 
@@ -3630,13 +3693,16 @@
 							<div class="ps" style="margin:0">Tâches asynchrones · Pool de processus</div>
 						</div>
 						<div style="flex:1"></div>
-						<button class="btn sm" onclick="refreshPoolStatus()" title="Rafraîchir l'état du pool">↺ Pool</button>
-						<button class="btn sm r" onclick="resetPool()" title="Arrêter et recréer le pool de processus">⊘ Reset pool</button>
+						<button class="btn sm" onclick="refreshPoolStatus()" title="Rafraîchir l'état du pool">↺
+							Pool</button>
+						<button class="btn sm r" onclick="resetPool()" title="Arrêter et recréer le pool de processus">⊘
+							Reset pool</button>
 						<button class="btn sm d" onclick="clearJobs()">Purger terminés</button>
 					</div>
 
 					<!-- Pool status -->
-					<div id="pool-panel" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:.78rem">
+					<div id="pool-panel"
+						style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;font-size:.78rem">
 						<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
 							<span style="color:var(--text2);font-weight:600">Process pool</span>
 							<span>Workers : <b id="pool-workers">—</b></span>
@@ -3662,7 +3728,7 @@
 						<div class="card">
 							<div class="card-h">Chemins</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/mnt/storage/mistral" />
+								<input type="text" id="s-root" value="/mnt/storage/bronze" />
 							</div>
 							<div class="fr"><label>Modèle IA</label>
 								<input type="text" id="s-model" value="_sync_ml_model" />
@@ -3705,13 +3771,15 @@
 					<!-- ══ Section Export ══ -->
 					<div class="card" style="margin-top:16px">
 						<div class="card-h">Export des sessions</div>
-						<div class="ps" style="margin:0 0 12px">Configuration de la destination d'export et du format de sortie.</div>
+						<div class="ps" style="margin:0 0 12px">Configuration de la destination d'export et du format de
+							sortie.</div>
 
 						<!-- Destination -->
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Destination</div>
 						<div class="fr">
 							<label>Type</label>
-							<select id="s-export-type" onchange="onExportTypeChange()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
+							<select id="s-export-type" onchange="onExportTypeChange()"
+								style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
 								<option value="local">Dossier local</option>
 								<option value="s3">AWS S3</option>
 								<option value="sftp">SFTP</option>
@@ -3722,26 +3790,36 @@
 						<div id="exp-dest-local">
 							<div class="fr">
 								<label>Dossier de sortie</label>
-								<input type="text" id="s-export-local-path" placeholder="/mnt/exports/sessions" />
+								<input type="text" id="s-export-local-path" value="/mnt/storage/pool" placeholder="/mnt/storage/pool" />
 							</div>
 						</div>
 
 						<!-- AWS S3 -->
 						<div id="exp-dest-s3" style="display:none">
-							<div class="fr"><label>Bucket S3</label><input type="text" id="s-export-s3-bucket" placeholder="my-robot-data" /></div>
-							<div class="fr"><label>Préfixe (clé)</label><input type="text" id="s-export-s3-prefix" placeholder="sessions/" /></div>
-							<div class="fr"><label>Région AWS</label><input type="text" id="s-export-s3-region" placeholder="eu-west-1" /></div>
-							<div class="fr"><label>Access Key ID</label><input type="text" id="s-export-s3-key" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
-							<div class="fr"><label>Secret Key</label><input type="password" id="s-export-s3-secret" placeholder="••••••••" autocomplete="off" /></div>
+							<div class="fr"><label>Bucket S3</label><input type="text" id="s-export-s3-bucket"
+									placeholder="my-robot-data" /></div>
+							<div class="fr"><label>Préfixe (clé)</label><input type="text" id="s-export-s3-prefix"
+									placeholder="sessions/" /></div>
+							<div class="fr"><label>Région AWS</label><input type="text" id="s-export-s3-region"
+									placeholder="eu-west-1" /></div>
+							<div class="fr"><label>Access Key ID</label><input type="text" id="s-export-s3-key"
+									placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
+							<div class="fr"><label>Secret Key</label><input type="password" id="s-export-s3-secret"
+									placeholder="••••••••" autocomplete="off" /></div>
 						</div>
 
 						<!-- SFTP -->
 						<div id="exp-dest-sftp" style="display:none">
-							<div class="fr"><label>Hôte</label><input type="text" id="s-export-sftp-host" placeholder="storage.example.com" /></div>
-							<div class="fr"><label>Port</label><input type="number" id="s-export-sftp-port" value="22" /></div>
-							<div class="fr"><label>Utilisateur</label><input type="text" id="s-export-sftp-user" placeholder="robot" /></div>
-							<div class="fr"><label>Mot de passe</label><input type="password" id="s-export-sftp-pass" placeholder="••••••••" autocomplete="off" /></div>
-							<div class="fr"><label>Chemin distant</label><input type="text" id="s-export-sftp-path" placeholder="/data/sessions" /></div>
+							<div class="fr"><label>Hôte</label><input type="text" id="s-export-sftp-host"
+									placeholder="storage.example.com" /></div>
+							<div class="fr"><label>Port</label><input type="number" id="s-export-sftp-port"
+									value="22" /></div>
+							<div class="fr"><label>Utilisateur</label><input type="text" id="s-export-sftp-user"
+									placeholder="robot" /></div>
+							<div class="fr"><label>Mot de passe</label><input type="password" id="s-export-sftp-pass"
+									placeholder="••••••••" autocomplete="off" /></div>
+							<div class="fr"><label>Chemin distant</label><input type="text" id="s-export-sftp-path"
+									placeholder="/data/sessions" /></div>
 						</div>
 
 						<div class="div" style="margin:14px 0"></div>
@@ -3750,26 +3828,35 @@
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Format de sortie</div>
 						<div class="chk">
 							<input type="checkbox" id="s-export-lerobot" onchange="onLerobotChange()" />
-							<label style="font-weight:600">Convertir au format <span style="color:#a78bfa">LeRobot v3</span> <span style="font-size:.75rem;color:var(--text3);font-weight:400">(HuggingFace)</span></label>
+							<label style="font-weight:600">Convertir au format <span style="color:#a78bfa">LeRobot
+									v3</span> <span
+									style="font-size:.75rem;color:var(--text3);font-weight:400">(HuggingFace)</span></label>
 						</div>
-						<div id="exp-lerobot-opts" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:1px solid #a78bfa44">
-							<div style="font-size:.78rem;color:#a78bfa;margin-bottom:8px;font-weight:600">Options LeRobot v3</div>
-							<div class="fr"><label>Nom du dataset</label><input type="text" id="s-lerobot-name" placeholder="my_robot_dataset" /></div>
+						<div id="exp-lerobot-opts"
+							style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:1px solid #a78bfa44">
+							<div style="font-size:.78rem;color:#a78bfa;margin-bottom:8px;font-weight:600">Options
+								LeRobot v3</div>
+							<div class="fr"><label>Nom du dataset</label><input type="text" id="s-lerobot-name"
+									placeholder="my_robot_dataset" /></div>
 							<div class="fr"><label>Robot type</label>
-								<select id="s-lerobot-robot" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
+								<select id="s-lerobot-robot"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
 									<option value="so100">SO-100</option>
 									<option value="so101">SO-101</option>
 									<option value="moss">Moss</option>
 									<option value="custom">Custom</option>
 								</select>
 							</div>
-							<div class="fr"><label>FPS vidéo</label><input type="number" id="s-lerobot-fps" value="30" min="1" max="120" /></div>
+							<div class="fr"><label>FPS vidéo</label><input type="number" id="s-lerobot-fps" value="30"
+									min="1" max="120" /></div>
 							<div class="chk" style="margin-top:4px"><input type="checkbox" id="s-lerobot-push-hub" />
 								<label>Pousser sur HuggingFace Hub</label>
 							</div>
 							<div id="exp-hf-token-row" style="display:none;margin-top:6px">
-								<div class="fr"><label>HF Token</label><input type="password" id="s-lerobot-hf-token" placeholder="hf_••••••••" autocomplete="off" /></div>
-								<div class="fr"><label>Repo ID</label><input type="text" id="s-lerobot-repo" placeholder="username/dataset_name" /></div>
+								<div class="fr"><label>HF Token</label><input type="password" id="s-lerobot-hf-token"
+										placeholder="hf_••••••••" autocomplete="off" /></div>
+								<div class="fr"><label>Repo ID</label><input type="text" id="s-lerobot-repo"
+										placeholder="username/dataset_name" /></div>
 							</div>
 						</div>
 
@@ -3779,7 +3866,7 @@
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Rejet</div>
 						<div class="fr">
 							<label>Dossier de rejet</label>
-							<input type="text" id="s-reject-path" placeholder="/mnt/rejected/sessions" />
+							<input type="text" id="s-reject-path" value="/mnt/storage/rejected" placeholder="/mnt/storage/rejected" />
 						</div>
 						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
 							Les sessions rejetées y seront déplacées (move, pas copie).
@@ -3803,7 +3890,8 @@
 			<button class="btn sm d" id="btn-drawer-unlock" onclick="unlockDrawer()"
 				title="Supprime le .pipeline_lock">🔓</button>
 			<button class="btn sm" id="btn-drawer-verify" onclick="verifyDrawer()"
-				title="Lance check_sync + verify (trackers, désync, labels) et écrit les résultats dans metadata">⚙ Vérification</button>
+				title="Lance check_sync + verify (trackers, désync, labels) et écrit les résultats dans metadata">⚙
+				Vérification</button>
 			<button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
 		</div>
 		<div id="sess-drawer-body"></div>
@@ -3843,23 +3931,30 @@
 			<div class="exp-sub" id="reject-modal-sub">0 session(s) sélectionnée(s)</div>
 
 			<div class="exp-section">Destination du rejet</div>
-			<div style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--red)44;margin-bottom:4px">
+			<div
+				style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--red)44;margin-bottom:4px">
 				<span id="reject-dest-label">—</span>
 			</div>
 			<div style="font-size:.75rem;color:var(--text3);margin-bottom:12px">
-				Configurer dans <a href="#" onclick="nav('settings',null);rejectModalClose();return false" style="color:var(--accent)">Paramètres → Export → Dossier de rejet</a>
+				Configurer dans <a href="#" onclick="nav('settings',null);rejectModalClose();return false"
+					style="color:var(--accent)">Paramètres → Export → Dossier de rejet</a>
 			</div>
 
 			<div class="exp-section">Sessions à rejeter</div>
-			<div id="reject-sess-list" style="max-height:160px;overflow-y:auto;font-size:.78rem;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border)"></div>
+			<div id="reject-sess-list"
+				style="max-height:160px;overflow-y:auto;font-size:.78rem;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border)">
+			</div>
 
-			<div style="margin-top:14px;padding:10px 12px;background:var(--red)11;border:1px solid var(--red)33;border-radius:var(--rs);font-size:.78rem;color:var(--red)">
-				⚠ Les sessions seront <strong>déplacées</strong> vers le dossier de rejet (opération irréversible sans rollback).
+			<div
+				style="margin-top:14px;padding:10px 12px;background:var(--red)11;border:1px solid var(--red)33;border-radius:var(--rs);font-size:.78rem;color:var(--red)">
+				⚠ Les sessions seront <strong>déplacées</strong> vers le dossier de rejet (opération irréversible sans
+				rollback).
 			</div>
 
 			<div class="exp-btns">
 				<button class="btn" onclick="rejectModalClose()">Annuler</button>
-				<button class="btn" id="btn-reject-confirm" onclick="doReject()" style="background:var(--red)22;border-color:var(--red)66;color:var(--red);font-weight:700;padding:10px 24px">
+				<button class="btn" id="btn-reject-confirm" onclick="doReject()"
+					style="background:var(--red)22;border-color:var(--red)66;color:var(--red);font-weight:700;padding:10px 24px">
 					✕ Confirmer le rejet
 				</button>
 			</div>
@@ -3873,24 +3968,31 @@
 			<div class="exp-sub" id="export-modal-sub">0 session(s) sélectionnée(s)</div>
 
 			<div class="exp-section">Destination</div>
-			<div id="export-dest-summary" style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border);margin-bottom:4px">
+			<div id="export-dest-summary"
+				style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border);margin-bottom:4px">
 				<span id="export-dest-label">—</span>
 			</div>
 			<div style="font-size:.75rem;color:var(--text3);margin-bottom:12px">
-				Configurer la destination dans <a href="#" onclick="nav('settings',null);exportModalClose();return false" style="color:var(--accent)">Paramètres → Export</a>
+				Configurer la destination dans <a href="#"
+					onclick="nav('settings',null);exportModalClose();return false"
+					style="color:var(--accent)">Paramètres → Export</a>
 			</div>
 
 			<div class="exp-section">Format</div>
-			<div id="export-format-summary" style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border);margin-bottom:4px">
+			<div id="export-format-summary"
+				style="font-size:.82rem;color:var(--text2);padding:8px 10px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border);margin-bottom:4px">
 				<span id="export-format-label">—</span>
 			</div>
 
 			<div class="exp-section">Sessions à exporter</div>
-			<div id="export-sess-list" style="max-height:160px;overflow-y:auto;font-size:.78rem;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border)"></div>
+			<div id="export-sess-list"
+				style="max-height:160px;overflow-y:auto;font-size:.78rem;color:var(--text2);padding:6px 8px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--border)">
+			</div>
 
 			<div class="exp-btns">
 				<button class="btn" onclick="exportModalClose()">Annuler</button>
-				<button class="btn-export-big" id="btn-export-confirm" onclick="doExport()" style="width:auto;padding:10px 24px;font-size:.95rem">
+				<button class="btn-export-big" id="btn-export-confirm" onclick="doExport()"
+					style="width:auto;padding:10px 24px;font-size:.95rem">
 					⬆ Lancer l'export
 				</button>
 			</div>
@@ -3918,7 +4020,7 @@
 			drawerSess: null,
 			watcher: { running: false },
 			cfg: {
-				root: '/mnt/storage/mistral', model: '_sync_ml_model', nas: '',
+				root: '/mnt/storage/bronze', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200
 			}
 		};
@@ -4108,7 +4210,7 @@
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
-			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/mistral			';
+			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze			';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
 			try {
@@ -4523,7 +4625,7 @@
 				if (syncDelay != null) {
 					const syncOk = syncDelay <= 500;
 					const delays = verif?.stats?.camera_delays_ms || {};
-					const delayStr = Object.entries(delays).map(([c,v]) => `${c}:${v}ms`).join(' ');
+					const delayStr = Object.entries(delays).map(([c, v]) => `${c}:${v}ms`).join(' ');
 					html += `<div style="font-size:.75rem;margin-bottom:3px">
         <span style="color:var(--text3)">check_sync</span>
         <span style="color:${syncOk ? 'var(--green)' : 'var(--red)'};margin-left:6px">${syncOk ? '✓' : '✗'} délai max ${syncDelay}ms${delayStr ? ' (' + esc(delayStr) + ')' : ''}</span>
@@ -4765,7 +4867,7 @@
 				if (sess) await loadSessionPipelineState(sess);
 				if (reloadIfCurrent && TV.sessPath === sessPath) await tvSelectSession(sessPath);
 				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
-			} catch(e) {
+			} catch (e) {
 				log('Swap trackers : ' + e.message, 'ERROR');
 			}
 		}
@@ -4911,7 +5013,7 @@
 				const _verifSt = _steps['verify']?.status;
 				const _gripIssues = (_verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
 				const _gripTitle = _verif
-					? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0,2).join('; ') : 'Trackers OK')
+					? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0, 2).join('; ') : 'Trackers OK')
 					: 'verify non exécuté';
 				const _gripCls = _verif ? (_gripIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_verifSt);
 
@@ -4968,8 +5070,8 @@
 		}
 		function selAll() { S.sessions.forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
 		function deselAll() { S.selected.clear(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selValid()  { S.selected.clear(); S.sessions.filter(s => !_sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selIssues() { S.selected.clear(); S.sessions.filter(s =>  _sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selValid() { S.selected.clear(); S.sessions.filter(s => !_sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selIssues() { S.selected.clear(); S.sessions.filter(s => _sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;
@@ -5546,7 +5648,7 @@
 						v.onerror = () => { TV.vidReady[side] = false; };
 						v.onseeked = null;
 					} else {
-					TV.vidReady[side] = false;
+						TV.vidReady[side] = false;
 					}
 				}
 
@@ -5663,7 +5765,7 @@
 					await tvSelectSession(sessPath);
 				}
 				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
-			} catch(e) {
+			} catch (e) {
 				log('Swap caméras : ' + e.message, 'ERROR');
 			}
 		}
@@ -6262,7 +6364,7 @@
 						if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '⟳ Sync'; }
 						log('Align Pro erreur: ' + (j.error || '?'), 'ERROR');
 					}
-				} catch (_) {}
+				} catch (_) { }
 			}, 3000);
 		}
 
@@ -6724,34 +6826,34 @@
 		async function clearJobs() {
 			await api('DELETE', '/api/jobs');
 			Object.keys(S.jobs).forEach(id => {
-				if (['done','error'].includes(S.jobs[id].status)) delete S.jobs[id];
+				if (['done', 'error'].includes(S.jobs[id].status)) delete S.jobs[id];
 			});
 			renderJobsList();
 		}
 
 		async function deleteJob(id) {
-			try { await api('DELETE', `/api/jobs/${id}`); } catch(e) {}
+			try { await api('DELETE', `/api/jobs/${id}`); } catch (e) { }
 			delete S.jobs[id];
 			renderJobsList();
 			updateNavBadges();
 		}
 
 		async function cancelJob(id) {
-			try { await api('POST', `/api/jobs/${id}/cancel`); } catch(e) { log(e?.error || String(e), 'ERROR'); }
+			try { await api('POST', `/api/jobs/${id}/cancel`); } catch (e) { log(e?.error || String(e), 'ERROR'); }
 		}
 
 		async function refreshPoolStatus() {
 			try {
 				const d = await api('GET', '/api/pool/status');
 				ge('pool-workers').textContent = d.pool?.max_workers ?? '—';
-				ge('pool-procs').textContent   = d.pool?.processes  ?? '—';
-				ge('pool-queue').textContent   = d.pool?.pending_work ?? '—';
+				ge('pool-procs').textContent = d.pool?.processes ?? '—';
+				ge('pool-queue').textContent = d.pool?.pending_work ?? '—';
 				ge('pool-threads').textContent = d.n_threads ?? '—';
 				const tl = ge('pool-threads-list');
 				tl.innerHTML = (d.active_threads || []).map(t =>
 					`<span style="font-size:.65rem;padding:1px 6px;border-radius:99px;background:var(--bg4);border:1px solid var(--border);color:${t.alive ? 'var(--green)' : 'var(--text3)'}">${esc(t.name)}</span>`
 				).join('');
-			} catch(e) { log('Pool status error: ' + e, 'ERROR'); }
+			} catch (e) { log('Pool status error: ' + e, 'ERROR'); }
 		}
 
 		async function resetPool() {
@@ -6760,7 +6862,7 @@
 				await api('POST', '/api/pool/reset');
 				log('Pool réinitialisé', 'OK');
 				setTimeout(refreshPoolStatus, 500);
-			} catch(e) { log('Reset pool error: ' + e, 'ERROR'); }
+			} catch (e) { log('Reset pool error: ' + e, 'ERROR'); }
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -6775,7 +6877,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/mistral				';
+				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -6810,7 +6912,7 @@
 		// Settings save
 		// ══════════════════════════════════════════════════════════════════
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/storage/mistral			';
+			S.cfg.root = ge('s-root').value || '/mnt/storage/bronze			';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -6827,7 +6929,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/storage/mistral				';
+				const root = c.root || '/mnt/storage/bronze				';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -6846,8 +6948,8 @@
 		function onExportTypeChange() {
 			const t = ge('s-export-type').value;
 			ge('exp-dest-local').style.display = t === 'local' ? '' : 'none';
-			ge('exp-dest-s3').style.display    = t === 's3'    ? '' : 'none';
-			ge('exp-dest-sftp').style.display  = t === 'sftp'  ? '' : 'none';
+			ge('exp-dest-s3').style.display = t === 's3' ? '' : 'none';
+			ge('exp-dest-sftp').style.display = t === 'sftp' ? '' : 'none';
 		}
 
 		function onLerobotChange() {
@@ -6869,25 +6971,25 @@
 		function getExportCfg() {
 			return {
 				dest_type: ge('s-export-type').value,
-				local_path: ge('s-export-local-path').value,
-				reject_path: ge('s-reject-path').value,
-				s3_bucket:  ge('s-export-s3-bucket').value,
-				s3_prefix:  ge('s-export-s3-prefix').value,
-				s3_region:  ge('s-export-s3-region').value,
-				s3_key:     ge('s-export-s3-key').value,
-				s3_secret:  ge('s-export-s3-secret').value,
-				sftp_host:  ge('s-export-sftp-host').value,
-				sftp_port:  +ge('s-export-sftp-port').value || 22,
-				sftp_user:  ge('s-export-sftp-user').value,
-				sftp_pass:  ge('s-export-sftp-pass').value,
-				sftp_path:  ge('s-export-sftp-path').value,
-				lerobot:    ge('s-export-lerobot').checked,
-				lr_name:    ge('s-lerobot-name').value,
-				lr_robot:   ge('s-lerobot-robot').value,
-				lr_fps:     +ge('s-lerobot-fps').value || 30,
-				lr_push:    ge('s-lerobot-push-hub').checked,
-				lr_token:   ge('s-lerobot-hf-token').value,
-				lr_repo:    ge('s-lerobot-repo').value,
+				local_path: ge('s-export-local-path').value || '/mnt/storage/pool',
+				reject_path: ge('s-reject-path').value || '/mnt/storage/rejected',
+				s3_bucket: ge('s-export-s3-bucket').value,
+				s3_prefix: ge('s-export-s3-prefix').value,
+				s3_region: ge('s-export-s3-region').value,
+				s3_key: ge('s-export-s3-key').value,
+				s3_secret: ge('s-export-s3-secret').value,
+				sftp_host: ge('s-export-sftp-host').value,
+				sftp_port: +ge('s-export-sftp-port').value || 22,
+				sftp_user: ge('s-export-sftp-user').value,
+				sftp_pass: ge('s-export-sftp-pass').value,
+				sftp_path: ge('s-export-sftp-path').value,
+				lerobot: ge('s-export-lerobot').checked,
+				lr_name: ge('s-lerobot-name').value,
+				lr_robot: ge('s-lerobot-robot').value,
+				lr_fps: +ge('s-lerobot-fps').value || 30,
+				lr_push: ge('s-lerobot-push-hub').checked,
+				lr_token: ge('s-lerobot-hf-token').value,
+				lr_repo: ge('s-lerobot-repo').value,
 			};
 		}
 
@@ -6895,25 +6997,25 @@
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-export-cfg') || '{}');
 				if (c.dest_type) { ge('s-export-type').value = c.dest_type; onExportTypeChange(); }
-				if (c.local_path)  ge('s-export-local-path').value = c.local_path;
-			if (c.reject_path) ge('s-reject-path').value       = c.reject_path;
-				if (c.s3_bucket)  ge('s-export-s3-bucket').value  = c.s3_bucket;
-				if (c.s3_prefix)  ge('s-export-s3-prefix').value  = c.s3_prefix;
-				if (c.s3_region)  ge('s-export-s3-region').value  = c.s3_region;
-				if (c.s3_key)     ge('s-export-s3-key').value     = c.s3_key;
-				if (c.s3_secret)  ge('s-export-s3-secret').value  = c.s3_secret;
-				if (c.sftp_host)  ge('s-export-sftp-host').value  = c.sftp_host;
-				if (c.sftp_port)  ge('s-export-sftp-port').value  = c.sftp_port;
-				if (c.sftp_user)  ge('s-export-sftp-user').value  = c.sftp_user;
-				if (c.sftp_pass)  ge('s-export-sftp-pass').value  = c.sftp_pass;
-				if (c.sftp_path)  ge('s-export-sftp-path').value  = c.sftp_path;
-				if (c.lerobot)    { ge('s-export-lerobot').checked = c.lerobot; onLerobotChange(); }
-				if (c.lr_name)    ge('s-lerobot-name').value       = c.lr_name;
-				if (c.lr_robot)   ge('s-lerobot-robot').value      = c.lr_robot;
-				if (c.lr_fps)     ge('s-lerobot-fps').value        = c.lr_fps;
-				if (c.lr_push)    { ge('s-lerobot-push-hub').checked = c.lr_push; onHfPushChange(); }
-				if (c.lr_token)   ge('s-lerobot-hf-token').value   = c.lr_token;
-				if (c.lr_repo)    ge('s-lerobot-repo').value       = c.lr_repo;
+				if (c.local_path) ge('s-export-local-path').value = c.local_path;
+				if (c.reject_path) ge('s-reject-path').value = c.reject_path;
+				if (c.s3_bucket) ge('s-export-s3-bucket').value = c.s3_bucket;
+				if (c.s3_prefix) ge('s-export-s3-prefix').value = c.s3_prefix;
+				if (c.s3_region) ge('s-export-s3-region').value = c.s3_region;
+				if (c.s3_key) ge('s-export-s3-key').value = c.s3_key;
+				if (c.s3_secret) ge('s-export-s3-secret').value = c.s3_secret;
+				if (c.sftp_host) ge('s-export-sftp-host').value = c.sftp_host;
+				if (c.sftp_port) ge('s-export-sftp-port').value = c.sftp_port;
+				if (c.sftp_user) ge('s-export-sftp-user').value = c.sftp_user;
+				if (c.sftp_pass) ge('s-export-sftp-pass').value = c.sftp_pass;
+				if (c.sftp_path) ge('s-export-sftp-path').value = c.sftp_path;
+				if (c.lerobot) { ge('s-export-lerobot').checked = c.lerobot; onLerobotChange(); }
+				if (c.lr_name) ge('s-lerobot-name').value = c.lr_name;
+				if (c.lr_robot) ge('s-lerobot-robot').value = c.lr_robot;
+				if (c.lr_fps) ge('s-lerobot-fps').value = c.lr_fps;
+				if (c.lr_push) { ge('s-lerobot-push-hub').checked = c.lr_push; onHfPushChange(); }
+				if (c.lr_token) ge('s-lerobot-hf-token').value = c.lr_token;
+				if (c.lr_repo) ge('s-lerobot-repo').value = c.lr_repo;
 			} catch (e) { }
 		}
 
@@ -7066,7 +7168,7 @@
 			const orig_doExport = window._tvViewerExportOrig;
 			if (!orig_doExport) {
 				window._tvViewerExportOrig = doExport;
-				window.doExport = async function() {
+				window.doExport = async function () {
 					await window._tvViewerExportOrig();
 					S.selected = new Set(prev);
 					window.doExport = window._tvViewerExportOrig;
@@ -7076,7 +7178,7 @@
 			const orig_close = window._tvViewerExportCloseOrig;
 			if (!orig_close) {
 				window._tvViewerExportCloseOrig = exportModalClose;
-				window.exportModalClose = function(e) {
+				window.exportModalClose = function (e) {
 					window._tvViewerExportCloseOrig(e);
 					if (!ge('export-modal-backdrop').classList.contains('open')) {
 						S.selected = new Set(prev);
@@ -7099,7 +7201,7 @@
 			const orig_doReject = window._tvViewerRejectOrig;
 			if (!orig_doReject) {
 				window._tvViewerRejectOrig = doReject;
-				window.doReject = async function() {
+				window.doReject = async function () {
 					await window._tvViewerRejectOrig();
 					S.selected = new Set(prev);
 					window.doReject = window._tvViewerRejectOrig;
@@ -7109,7 +7211,7 @@
 			const orig_close = window._tvViewerRejectCloseOrig;
 			if (!orig_close) {
 				window._tvViewerRejectCloseOrig = rejectModalClose;
-				window.rejectModalClose = function(e) {
+				window.rejectModalClose = function (e) {
 					window._tvViewerRejectCloseOrig(e);
 					if (!ge('reject-modal-backdrop').classList.contains('open')) {
 						S.selected = new Set(prev);

@@ -3077,11 +3077,11 @@
 										<div class="tv-vid-wrap" id="tv-wrap-left">
 											<div class="tv-vid-label" style="background:#22d386bb">LEFT</div>
 											<div class="tv-vid-time" id="tv-vt-left">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-left" onclick="tvRemapToggle('left',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-left">left</span></button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-left" onclick="tvRemapToggle('left',event)" title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-left">
-												<label>Source pour slot LEFT</label>
+												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-left">
-													<option value="left">left (défaut)</option>
+													<option value="left">left</option>
 													<option value="head">head</option>
 													<option value="right">right</option>
 												</select>
@@ -3096,11 +3096,11 @@
 										<div class="tv-vid-wrap" id="tv-wrap-head">
 											<div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
 											<div class="tv-vid-time" id="tv-vt-head">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-head" onclick="tvRemapToggle('head',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-head">head</span></button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-head" onclick="tvRemapToggle('head',event)" title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-head">
-												<label>Source pour slot HEAD</label>
+												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-head">
-													<option value="head">head (défaut)</option>
+													<option value="head">head</option>
 													<option value="left">left</option>
 													<option value="right">right</option>
 												</select>
@@ -3115,11 +3115,11 @@
 										<div class="tv-vid-wrap" id="tv-wrap-right">
 											<div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
 											<div class="tv-vid-time" id="tv-vt-right">—</div>
-											<button class="tv-vid-remap-btn" id="tv-remap-btn-right" onclick="tvRemapToggle('right',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-right">right</span></button>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-right" onclick="tvRemapToggle('right',event)" title="Changer la source vidéo">&#8645;</button>
 											<div class="tv-remap-panel" id="tv-remap-panel-right">
-												<label>Source pour slot RIGHT</label>
+												<label>Cette vidéo doit s'appeler :</label>
 												<select id="tv-remap-sel-right">
-													<option value="right">right (défaut)</option>
+													<option value="right">right</option>
 													<option value="head">head</option>
 													<option value="left">left</option>
 												</select>
@@ -4340,9 +4340,20 @@
 
 		function drawerRemapApply(sessPath) {
 			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-remap-slot]');
+			// sel.dataset.drawerRemapSlot = slot actuel, sel.value = destination souhaitée
+			// On détecte le premier slot modifié et on fait un swap bidirectionnel (comme le TV viewer)
+			let src = null, dst = null;
+			selects.forEach(sel => {
+				if (sel.dataset.drawerRemapSlot !== sel.value && !src) {
+					src = sel.dataset.drawerRemapSlot;
+					dst = sel.value;
+				}
+			});
+			if (!src || src === dst) return;
+			// mapping[dst] = src, mapping[src] = dst (échange), reste = identité
 			const mapping = { head: 'head', left: 'left', right: 'right' };
-			selects.forEach(sel => { mapping[sel.dataset.drawerRemapSlot] = sel.value; });
-			if (['head','left','right'].every(s => mapping[s] === s)) return; // identity
+			mapping[dst] = src;
+			mapping[src] = dst;
 			_promptSwap(sessPath, mapping);
 		}
 
@@ -5173,13 +5184,10 @@
 		}
 
 		function tvLoadCameraRemap() {
-			// No-op: state is now purely on disk, selects always default to identity
+			// Reset selects to identity (files on disk are always correctly named)
 			for (const slot of ['head', 'left', 'right']) {
 				const sel = ge(`tv-remap-sel-${slot}`);
 				if (sel) sel.value = slot;
-				const srcEl = ge(`tv-remap-src-${slot}`);
-				if (srcEl) srcEl.textContent = slot;
-				ge(`tv-remap-btn-${slot}`)?.classList.remove('remapped');
 			}
 		}
 

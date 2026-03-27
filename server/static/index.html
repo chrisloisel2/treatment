@@ -3436,6 +3436,19 @@
 												caméra</button>
 										</div>
 
+										<!-- Export / Rejet session -->
+										<div class="tv-rp-section">
+											<div class="tv-rp-title">Session actuelle</div>
+											<button class="tv-rp-btn" id="tv-rp-btn-export"
+												onclick="tvViewerExport()"
+												style="background:var(--green)1a;border-color:var(--green)55;color:var(--green);font-weight:600;margin-top:6px"
+												disabled>⬆ Exporter</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-reject"
+												onclick="tvViewerReject()"
+												style="background:var(--red)1a;border-color:var(--red)55;color:var(--red);font-weight:600;margin-top:4px"
+												disabled>✕ Rejeter</button>
+										</div>
+
 									</div>
 								</div><!-- /tv-right-panel -->
 
@@ -5474,6 +5487,8 @@
 			TV.data = null;
 			TV.sessPath = path;
 			TV.t_ms = 0;
+			ge('tv-rp-btn-export').disabled = false;
+			ge('tv-rp-btn-reject').disabled = false;
 			TV.vidInfo = {};
 			TV.vidReady = {};
 			TV3D.needsRebuild = true;
@@ -7038,6 +7053,74 @@
 				nav('jobs', null);
 			} catch (e) {
 				log('Export error: ' + e.message, 'ERROR');
+			}
+		}
+
+		// ── Export / Reject depuis le viewer ────────────────────────────
+		function tvViewerExport() {
+			if (!TV.sessPath) return;
+			const prev = [...S.selected];
+			S.selected = new Set([TV.sessPath]);
+			openExportModal();
+			// Restaurer la sélection d'origine après fermeture de la modal
+			const orig_doExport = window._tvViewerExportOrig;
+			if (!orig_doExport) {
+				window._tvViewerExportOrig = doExport;
+				window.doExport = async function() {
+					await window._tvViewerExportOrig();
+					S.selected = new Set(prev);
+					window.doExport = window._tvViewerExportOrig;
+					delete window._tvViewerExportOrig;
+				};
+			}
+			const orig_close = window._tvViewerExportCloseOrig;
+			if (!orig_close) {
+				window._tvViewerExportCloseOrig = exportModalClose;
+				window.exportModalClose = function(e) {
+					window._tvViewerExportCloseOrig(e);
+					if (!ge('export-modal-backdrop').classList.contains('open')) {
+						S.selected = new Set(prev);
+						window.exportModalClose = window._tvViewerExportCloseOrig;
+						if (window.doExport !== window._tvViewerExportOrig) {
+							window.doExport = window._tvViewerExportOrig;
+						}
+						delete window._tvViewerExportOrig;
+						delete window._tvViewerExportCloseOrig;
+					}
+				};
+			}
+		}
+
+		function tvViewerReject() {
+			if (!TV.sessPath) return;
+			const prev = [...S.selected];
+			S.selected = new Set([TV.sessPath]);
+			openRejectModal();
+			const orig_doReject = window._tvViewerRejectOrig;
+			if (!orig_doReject) {
+				window._tvViewerRejectOrig = doReject;
+				window.doReject = async function() {
+					await window._tvViewerRejectOrig();
+					S.selected = new Set(prev);
+					window.doReject = window._tvViewerRejectOrig;
+					delete window._tvViewerRejectOrig;
+				};
+			}
+			const orig_close = window._tvViewerRejectCloseOrig;
+			if (!orig_close) {
+				window._tvViewerRejectCloseOrig = rejectModalClose;
+				window.rejectModalClose = function(e) {
+					window._tvViewerRejectCloseOrig(e);
+					if (!ge('reject-modal-backdrop').classList.contains('open')) {
+						S.selected = new Set(prev);
+						window.rejectModalClose = window._tvViewerRejectCloseOrig;
+						if (window.doReject !== window._tvViewerRejectOrig) {
+							window.doReject = window._tvViewerRejectOrig;
+						}
+						delete window._tvViewerRejectOrig;
+						delete window._tvViewerRejectCloseOrig;
+					}
+				};
 			}
 		}
 

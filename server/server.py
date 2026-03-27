@@ -300,6 +300,7 @@ def _worker_scan(job: Job):
                     pass
             has_tracker  = (s / "tracker_positions.csv").exists()
             has_gripper  = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
+            has_ux       = (s / "ux_data.csv").exists()
             has_flux_csv = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
             has_jsonl    = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
             has_subtitle = (s / "episode_subtitle.json").exists()
@@ -327,6 +328,7 @@ def _worker_scan(job: Job):
                 "path":           str(s),
                 "has_tracker":    has_tracker,
                 "has_gripper":    has_gripper,
+                "has_ux":         has_ux,
                 "has_flux_csv":   has_flux_csv,
                 "has_jsonl":      has_jsonl,
                 "has_subtitle":   has_subtitle,

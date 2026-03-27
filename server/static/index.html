@@ -1084,6 +1084,46 @@
 			color: var(--red)
 		}
 
+		/* ── Checks de vérification (camera / gripper / synch) ─────────── */
+		.si-checks {
+			display: flex;
+			gap: 6px;
+			flex-wrap: wrap;
+			margin-top: 3px
+		}
+
+		.si-check {
+			display: flex;
+			align-items: center;
+			gap: 3px;
+			font-size: .65rem;
+			color: var(--text3)
+		}
+
+		.si-dot {
+			width: 7px;
+			height: 7px;
+			border-radius: 50%;
+			background: var(--border);
+			flex-shrink: 0
+		}
+
+		.si-check.chk-ok .si-dot {
+			background: var(--green)
+		}
+
+		.si-check.chk-ok {
+			color: var(--green)
+		}
+
+		.si-check.chk-fail .si-dot {
+			background: var(--red)
+		}
+
+		.si-check.chk-fail {
+			color: var(--red)
+		}
+
 		/* ══ Log Panel ══════════════════════════════════════════════════════ */
 		#log-panel {
 			position: fixed;
@@ -4113,13 +4153,23 @@
 
 				const meta = s.meta || {};
 				const sc = syncScore(s.pipeline_state);
+				const _steps = s.pipeline_state?.steps || {};
+				const _checkCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
+				const _camSt   = _steps['detect']?.status;
+				const _gripSt  = _steps['verify']?.status;
+				const _syncSt  = _steps['check_sync']?.status;
 				div.innerHTML = `
       <div class="si-name">${s.name}</div>
       <div class="si-chips">
         <span class="chip ${s.has_tracker ? 'ok' : 'miss'}">tracker</span>
         <span class="chip ${s.has_gripper ? 'ok' : 'miss'}">gripper</span>
-        <span class="chip ${s.has_flux_csv ? 'ok' : 'miss'}">flux</span>
+        <span class="chip ${s.has_ux ? 'ok' : 'miss'}">ux</span>
         <span class="chip ${s.has_jsonl ? 'ok' : 'miss'}">jsonl</span>
+      </div>
+      <div class="si-checks">
+        <span class="si-check ${_checkCls(_camSt)}"><span class="si-dot"></span>checkcamera</span>
+        <span class="si-check ${_checkCls(_gripSt)}"><span class="si-dot"></span>checkgripper</span>
+        <span class="si-check ${_checkCls(_syncSt)}"><span class="si-dot"></span>checksynch</span>
       </div>
       ${meta.scenario ? `<span class="b dim" style="margin-left:6px">${meta.scenario}</span>` : ''}
       ${sc ? `<span class="si-score"><span class="sb ${sc.grade}">${sc.grade}</span><span style="color:var(--text3)">${sc.score}/100</span></span>` : ''}

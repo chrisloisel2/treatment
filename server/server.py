@@ -1088,6 +1088,65 @@ async def pipeline_verify(req: PipelineStateRequest):
         raise HTTPException(500, str(e))
 
 
+@app.post("/api/pipeline/align_pro")
+async def pipeline_align_pro(req: PipelineStateRequest):
+    """
+    Lance pipeline_align_pro sur une session en tâche de fond.
+    Alignement multi-résolution professionnel (gross→fine→subpixel + consensus).
+    Retourne un job_id pour suivre la progression.
+    """
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    force = getattr(req, "force", False)
+    job = _new_job("align_pro")
+    threading.Thread(
+        target=_worker_align_pro,
+        args=(job, sess, force),
+        daemon=True,
+    ).start()
+    return {"job_id": job.id}
+
+
+def _worker_align_pro(job: "Job", sess: Path, force: bool = False):
+    """Worker thread : exécute pipeline_align_pro.align_session en sous-processus."""
+    import subprocess, sys
+    try:
+        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=5)
+        _log_job(job, f"align_pro démarré sur {sess.name}", "INFO")
+
+        script = Path(__file__).resolve().parent.parent / "pipeline_align_pro.py"
+        cmd = [sys.executable, str(script), str(sess)]
+        if force:
+            cmd.append("--force")
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                _log_job(job, line, "INFO")
+
+        proc.wait()
+        if proc.returncode == 0:
+            _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100)
+            _log_job(job, "align_pro terminé avec succès", "OK")
+        else:
+            _update_job(job, status=JobStatus.ERROR, ended_at=_now(),
+                        error=f"align_pro a retourné code {proc.returncode}")
+    except Exception:
+        err = traceback.format_exc()
+        _log_job(job, err, "ERROR")
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
+
+
 @app.post("/api/watcher/start")
 async def watcher_start(req: WatcherStartRequest):
     """Démarre le watcher d'ingestion automatique sur le répertoire configuré."""

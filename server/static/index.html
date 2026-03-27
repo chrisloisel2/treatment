@@ -2089,7 +2089,8 @@
 		/* live-tab gère son propre scroll via tv-live-main */
 		#tv-tc-live {
 			overflow: hidden;
-			padding: 0
+			padding: 0;
+			position: relative;
 		}
 
 		/* ── Layout live ───────────────────────────────────────────────── */
@@ -2341,6 +2342,30 @@
 		}
 		.tv-vid-remap-btn:hover { background: #333333ee; color: #fff }
 		.tv-vid-remap-btn.remapped { background: #f59e0bcc; color: #fff }
+
+		/* Bouton Sync flottant */
+		#tv-sync-btn {
+			position: absolute;
+			bottom: 16px;
+			right: 16px;
+			z-index: 10;
+			background: var(--accent);
+			border: none;
+			border-radius: 99px;
+			color: #fff;
+			font-size: .78rem;
+			font-weight: 600;
+			padding: 7px 16px;
+			cursor: pointer;
+			display: none;
+			align-items: center;
+			gap: 5px;
+			box-shadow: 0 2px 10px #0006;
+			transition: background .15s, opacity .15s;
+		}
+		#tv-sync-btn:hover { filter: brightness(1.15); }
+		#tv-sync-btn:disabled { opacity: .5; cursor: default; filter: none; }
+		#tv-sync-btn.running { background: #f59e0b; }
 
 		/* Dropdown remap panel */
 		.tv-remap-panel {
@@ -3415,6 +3440,10 @@
 								</div><!-- /tv-right-panel -->
 
 							</div>
+
+						<!-- Bouton Sync flottant -->
+						<button id="tv-sync-btn" onclick="tvActionSync()" title="Resynchroniser les données de cette session">⟳ Sync</button>
+
 						</div><!-- /tv-tc-live -->
 
 						<!-- ── Onglet DIFF ──────────────────────────────────── -->
@@ -5508,6 +5537,8 @@
 
 				loadEl.style.display = 'none';
 				innerEl.style.display = 'flex';
+				const syncBtn = ge('tv-sync-btn');
+				if (syncBtn) { syncBtn.style.display = 'flex'; syncBtn.disabled = false; syncBtn.classList.remove('running'); syncBtn.textContent = '⟳ Sync'; }
 
 				const has3d = !!(data?.tracker?.t_ms?.length);
 				ge('tv3d-empty-msg').style.display = has3d ? 'none' : '';
@@ -5526,6 +5557,7 @@
 				loadEl.innerHTML = `⚠ Erreur : ${esc(e.message)}`;
 				loadEl.style.display = 'flex';
 				innerEl.style.display = 'none';
+				const _sb = ge('tv-sync-btn'); if (_sb) _sb.style.display = 'none';
 				console.error('[Viewer]', e);
 			}
 		}
@@ -6182,6 +6214,41 @@
 			} catch (e) {
 				el.innerHTML = `<span style="color:var(--red)">Erreur: ${esc(e.message)}</span>`;
 			}
+		}
+
+		async function tvActionSync() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-sync-btn');
+			if (btn) { btn.disabled = true; btn.classList.add('running'); btn.textContent = '⟳ Sync Pro…'; }
+			try {
+				const sess = S.sessions.find(s => s.path === TV.sessPath);
+				const { job_id } = await api('POST', '/api/pipeline/align_pro', { session_path: TV.sessPath });
+				if (sess) sess.job_id = job_id;
+				log(`Align Pro lancé : ${sess?.name || TV.sessPath} (job ${job_id})`, 'OK');
+				if (btn) { btn.textContent = '⟳ En cours…'; }
+				_tvSyncWatchJob(job_id, btn);
+			} catch (e) {
+				log('Sync Pro: ' + e.message, 'ERROR');
+				if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '⟳ Sync'; }
+			}
+		}
+
+		function _tvSyncWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '✓ Sync OK'; }
+						log('Align Pro terminé avec succès', 'OK');
+						if (TV.sessPath) tvSelectSession(TV.sessPath);
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '⟳ Sync'; }
+						log('Align Pro erreur: ' + (j.error || '?'), 'ERROR');
+					}
+				} catch (_) {}
+			}, 3000);
 		}
 
 		// ══════════════════════════════════════════════════════════════════

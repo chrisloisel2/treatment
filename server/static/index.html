@@ -695,6 +695,19 @@
 			background: var(--red)08
 		}
 
+		.pipe-card.has-issues {
+			border-color: var(--red)88;
+			background: var(--red)10;
+			border-left: 3px solid var(--red);
+		}
+
+		.pipe-card.has-issues .pname::after {
+			content: ' ⚠';
+			color: var(--red);
+			font-size: .8em;
+		}
+
+
 		.pipe-card .pname {
 			font-weight: 600;
 			color: var(--text);
@@ -1015,6 +1028,18 @@
 		.sess-item:hover {
 			background: var(--bg3);
 			border-color: var(--border)
+		}
+
+		.sess-item.has-issues {
+			border-color: var(--red)66;
+			background: var(--red)08;
+			border-left: 3px solid var(--red);
+		}
+
+		.sess-item.has-issues .si-name::after {
+			content: ' ⚠';
+			color: var(--red);
+			font-size: .8em;
 		}
 
 		.sess-item.selected {
@@ -2592,6 +2617,20 @@
 							</div>
 							<div class="pipe-col-body" id="body-detect"></div>
 						</div>
+						<div class="pipe-col" id="col-check_sync">
+							<div class="pipe-col-hdr">
+								<span class="step-ico">⏱</span> Sync Check
+								<span class="pipe-col-count" id="cnt-check_sync">0</span>
+							</div>
+							<div class="pipe-col-body" id="body-check_sync"></div>
+						</div>
+						<div class="pipe-col" id="col-verify">
+							<div class="pipe-col-hdr">
+								<span class="step-ico">⚠</span> Vérification
+								<span class="pipe-col-count" id="cnt-verify">0</span>
+							</div>
+							<div class="pipe-col-body" id="body-verify"></div>
+						</div>
 						<div class="pipe-col" id="col-tracker">
 							<div class="pipe-col-hdr">
 								<span class="step-ico">②</span> Tracker
@@ -3275,6 +3314,10 @@
 			<button class="btn sm d" id="btn-drawer-rollback" onclick="rollbackDrawer()">↩ Rollback</button>
 			<button class="btn sm d" id="btn-drawer-unlock" onclick="unlockDrawer()"
 				title="Supprime le .pipeline_lock">🔓</button>
+			<button class="btn sm" id="btn-drawer-check-sync" onclick="checkSyncDrawer()"
+				title="Vérifie le décalage vidéo/capteurs (rapide, sans job)">⏱ Sync</button>
+			<button class="btn sm" id="btn-drawer-verify" onclick="verifyDrawer()"
+				title="Vérifie trackers + désynchronisation et marque la session si problème">⚠ Vérifier</button>
 			<button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
 		</div>
 		<div id="sess-drawer-body"></div>
@@ -3334,13 +3377,16 @@
 		};
 
 		// Steps dans l'ordre
-		const STEPS = ['detect', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate', 'store'];
+		const STEPS = ['detect', 'check_sync', 'verify', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate', 'store'];
 		const STEP_LABELS = {
-			detect: 'Détection', rotate: 'Rotation 180°', tracker: 'Tracker', video: 'Vidéo',
+			detect: 'Détection', check_sync: 'Sync Check', verify: 'Vérification',
+			rotate: 'Rotation 180°', tracker: 'Tracker', video: 'Vidéo',
 			verify_labels: 'Labels', flux_csv: 'Flux CSV', ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS'
 		};
 		const STEP_DESCS = {
 			detect: 'Vérification intégrité structure session',
+			check_sync: 'Détection décalage vidéo/capteurs (délai 1er frame vs trigger)',
+			verify: 'Santé trackers (position, mouvement, gaps) + désynchronisation vidéo/capteurs',
 			tracker: 'Validation timestamps & positions tracker',
 			video: 'Validation frames MP4 & JSONL',
 			flux_csv: 'Génération flux optiques (Farneback)',
@@ -3550,9 +3596,9 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Modale sélection étapes
 		// ══════════════════════════════════════════════════════════════════
-		const ALL_STEPS = ['detect', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store'];
+		const ALL_STEPS = ['detect', 'check_sync', 'verify', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store'];
 		const STEP_ICONS = {
-			detect: '🔍', rotate: '↻', tracker: '📡', video: '🎬',
+			detect: '🔍', check_sync: '⏱', verify: '⚠', rotate: '↻', tracker: '📡', video: '🎬',
 			verify_labels: '🏷', flux_csv: '〜', ia_sync: '🤖', validate: '✓', store: '💾',
 		};
 
@@ -3673,6 +3719,10 @@
 		// Pipeline Board (Kanban)
 		// ══════════════════════════════════════════════════════════════════
 
+		function _sessionHasIssues(sess) {
+			return !!(sess.meta?.verification?.has_issues);
+		}
+
 		function _classifySession(sess) {
 			const ps = sess.pipeline_state;
 			if (!ps) return { currentStep: 'detect', overallStatus: 'pending' };
@@ -3759,6 +3809,8 @@
 
 				items.forEach(({ sess, overallStatus, ps, moved }) => {
 					const isSelected = S.selected.has(sess.path);
+					const hasIssues = _sessionHasIssues(sess);
+					const issuesCls = hasIssues ? ' has-issues' : '';
 					const meta = sess.meta || {};
 					const scenario = meta.scenario || '—';
 					const dur = meta.duration_seconds != null
@@ -3783,7 +3835,7 @@
 
 					if (existing && !moved) {
 						// Mise à jour en place (pas d'animation, juste rafraîchir le contenu)
-						existing.className = `pipe-card ${overallStatus}${isSelected ? ' active' : ''}`;
+						existing.className = `pipe-card ${overallStatus}${isSelected ? ' active' : ''}${issuesCls}`;
 						existing.querySelector('.pdots').innerHTML = dots;
 						const pstep = existing.querySelector('.pstep');
 						if (pstep) pstep.textContent = currentStepName + stepDurStr;
@@ -3793,7 +3845,7 @@
 						// Créer une nouvelle carte (arrivée dans cette colonne)
 						if (existing) existing.remove();
 						const div = document.createElement('div');
-						div.className = `pipe-card ${overallStatus}${isSelected ? ' active' : ''}${moved ? ' just-arrived' : ''}`;
+						div.className = `pipe-card ${overallStatus}${isSelected ? ' active' : ''}${moved ? ' just-arrived' : ''}${issuesCls}`;
 						div.dataset.sess = sess.name;
 						div.onclick = () => openDrawer(sess);
 						div.innerHTML = `
@@ -3898,6 +3950,37 @@
       <div style="font-size:.75rem;color:var(--green)">✓ Stocké: ${ps.nas_path}</div>`;
 			}
 
+			// Bloc vérification (issues trackers + désync)
+			const verif = sess.meta?.verification;
+			if (verif) {
+				const hasIss = verif.has_issues;
+				const color = hasIss ? 'var(--red)' : 'var(--green)';
+				const icon = hasIss ? '✗' : '✓';
+				html += `<div class="div" style="margin:8px 0"></div>
+      <div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">⚠ Vérification</div>
+      <div style="font-size:.75rem;color:${color};margin-bottom:4px">
+        ${icon} ${hasIss ? verif.issues.length + ' problème(s) détecté(s)' : 'Aucun problème critique'}
+        ${verif.warnings?.length ? `<span style="color:var(--orange)"> + ${verif.warnings.length} avertissement(s)</span>` : ''}
+      </div>`;
+				if (hasIss) {
+					verif.issues.forEach(iss => {
+						html += `<div style="font-size:.72rem;color:var(--red);padding:2px 0 2px 8px;border-left:2px solid var(--red)44;margin-bottom:3px">${esc(iss)}</div>`;
+					});
+				}
+				if (verif.warnings?.length) {
+					verif.warnings.forEach(w => {
+						html += `<div style="font-size:.72rem;color:var(--orange);padding:2px 0 2px 8px;border-left:2px solid var(--orange)44;margin-bottom:3px">${esc(w)}</div>`;
+					});
+				}
+				// Stats clés
+				const stats = verif.stats || {};
+				const statParts = [];
+				if (stats.tracker_dt_ms) statParts.push(`dt=${stats.tracker_dt_ms}ms`);
+				if (stats.tracker_lr_dist_mean_m) statParts.push(`L-R=${stats.tracker_lr_dist_mean_m}m`);
+				if (stats.video_max_delay_ms) statParts.push(`vid_delay=${stats.video_max_delay_ms}ms`);
+				if (statParts.length) html += `<div style="font-size:.7rem;color:var(--text3);margin-top:4px">${statParts.join(' · ')}</div>`;
+			}
+
 			body.innerHTML = html;
 		}
 
@@ -3920,6 +4003,77 @@
 				renderDrawerContent(S.drawerSess);
 				renderPipelineBoard();
 			} catch (e) { log('Rollback: ' + e.message, 'ERROR'); }
+		}
+
+		async function checkSyncDrawer() {
+			if (!S.drawerSess) return;
+			const btn = ge('btn-drawer-check-sync');
+			btn.disabled = true;
+			btn.textContent = '⏳ Sync…';
+			try {
+				const r = await api('POST', '/api/pipeline/check_sync', { session_path: S.drawerSess.path });
+				if (r.status === 'ok') {
+					const d = r.result;
+					const details = Object.entries(d.camera_delays_ms || {})
+						.map(([c, v]) => `${c}: +${v}ms`).join(', ');
+					log(`✓ Sync OK — délai max=${d.max_delay_ms}ms (${details})`, 'OK');
+					btn.textContent = '✓ OK';
+					btn.style.color = 'var(--green)';
+				} else {
+					const err = r.error || 'Décalage détecté';
+					log(`✗ ${err}`, 'ERROR');
+					btn.textContent = '✗ DÉCALAGE';
+					btn.style.color = 'var(--red)';
+				}
+				// Rafraîchir le drawer pour afficher le nouveau statut check_sync
+				await loadSessionPipelineState(S.drawerSess);
+				renderDrawerContent(S.drawerSess);
+				renderPipelineBoard();
+			} catch (e) {
+				log('check_sync: ' + e.message, 'ERROR');
+				btn.textContent = '⏱ Sync';
+			} finally {
+				btn.disabled = false;
+				setTimeout(() => { btn.textContent = '⏱ Sync'; btn.style.color = ''; }, 4000);
+			}
+		}
+
+		async function verifyDrawer() {
+			if (!S.drawerSess) return;
+			const btn = ge('btn-drawer-verify');
+			btn.disabled = true;
+			btn.textContent = '⏳ Analyse…';
+			try {
+				const r = await api('POST', '/api/pipeline/verify', { session_path: S.drawerSess.path });
+				const res = r.result || {};
+				const issues = res.issues || [];
+				const warnings = res.warnings || [];
+				// Mettre à jour le meta local immédiatement
+				if (!S.drawerSess.meta) S.drawerSess.meta = {};
+				S.drawerSess.meta.verification = res;
+				// Mettre à jour l'index global
+				const idx = S.sessions.findIndex(s => s.path === S.drawerSess.path);
+				if (idx >= 0) S.sessions[idx].meta = S.drawerSess.meta;
+				if (r.status === 'ok') {
+					log(`✓ Vérification OK${warnings.length ? ` — ${warnings.length} avertissement(s)` : ''}`, 'OK');
+					btn.textContent = '✓ OK';
+					btn.style.color = 'var(--green)';
+				} else {
+					const summary = r.error || issues.join(' | ') || 'Problèmes détectés';
+					log(`✗ ${summary}`, 'ERROR');
+					btn.textContent = '✗ Issues';
+					btn.style.color = 'var(--red)';
+				}
+				renderDrawerContent(S.drawerSess);
+				renderPipelineBoard();
+				renderSessionsList();
+			} catch (e) {
+				log('verify: ' + e.message, 'ERROR');
+				btn.textContent = '⚠ Vérifier';
+			} finally {
+				btn.disabled = false;
+				setTimeout(() => { btn.textContent = '⚠ Vérifier'; btn.style.color = ''; }, 5000);
+			}
 		}
 
 		async function unlockDrawer() {
@@ -3953,7 +4107,8 @@
 			_updateSessActions();
 			S.sessions.forEach(s => {
 				const div = document.createElement('div');
-				div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '');
+				const _si_hasIssues = _sessionHasIssues(s);
+				div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '') + (_si_hasIssues ? ' has-issues' : '');
 				div.onclick = () => { toggleSel(s.path, div); renderPipelineBoard(); };
 
 				const meta = s.meta || {};

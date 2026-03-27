@@ -94,6 +94,8 @@ class StepStatus(str, Enum):
 
 STEP_NAMES = [
     "detect",
+    "check_sync",
+    "verify",
     "rotate",
     "tracker",
     "video",
@@ -343,6 +345,275 @@ def step_detect(state: SessionPipelineState, log: PipelineLogger) -> dict:
     }
 
 
+def step_check_sync(state: SessionPipelineState, log: PipelineLogger) -> dict:
+    """
+    Étape 1b — Détection du décalage vidéo/capteurs.
+
+    Vérifie que les caméras ont démarré dans les 500 ms suivant le trigger.
+    Si le délai dépasse ce seuil (~2 s observés sur les sessions décalées),
+    la pipeline est bloquée car toutes les données vidéo seraient décalées
+    par rapport aux capteurs (trackers, grippers).
+
+    Signature du décalage :
+      - GOOD     : 1er frame caméra arrive 40–120 ms après trigger_time_ns
+      - DÉCALAGE : 1er frame caméra arrive 2 000–2 500 ms après trigger_time_ns
+    """
+    sess = Path(state.session_path)
+
+    # Lire le trigger depuis metadata.json
+    meta_path = sess / "metadata.json"
+    meta = json.loads(meta_path.read_text())
+    trigger_ms = int(meta["trigger_time_ns"]) // 1_000_000
+
+    videos_dir = sess / "videos"
+    camera_delays: Dict[str, int] = {}
+    THRESHOLD_MS = 500
+
+    for cam in VIDEO_SIDES:
+        jsonl_path = videos_dir / f"{cam}.jsonl"
+        if not jsonl_path.exists():
+            log(f"check_sync: {cam}.jsonl absent — caméra ignorée", "WARN")
+            continue
+        # Lire le premier capture_time (robuste CRLF)
+        first_ms: Optional[int] = None
+        with open(jsonl_path, "rb") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if line:
+                    try:
+                        first_ms = int(json.loads(line)["capture_time"])
+                    except Exception:
+                        pass
+                    break
+        if first_ms is not None:
+            camera_delays[cam] = first_ms - trigger_ms
+
+    if not camera_delays:
+        log("check_sync: aucun JSONL lisible — vérification ignorée", "WARN")
+        return {"status": "skipped", "reason": "no_jsonl"}
+
+    max_delay = max(camera_delays.values())
+    result = {
+        "status":           "ok" if max_delay <= THRESHOLD_MS else "decalage",
+        "max_delay_ms":     max_delay,
+        "threshold_ms":     THRESHOLD_MS,
+        "camera_delays_ms": camera_delays,
+    }
+
+    if max_delay > THRESHOLD_MS:
+        msg = (
+            f"Décalage vidéo détecté : premier frame arrive {max_delay} ms après le trigger "
+            f"(seuil={THRESHOLD_MS} ms, attendu < 120 ms). "
+            f"Les vidéos sont désynchronisées des capteurs d'environ "
+            f"{max_delay / 1000:.2f} s. Rejeter ou corriger cette session."
+        )
+        log(msg, "ERROR")
+        raise ValueError(msg)
+
+    log(
+        f"Synchronisation OK — délai max={max_delay} ms "
+        f"({', '.join(f'{c}:{d}ms' for c, d in camera_delays.items())})",
+        "OK",
+    )
+    return result
+
+
+def step_verify(state: SessionPipelineState, log: PipelineLogger) -> dict:
+    """
+    Étape 1c — Vérification santé de la session : trackers + désynchronisation.
+
+    Contrôles effectués :
+      Trackers
+        - Monotonie des timestamps (aucun saut vers l'arrière)
+        - Gaps temporels anormaux (> 200 ms entre deux échantillons)
+        - Trackers gelés (déplacement total < 0.05 m sur la session)
+        - Sauts de position impossibles (> 0.5 m en une étape)
+        - Présence des zéros de perte de tracking
+        - Distance left-right hors plage plausible (< 0.10 m ou > 1.20 m)
+      Désynchronisation vidéo/capteurs
+        - Délai premier frame vs trigger > 500 ms (doublon check_sync, signalé comme warning)
+        - Données tracker disponibles avant le premier frame caméra (overlap utile)
+
+    En cas d'issue : les problèmes sont écrits dans metadata.json["verification"]
+    et la session est marquée has_issues=True.  L'étape ne bloque PAS la pipeline
+    (elle warning) sauf si le tracker est totalement inutilisable.
+    """
+    import pandas as pd
+
+    sess = Path(state.session_path)
+    meta_path = sess / "metadata.json"
+    meta = json.loads(meta_path.read_text())
+    trigger_ms = int(meta["trigger_time_ns"]) // 1_000_000
+
+    issues: List[str] = []
+    warnings_list: List[str] = []
+    stats: dict = {}
+
+    # ── 1. Tracker ───────────────────────────────────────────────────────────
+    tracker_csv = sess / "tracker_positions.csv"
+    if not tracker_csv.exists():
+        issues.append("tracker_positions.csv manquant")
+    else:
+        df = pd.read_csv(tracker_csv)
+        n_rows = len(df)
+        stats["tracker_rows"] = n_rows
+
+        if "timestamp_ns" not in df.columns:
+            issues.append("tracker_positions.csv: colonne timestamp_ns manquante")
+        else:
+            ts_ns = pd.to_numeric(df["timestamp_ns"], errors="coerce").dropna().values
+            ts_ms = ts_ns / 1e6
+            diffs_ms = np.diff(ts_ms)
+
+            # Monotonie
+            n_neg = int((diffs_ms < 0).sum())
+            if n_neg > 0:
+                issues.append(f"Tracker: {n_neg} timestamp(s) non-monotone(s)")
+
+            # Gaps > 200 ms
+            n_gaps = int((diffs_ms > 200).sum())
+            stats["tracker_gaps_200ms"] = n_gaps
+            if n_gaps > 0:
+                max_gap = float(diffs_ms.max())
+                msg = f"Tracker: {n_gaps} gap(s) > 200 ms (max={max_gap:.0f} ms)"
+                if max_gap > 1000:
+                    issues.append(msg)
+                else:
+                    warnings_list.append(msg)
+
+            # Fréquence d'échantillonnage
+            dt_med = float(np.median(diffs_ms)) if len(diffs_ms) else 0
+            stats["tracker_dt_ms"] = round(dt_med, 1)
+            if dt_med > 50:
+                warnings_list.append(f"Tracker: fréquence faible ({dt_med:.0f} ms/sample, attendu ~17 ms)")
+
+        # Vérification positions par tracker
+        for pos in ("head", "left", "right"):
+            xcol, ycol, zcol = f"tracker_{pos}_x", f"tracker_{pos}_y", f"tracker_{pos}_z"
+            if not all(c in df.columns for c in (xcol, ycol, zcol)):
+                warnings_list.append(f"Tracker {pos}: colonnes XYZ manquantes")
+                continue
+
+            xyz = df[[xcol, ycol, zcol]].apply(pd.to_numeric, errors="coerce").dropna().values
+            if len(xyz) < 2:
+                issues.append(f"Tracker {pos}: pas assez de données ({len(xyz)} lignes)")
+                continue
+
+            # Tracker gelé
+            disp = float(np.sqrt(((np.diff(xyz, axis=0)) ** 2).sum(axis=1)).sum())
+            stats[f"tracker_{pos}_disp_m"] = round(disp, 4)
+            if disp < 0.05:
+                issues.append(f"Tracker {pos}: déplacement total={disp:.4f} m — tracker gelé ou absent")
+
+            # Sauts impossibles
+            step_dist = np.sqrt(((np.diff(xyz, axis=0)) ** 2).sum(axis=1))
+            big_jumps = int((step_dist > 0.5).sum())
+            stats[f"tracker_{pos}_big_jumps"] = big_jumps
+            if big_jumps > 0:
+                warnings_list.append(f"Tracker {pos}: {big_jumps} saut(s) > 0.5 m")
+
+            # Zéros (perte tracking)
+            zeros = int(((xyz[:, 0] == 0) & (xyz[:, 1] == 0) & (xyz[:, 2] == 0)).sum())
+            stats[f"tracker_{pos}_zeros"] = zeros
+            if zeros > n_rows * 0.02:
+                warnings_list.append(f"Tracker {pos}: {zeros} échantillons à (0,0,0) — perte tracking")
+
+        # Distance left-right plausible
+        if all(c in df.columns for c in
+               ("tracker_left_x", "tracker_left_y", "tracker_left_z",
+                "tracker_right_x", "tracker_right_y", "tracker_right_z")):
+            lxyz = df[["tracker_left_x", "tracker_left_y", "tracker_left_z"]].apply(
+                pd.to_numeric, errors="coerce").dropna().values
+            rxyz = df[["tracker_right_x", "tracker_right_y", "tracker_right_z"]].apply(
+                pd.to_numeric, errors="coerce").dropna().values
+            n = min(len(lxyz), len(rxyz))
+            if n > 10:
+                lr_dist = np.sqrt(((lxyz[:n] - rxyz[:n]) ** 2).sum(axis=1))
+                lr_mean = float(lr_dist.mean())
+                lr_min  = float(lr_dist.min())
+                stats["tracker_lr_dist_mean_m"] = round(lr_mean, 3)
+                stats["tracker_lr_dist_min_m"]  = round(lr_min, 3)
+                if lr_min < 0.10:
+                    warnings_list.append(
+                        f"Trackers left/right très proches (min={lr_min:.3f} m) — collision ou swap possible"
+                    )
+                if lr_mean > 1.20:
+                    warnings_list.append(
+                        f"Distance left-right anormalement grande ({lr_mean:.3f} m) — configuration inhabituelle"
+                    )
+
+    # ── 2. Désynchronisation vidéo/capteurs ──────────────────────────────────
+    videos_dir = sess / "videos"
+    cam_delays: Dict[str, int] = {}
+    SYNC_THRESHOLD_MS = 500
+
+    for cam in VIDEO_SIDES:
+        jsonl_path = videos_dir / f"{cam}.jsonl"
+        if not jsonl_path.exists():
+            continue
+        first_ms: Optional[int] = None
+        with open(jsonl_path, "rb") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if line:
+                    try:
+                        first_ms = int(json.loads(line)["capture_time"])
+                    except Exception:
+                        pass
+                    break
+        if first_ms is not None:
+            cam_delays[cam] = first_ms - trigger_ms
+
+    stats["video_delays_ms"] = cam_delays
+
+    if cam_delays:
+        max_video_delay = max(cam_delays.values())
+        stats["video_max_delay_ms"] = max_video_delay
+        if max_video_delay > SYNC_THRESHOLD_MS:
+            issues.append(
+                f"Désynchronisation vidéo : premier frame {max_video_delay} ms après trigger "
+                f"(attendu < {SYNC_THRESHOLD_MS} ms) — vidéos décalées de ~{max_video_delay/1000:.2f} s"
+            )
+
+    # ── 3. Persistance dans metadata.json ────────────────────────────────────
+    has_issues = len(issues) > 0
+    verification = {
+        "verified_at":  _now(),
+        "has_issues":   has_issues,
+        "issues":       issues,
+        "warnings":     warnings_list,
+        "stats":        stats,
+    }
+    meta["verification"] = verification
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # ── 4. Rapport ───────────────────────────────────────────────────────────
+    for w in warnings_list:
+        log(f"⚠ {w}", "WARN")
+
+    if issues:
+        for iss in issues:
+            log(f"✗ {iss}", "ERROR")
+        # On ne bloque la pipeline que si le tracker est totalement inutilisable
+        if any("gelé" in i or "manquant" in i for i in issues):
+            raise ValueError(
+                f"Vérification échouée ({len(issues)} problème(s) critique(s)) — "
+                f"session marquée. Voir metadata.json[verification]."
+            )
+        log(
+            f"Vérification terminée avec {len(issues)} issue(s) — "
+            "session marquée, pipeline continue",
+            "WARN",
+        )
+    else:
+        log(
+            f"Vérification OK — {len(warnings_list)} avertissement(s)",
+            "OK",
+        )
+
+    return verification
+
+
 def step_rotate(state: SessionPipelineState, log: PipelineLogger,
                 force: bool = False) -> dict:
     """
@@ -432,6 +703,64 @@ def step_tracker(state: SessionPipelineState, log: PipelineLogger) -> dict:
 
     if issues:
         raise ValueError(f"Tracker invalide: {'; '.join(issues)}")
+
+    # ── Inférence des rôles trackers (head / left / right) ────────────────────
+    try:
+        from utils.data_prep import (
+            find_tracker_blocks, infer_head, infer_left_right,
+            _build_mapping, _global_confidence, _is_already_correct,
+        )
+        blocks    = find_tracker_blocks(df)
+        head_info = infer_head(blocks)
+        lr_info   = infer_left_right(blocks, head_info)
+        mapping   = _build_mapping(head_info, lr_info)
+        conf      = _global_confidence(head_info, lr_info)
+        labels_ok = _is_already_correct(blocks, mapping)
+        swaps     = [
+            (b.role_hint, mapping[b.gid])
+            for b in blocks
+            if b.role_hint is not None and mapping[b.gid] != b.role_hint
+        ]
+
+        # Score de confiance rôles : 1 = parfait, 0 = problème
+        if conf < 0.65:
+            role_score = round(conf * 0.5, 4)
+        elif swaps:
+            role_score = round(conf * 0.3, 4)
+        else:
+            role_score = round(conf, 4)
+
+        # Mapping gid → préfixe de colonne
+        gid_to_prefix = {}
+        for b in blocks:
+            if b.col_names:
+                prefix = "_".join(b.col_names[0].split("_")[:-1])
+            else:
+                prefix = b.gid
+            gid_to_prefix[b.gid] = prefix
+        role_to_gid = {v: k for k, v in mapping.items()}
+
+        stats["tracker_role_score"]    = role_score
+        stats["tracker_role_conf"]     = round(conf, 4)
+        stats["tracker_role_head"]     = gid_to_prefix.get(role_to_gid.get("head", ""), "?")
+        stats["tracker_role_left"]     = gid_to_prefix.get(role_to_gid.get("left", ""), "?")
+        stats["tracker_role_right"]    = gid_to_prefix.get(role_to_gid.get("right", ""), "?")
+        stats["tracker_labels_match"]  = labels_ok
+        stats["tracker_role_swaps"]    = swaps
+
+        axis_names = {0: "X", 1: "Y", 2: "Z"}
+        sign_str   = "+" if head_info.up_axis_sign > 0 else "-"
+        axis_str   = sign_str + axis_names.get(head_info.up_axis_index, "?")
+        log(
+            f"Rôles trackers — score={role_score:.3f} conf={conf:.3f} axe_vertical={axis_str} "
+            f"head={stats['tracker_role_head']} left={stats['tracker_role_left']} right={stats['tracker_role_right']}"
+            + (f" SWAPS={swaps}" if swaps else ""),
+            "WARN" if swaps or conf < 0.65 else "OK",
+        )
+    except Exception as e:
+        log(f"Inférence rôles trackers échouée (non bloquant) : {e}", "WARN")
+        stats["tracker_role_score"] = 0.0
+        stats["tracker_role_conf"]  = 0.0
 
     log(f"Tracker OK — {stats.get('rows',0)} lignes, dt_médian={stats.get('dt_ms_median','?')}ms", "OK")
     return stats
@@ -1126,6 +1455,16 @@ class PipelineRunner:
             if self._should_run(state, "detect"):
                 with self._step_ctx(state, "detect") as ctx:
                     ctx.result = step_detect(state, self.log)
+
+            # ── Étape 1b : Vérification synchronisation vidéo/capteurs ──
+            if self._should_run(state, "check_sync"):
+                with self._step_ctx(state, "check_sync") as ctx:
+                    ctx.result = step_check_sync(state, self.log)
+
+            # ── Étape 1c : Vérification santé (trackers + désynchronisation) ──
+            if self._should_run(state, "verify"):
+                with self._step_ctx(state, "verify") as ctx:
+                    ctx.result = step_verify(state, self.log)
 
             # ── Étape 2 : Rotation 180° ──
             if self._should_run(state, "rotate"):

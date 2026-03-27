@@ -584,8 +584,8 @@ def _pipeline_log_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
 def _pipeline_step_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
     def _cb(state):
         from pipeline.pipeline import StepStatus
-        # 9 étapes : detect, rotate, tracker, video, verify_labels, flux_csv, ia_sync, validate, store
-        step_names = ["detect", "rotate", "tracker", "video", "verify_labels",
+        # 11 étapes : detect, check_sync, verify, rotate, tracker, video, verify_labels, flux_csv, ia_sync, validate, store
+        step_names = ["detect", "check_sync", "verify", "rotate", "tracker", "video", "verify_labels",
                       "flux_csv", "ia_sync", "validate", "store"]
         done = sum(
             1 for n in step_names
@@ -956,6 +956,62 @@ async def pipeline_unlock(req: PipelineStateRequest):
     existed = lock.exists()
     lock.unlink(missing_ok=True)
     return {"unlocked": existed, "session": str(sess.name)}
+
+
+@app.post("/api/pipeline/check_sync")
+async def pipeline_check_sync(req: PipelineStateRequest):
+    """
+    Lance uniquement l'étape check_sync sur une session (léger, pas de lock).
+    Retourne immédiatement le résultat sans passer par la queue de jobs.
+    """
+    from pipeline.pipeline import step_check_sync, SessionPipelineState, PipelineLogger
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    state = SessionPipelineState.load(sess)
+    if state is None:
+        state = SessionPipelineState(
+            session_name = sess.name,
+            session_path = str(sess),
+        )
+    logs: list = []
+    log = PipelineLogger(sess.name, lambda msg, level: logs.append({"msg": msg, "level": level}))
+    try:
+        result = step_check_sync(state, log)
+        return {"status": "ok", "result": result, "logs": logs}
+    except ValueError as e:
+        return {"status": "decalage", "error": str(e), "logs": logs}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/pipeline/verify")
+async def pipeline_verify(req: PipelineStateRequest):
+    """
+    Lance l'étape verify (trackers + désynchronisation) sur une session.
+    Écrit les résultats dans metadata.json["verification"] et retourne
+    immédiatement le bilan sans passer par la queue de jobs.
+    """
+    from pipeline.pipeline import step_verify, SessionPipelineState, PipelineLogger
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    state = SessionPipelineState.load(sess)
+    if state is None:
+        state = SessionPipelineState(
+            session_name = sess.name,
+            session_path = str(sess),
+        )
+    logs: list = []
+    log = PipelineLogger(sess.name, lambda msg, level: logs.append({"msg": msg, "level": level}))
+    try:
+        result = step_verify(state, log)
+        status = "issues" if result.get("has_issues") else "ok"
+        return {"status": status, "result": result, "logs": logs}
+    except ValueError as e:
+        return {"status": "critical", "error": str(e), "logs": logs}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/watcher/start")

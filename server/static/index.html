@@ -1705,6 +1705,14 @@
 			border-left-color: var(--accent)
 		}
 
+		.tv-sess-item.verif-issues {
+			border-left-color: var(--red)
+		}
+
+		.tv-sess-item.verif-issues.active {
+			border-left-color: var(--red)
+		}
+
 		.tv-sess-item-name {
 			font-size: .79rem;
 			font-weight: 600;
@@ -2206,6 +2214,132 @@
 
 		.tv-vid-overlay.hidden {
 			opacity: 0
+		}
+
+		/* ── Camera remap button ──────────────────────────────────────── */
+		.tv-vid-remap-btn {
+			position: absolute;
+			top: 5px;
+			right: 7px;
+			z-index: 3;
+			background: #000000bb;
+			border: none;
+			border-radius: 99px;
+			color: #ccc;
+			font-size: .72rem;
+			padding: 2px 7px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			gap: 3px;
+			transition: background .15s
+		}
+		.tv-vid-remap-btn:hover { background: #333333ee; color: #fff }
+		.tv-vid-remap-btn.remapped { background: #f59e0bcc; color: #fff }
+
+		/* Dropdown remap panel */
+		.tv-remap-panel {
+			position: absolute;
+			top: 30px;
+			right: 7px;
+			z-index: 10;
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: var(--rs);
+			padding: 8px;
+			min-width: 160px;
+			box-shadow: 0 4px 16px #0008;
+			display: none;
+			flex-direction: column;
+			gap: 6px
+		}
+		.tv-remap-panel.open { display: flex }
+		.tv-remap-panel label {
+			font-size: .68rem;
+			color: var(--text3);
+			text-transform: uppercase;
+			letter-spacing: .03em;
+			margin-bottom: 2px
+		}
+		.tv-remap-panel select {
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 4px;
+			color: var(--text);
+			font-size: .75rem;
+			padding: 3px 6px;
+			cursor: pointer
+		}
+		.tv-remap-panel .tv-remap-actions {
+			display: flex;
+			gap: 4px;
+			margin-top: 2px
+		}
+		.tv-remap-panel .tv-remap-actions button {
+			flex: 1;
+			font-size: .68rem;
+			padding: 3px 0;
+			border-radius: 4px;
+			border: 1px solid var(--border);
+			cursor: pointer;
+			background: var(--bg3);
+			color: var(--text)
+		}
+		.tv-remap-panel .tv-remap-actions button.primary {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: #fff
+		}
+
+		/* Modal propagation */
+		#tv-remap-propagate-modal {
+			position: fixed;
+			inset: 0;
+			background: #0009;
+			z-index: 9999;
+			display: none;
+			align-items: center;
+			justify-content: center
+		}
+		#tv-remap-propagate-modal.open { display: flex }
+		#tv-remap-propagate-modal .modal-box {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: var(--rs);
+			padding: 20px 24px;
+			max-width: 420px;
+			width: 90%;
+			box-shadow: 0 8px 32px #0008
+		}
+		#tv-remap-propagate-modal h3 {
+			margin: 0 0 8px;
+			font-size: .95rem;
+			color: var(--text)
+		}
+		#tv-remap-propagate-modal p {
+			margin: 0 0 14px;
+			font-size: .78rem;
+			color: var(--text2);
+			line-height: 1.5
+		}
+		#tv-remap-propagate-modal .modal-btns {
+			display: flex;
+			gap: 8px;
+			justify-content: flex-end
+		}
+		#tv-remap-propagate-modal .modal-btns button {
+			padding: 6px 16px;
+			border-radius: 6px;
+			border: 1px solid var(--border);
+			cursor: pointer;
+			font-size: .78rem;
+			background: var(--bg3);
+			color: var(--text)
+		}
+		#tv-remap-propagate-modal .modal-btns button.primary {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: #fff
 		}
 
 		/* ── Timeline ──────────────────────────────────────────────────── */
@@ -2943,20 +3077,71 @@
 										<div class="tv-vid-wrap" id="tv-wrap-left">
 											<div class="tv-vid-label" style="background:#22d386bb">LEFT</div>
 											<div class="tv-vid-time" id="tv-vt-left">—</div>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-left" onclick="tvRemapToggle('left',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-left">left</span></button>
+											<div class="tv-remap-panel" id="tv-remap-panel-left">
+												<label>Source pour slot LEFT</label>
+												<select id="tv-remap-sel-left">
+													<option value="left">left (défaut)</option>
+													<option value="head">head</option>
+													<option value="right">right</option>
+												</select>
+												<div class="tv-remap-actions">
+													<button onclick="tvRemapCancel('left')">Annuler</button>
+													<button class="primary" onclick="tvRemapApply('left')">Appliquer</button>
+												</div>
+											</div>
 											<video id="tv-vid-left" preload="auto" muted playsinline></video>
 											<div class="tv-vid-overlay" id="tv-ovl-left">Pas de vidéo</div>
 										</div>
 										<div class="tv-vid-wrap" id="tv-wrap-head">
 											<div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
 											<div class="tv-vid-time" id="tv-vt-head">—</div>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-head" onclick="tvRemapToggle('head',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-head">head</span></button>
+											<div class="tv-remap-panel" id="tv-remap-panel-head">
+												<label>Source pour slot HEAD</label>
+												<select id="tv-remap-sel-head">
+													<option value="head">head (défaut)</option>
+													<option value="left">left</option>
+													<option value="right">right</option>
+												</select>
+												<div class="tv-remap-actions">
+													<button onclick="tvRemapCancel('head')">Annuler</button>
+													<button class="primary" onclick="tvRemapApply('head')">Appliquer</button>
+												</div>
+											</div>
 											<video id="tv-vid-head" preload="auto" muted playsinline></video>
 											<div class="tv-vid-overlay" id="tv-ovl-head">Pas de vidéo</div>
 										</div>
 										<div class="tv-vid-wrap" id="tv-wrap-right">
 											<div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
 											<div class="tv-vid-time" id="tv-vt-right">—</div>
+											<button class="tv-vid-remap-btn" id="tv-remap-btn-right" onclick="tvRemapToggle('right',event)" title="Changer la source vidéo">&#8645; <span id="tv-remap-src-right">right</span></button>
+											<div class="tv-remap-panel" id="tv-remap-panel-right">
+												<label>Source pour slot RIGHT</label>
+												<select id="tv-remap-sel-right">
+													<option value="right">right (défaut)</option>
+													<option value="head">head</option>
+													<option value="left">left</option>
+												</select>
+												<div class="tv-remap-actions">
+													<button onclick="tvRemapCancel('right')">Annuler</button>
+													<button class="primary" onclick="tvRemapApply('right')">Appliquer</button>
+												</div>
+											</div>
 											<video id="tv-vid-right" preload="auto" muted playsinline></video>
 											<div class="tv-vid-overlay" id="tv-ovl-right">Pas de vidéo</div>
+										</div>
+									</div>
+
+									<!-- Modal propagation remap -->
+									<div id="tv-remap-propagate-modal">
+										<div class="modal-box">
+											<h3>Appliquer à d'autres sessions ?</h3>
+											<p id="tv-remap-propagate-msg"></p>
+											<div class="modal-btns">
+												<button onclick="tvRemapPropagate(false)">Seulement cette session</button>
+												<button class="primary" onclick="tvRemapPropagate(true)">Toutes les sessions compatibles</button>
+											</div>
 										</div>
 									</div>
 
@@ -4601,6 +4786,7 @@
 			// Vidéo native
 			vidInfo: {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
 			vidReady: {},      // { head: bool, left: bool, right: bool }
+			camRemap: {},      // { slot: source } e.g. {head: "left", left: "head"}
 		};
 
 		const TV_COLORS = {
@@ -4685,8 +4871,10 @@
 				const dotColor = ok ? 'var(--green)' : fail ? 'var(--red)' : run ? 'var(--orange)' : 'var(--text3)';
 				const scenario = s.meta?.scenario ? s.meta.scenario : '';
 
+				const hasVerifIssues = !!(s.meta?.verification?.has_issues);
+
 				const div = document.createElement('div');
-				div.className = 'tv-sess-item' + (TV.sessPath === s.path ? ' active' : '');
+				div.className = 'tv-sess-item' + (TV.sessPath === s.path ? ' active' : '') + (hasVerifIssues ? ' verif-issues' : '');
 				div.title = s.path;
 				div.innerHTML = `
       <div style="display:flex;align-items:center;gap:6px">
@@ -4823,6 +5011,7 @@
 			TV.t_ms = 0;
 			TV.vidInfo = {};
 			TV.vidReady = {};
+			TV.camRemap = {};
 			TV3D.needsRebuild = true;
 
 			const sess = S.sessions.find(s => s.path === path);
@@ -4862,13 +5051,17 @@
 				ge('tv-playhead-fill').style.width = '0%';
 				ge('tv-t-cur').textContent = '0.000s';
 
-				// Brancher les vidéos natives
+				// Charger le remap caméra depuis metadata
+				tvLoadCameraRemap(data.meta?.camera_remap);
+
+				// Brancher les vidéos natives (en appliquant le remap)
 				for (const side of ['head', 'left', 'right']) {
 					const v = ge(`tv-vid-${side}`);
 					const ovl = ge(`tv-ovl-${side}`);
 					if (!v) continue;
-					if (TV.vidInfo[side]?.available) {
-						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(path)}`;
+					const src = TV.camRemap[side] || side;
+					if (TV.vidInfo[src]?.available) {
+						const url = `/api/session/video/${src}?session_path=${encodeURIComponent(path)}`;
 						v.src = url;
 						v.load();
 						v.oncanplay = () => {
@@ -4876,10 +5069,9 @@
 							ovl?.classList.add('hidden');
 						};
 						v.onerror = () => { TV.vidReady[side] = false; };
-						// Seek immédiat à t=0
 						v.onseeked = null;
 					} else {
-						TV.vidReady[side] = false;
+					TV.vidReady[side] = false;
 					}
 				}
 
@@ -4907,12 +5099,161 @@
 			}
 		}
 
+
+		// ── Camera Remap ──────────────────────────────────────────────────
+		// TV.camRemap = { slot: source } e.g. { head: "left", left: "head", right: "right" }
+		// Persisted in metadata.json["camera_remap"]
+
+		function tvLoadCameraRemap(remapFromMeta) {
+			TV.camRemap = remapFromMeta && typeof remapFromMeta === 'object' ? { ...remapFromMeta } : {};
+			for (const slot of ['head', 'left', 'right']) {
+				const src = TV.camRemap[slot] || slot;
+				const srcEl = ge(`tv-remap-src-${slot}`);
+				if (srcEl) srcEl.textContent = src;
+				const sel = ge(`tv-remap-sel-${slot}`);
+				if (sel) sel.value = src;
+				const btn = ge(`tv-remap-btn-${slot}`);
+				if (btn) btn.classList.toggle('remapped', src !== slot);
+			}
+		}
+
+		function tvRemapToggle(slot, e) {
+			e.stopPropagation();
+			const panel = ge(`tv-remap-panel-${slot}`);
+			if (!panel) return;
+			// Close all other panels first
+			for (const s of ['head', 'left', 'right']) {
+				if (s !== slot) ge(`tv-remap-panel-${s}`)?.classList.remove('open');
+			}
+			panel.classList.toggle('open');
+		}
+
+		function tvRemapCancel(slot) {
+			ge(`tv-remap-panel-${slot}`)?.classList.remove('open');
+			// Reset select to current value
+			const sel = ge(`tv-remap-sel-${slot}`);
+			if (sel) sel.value = TV.camRemap[slot] || slot;
+		}
+
+		// Called when user clicks "Appliquer" on a slot
+		let _pendingRemap = null;
+		function tvRemapApply(slot) {
+			const sel = ge(`tv-remap-sel-${slot}`);
+			if (!sel || !TV.sessPath) return;
+			ge(`tv-remap-panel-${slot}`)?.classList.remove('open');
+			const newSrc = sel.value;
+			// Build new full remap (all 3 slots)
+			const newRemap = { head: TV.camRemap.head || 'head', left: TV.camRemap.left || 'left', right: TV.camRemap.right || 'right' };
+			newRemap[slot] = newSrc;
+			_pendingRemap = newRemap;
+			// Find sessions with same camera serials
+			const currentSess = S.sessions.find(s => s.path === TV.sessPath);
+			const currentSerials = _getCameraSerials(currentSess?.meta);
+			const compatible = S.sessions.filter(s => {
+				if (s.path === TV.sessPath) return false;
+				return _getCameraSerials(s.meta) === currentSerials;
+			});
+			if (compatible.length > 0 && currentSerials) {
+				// Show propagation modal
+				ge('tv-remap-propagate-msg').textContent =
+					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras (serials: ${currentSerials}). Appliquer ce remapping à toutes ces sessions ?`;
+				ge('tv-remap-propagate-modal').classList.add('open');
+			} else {
+				// Apply only to current session
+				_applyRemap(TV.sessPath, _pendingRemap, true);
+				_pendingRemap = null;
+			}
+		}
+
+		function _getCameraSerials(meta) {
+			if (!meta?.cameras) return null;
+			const serials = Object.values(meta.cameras)
+				.map(c => c.serial || '')
+				.filter(Boolean)
+				.sort()
+				.join(',');
+			return serials || null;
+		}
+
+		async function _applyRemap(sessPath, remap, reloadIfCurrent) {
+			try {
+				await api('POST', '/api/session/camera_remap', { session_path: sessPath, remap });
+				if (reloadIfCurrent && sessPath === TV.sessPath) {
+					// Update live remap and reload videos
+					tvLoadCameraRemap(remap);
+					_tvReloadVideosWithRemap();
+				}
+			} catch(e) {
+				console.error('[Remap]', e);
+			}
+		}
+
+		function _tvReloadVideosWithRemap() {
+			if (!TV.sessPath) return;
+			for (const side of ['head', 'left', 'right']) {
+				const v = ge(`tv-vid-${side}`);
+				const ovl = ge(`tv-ovl-${side}`);
+				if (!v) continue;
+				const src = TV.camRemap[side] || side;
+				v.pause();
+				if (TV.vidInfo[src]?.available) {
+					const url = `/api/session/video/${src}?session_path=${encodeURIComponent(TV.sessPath)}`;
+					v.src = url;
+					v.load();
+					TV.vidReady[side] = false;
+					v.oncanplay = () => {
+						TV.vidReady[side] = true;
+						ovl?.classList.add('hidden');
+						tvSeekVideos(TV.t_ms);
+					};
+					ovl?.classList.remove('hidden');
+				} else {
+					v.removeAttribute('src');
+					v.load();
+					TV.vidReady[side] = false;
+					if (ovl) ovl.textContent = 'Pas de vidéo';
+					ovl?.classList.remove('hidden');
+				}
+			}
+		}
+
+		async function tvRemapPropagate(toAll) {
+			ge('tv-remap-propagate-modal').classList.remove('open');
+			if (!_pendingRemap) return;
+			const remap = _pendingRemap;
+			_pendingRemap = null;
+			// Apply to current session
+			await _applyRemap(TV.sessPath, remap, true);
+			if (toAll) {
+				const currentSess = S.sessions.find(s => s.path === TV.sessPath);
+				const currentSerials = _getCameraSerials(currentSess?.meta);
+				const compatible = S.sessions.filter(s => {
+					if (s.path === TV.sessPath) return false;
+					return _getCameraSerials(s.meta) === currentSerials;
+				});
+				for (const sess of compatible) {
+					await _applyRemap(sess.path, remap, false);
+					// Update in-memory meta
+					if (sess.meta) sess.meta.camera_remap = remap;
+				}
+				log(`Remap appliqué à ${compatible.length + 1} sessions`, 'OK');
+			}
+		}
+
+		// Close remap panels on click outside
+		document.addEventListener('click', () => {
+			for (const s of ['head', 'left', 'right']) {
+				ge(`tv-remap-panel-${s}`)?.classList.remove('open');
+			}
+		});
+
 		// Seek toutes les vidéos à t_ms (relatif à start de session)
 		function tvSeekVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				if (!v || !TV.vidInfo[side]?.available) continue;
-				const t0 = TV.vidInfo[side].t0_s || 0;
+				const src = TV.camRemap[side] || side;
+				if (!v || !TV.vidInfo[src]?.available) continue;
+				const t0 = TV.vidInfo[src].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				if (Math.abs(v.currentTime - targetSec) > 0.04) {
 					v.currentTime = targetSec;
@@ -5219,8 +5560,9 @@
 		function tvSyncVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				if (!v || !TV.vidInfo[side]?.available || !TV.vidReady[side]) continue;
-				const t0 = TV.vidInfo[side].t0_s || 0;
+				const src = TV.camRemap[side] || side;
+				if (!v || !TV.vidInfo[src]?.available || !TV.vidReady[side]) continue;
+				const t0 = TV.vidInfo[src].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				// Si dérive > 150ms on force le seek (sinon la vidéo suit le playback naturellement)
 				if (Math.abs(v.currentTime - targetSec) > 0.15) {
@@ -5244,7 +5586,8 @@
 			// Jouer toutes les vidéos natives en parallèle
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
-				if (v && TV.vidInfo[side]?.available && TV.vidReady[side]) {
+				const src = TV.camRemap[side] || side;
+				if (v && TV.vidInfo[src]?.available && TV.vidReady[side]) {
 					v.playbackRate = TV.playSpeed || 1;
 					v.play().catch(() => { });
 				}

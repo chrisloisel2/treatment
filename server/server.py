@@ -1619,6 +1619,50 @@ async def session_video_info(session_path: str):
     return JSONResponse(result)
 
 
+class CameraRemapRequest(BaseModel):
+    session_path: str
+    remap: dict  # e.g. {"head": "left", "left": "head", "right": "right"}
+
+
+@app.post("/api/session/camera_remap")
+async def session_camera_remap(req: CameraRemapRequest):
+    """
+    Sauvegarde un remapping caméra dans metadata.json["camera_remap"].
+    remap = { slot_affiché: source_réelle } e.g. {"head": "left", "left": "head", "right": "right"}
+    """
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    meta_path = sess / "metadata.json"
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+        except Exception:
+            pass
+    meta["camera_remap"] = req.remap
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/session/camera_remap")
+async def session_camera_remap_delete(session_path: str):
+    """Supprime le remapping caméra de metadata.json."""
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    meta_path = sess / "metadata.json"
+    if not meta_path.exists():
+        return JSONResponse({"ok": True})
+    try:
+        meta = json.loads(meta_path.read_text())
+    except Exception:
+        return JSONResponse({"ok": True})
+    meta.pop("camera_remap", None)
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/session/frame")
 async def session_frame(session_path: str, side: str, t_ms: float):
     """

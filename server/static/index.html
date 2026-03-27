@@ -4292,7 +4292,105 @@
 					}
 				}
 			}
+
+			// ── Caméras + Remap ─────────────────────────────────────────────
+			const cameras = meta.cameras;
+			const existingRemap = meta.camera_remap || {};
+			if (cameras && Object.keys(cameras).length) {
+				const slots = ['head', 'left', 'right'];
+				const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+				// Build map position->serial from metadata.cameras
+				const posByCam = {};
+				Object.values(cameras).forEach(c => { if (c.position) posByCam[c.position] = c.serial || '?'; });
+				html += `<div class="div" style="margin:8px 0"></div>
+				  <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Caméras</div>
+				  <table style="width:100%;font-size:.75rem;border-collapse:collapse">
+				    <thead>
+				      <tr>
+				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Slot affiché</th>
+				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Serial</th>
+				        <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Source vidéo</th>
+				      </tr>
+				    </thead>
+				    <tbody>`;
+				slots.forEach(slot => {
+					const col = slotColors[slot];
+					const serial = posByCam[slot] || '—';
+					const curSrc = existingRemap[slot] || slot;
+					const isRemapped = curSrc !== slot;
+					const opts = slots.map(s =>
+						`<option value="${s}"${s === curSrc ? ' selected' : ''}>${s}${s === slot ? ' (défaut)' : ''}</option>`
+					).join('');
+					html += `<tr style="border-bottom:1px solid var(--border)22">
+					  <td style="padding:4px 4px 4px 0">
+					    <span style="display:inline-block;background:${col}33;color:${col};border-radius:4px;padding:1px 6px;font-size:.7rem;font-weight:700">${slot.toUpperCase()}</span>
+					  </td>
+					  <td style="padding:4px;color:var(--text2);font-family:monospace;font-size:.7rem">${serial}</td>
+					  <td style="padding:4px 0">
+					    <div style="display:flex;align-items:center;gap:6px">
+					      <select data-drawer-remap-slot="${slot}" data-sess-path="${esc(sess.path)}"
+					        style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.72rem;padding:2px 5px;cursor:pointer${isRemapped ? ';border-color:var(--orange)' : ''}">
+					        ${opts}
+					      </select>
+					      ${isRemapped ? `<span style="font-size:.65rem;color:var(--orange)" title="Remappé">↺</span>` : ''}
+					    </div>
+					  </td>
+					</tr>`;
+				});
+				html += `</tbody></table>
+				  <div style="display:flex;gap:6px;margin-top:8px">
+				    <button class="btn sm" style="flex:1" onclick="drawerRemapReset('${esc(sess.path)}')">Réinitialiser</button>
+				    <button class="btn sm p" style="flex:1" onclick="drawerRemapApply('${esc(sess.path)}')">Appliquer</button>
+				  </div>`;
+			}
+
 			body.innerHTML = html;
+		}
+
+		// Apply camera remap from drawer selects
+		function drawerRemapApply(sessPath) {
+			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-remap-slot]');
+			const remap = {};
+			selects.forEach(sel => { remap[sel.dataset.drawerRemapSlot] = sel.value; });
+			// Check if it's identity remap
+			const isIdentity = ['head','left','right'].every(s => (remap[s] || s) === s);
+			if (isIdentity) { drawerRemapReset(sessPath); return; }
+			// Find compatible sessions
+			const sess = S.sessions.find(s => s.path === sessPath);
+			const currentSerials = _getCameraSerials(sess?.meta);
+			const compatible = S.sessions.filter(s => s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials);
+			if (compatible.length > 0 && currentSerials) {
+				_pendingRemap = remap;
+				_pendingRemapSessPath = sessPath;
+				ge('tv-remap-propagate-msg').textContent =
+					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras (serials: ${currentSerials}). Appliquer ce remapping à toutes ?`;
+				ge('tv-remap-propagate-modal').classList.add('open');
+			} else {
+				_applyRemapDrawer(sessPath, remap);
+			}
+		}
+
+		async function drawerRemapReset(sessPath) {
+			try {
+				await fetch(`/api/session/camera_remap?session_path=${encodeURIComponent(sessPath)}`, { method: 'DELETE' });
+				const sess = S.sessions.find(s => s.path === sessPath);
+				if (sess?.meta) delete sess.meta.camera_remap;
+				// Reload drawer
+				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
+				// If current TV session, reload remap
+				if (TV.sessPath === sessPath) { tvLoadCameraRemap({}); _tvReloadVideosWithRemap(); }
+				log('Remap réinitialisé', 'OK');
+			} catch(e) { log('Reset remap: ' + e.message, 'ERROR'); }
+		}
+
+		let _pendingRemapSessPath = null;
+
+		async function _applyRemapDrawer(sessPath, remap) {
+			await _applyRemap(sessPath, remap, TV.sessPath === sessPath);
+			const sess = S.sessions.find(s => s.path === sessPath);
+			if (sess?.meta) sess.meta.camera_remap = remap;
+			if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
+			log('Remap appliqué', 'OK');
 		}
 
 		function renderDrawerSteps(steps, current) {
@@ -5221,19 +5319,22 @@
 			ge('tv-remap-propagate-modal').classList.remove('open');
 			if (!_pendingRemap) return;
 			const remap = _pendingRemap;
+			// Origin: drawer or TV viewer?
+			const fromDrawer = _pendingRemapSessPath !== null;
+			const originPath = _pendingRemapSessPath || TV.sessPath;
 			_pendingRemap = null;
-			// Apply to current session
-			await _applyRemap(TV.sessPath, remap, true);
+			_pendingRemapSessPath = null;
+			// Apply to originating session
+			await _applyRemapDrawer(originPath, remap);
 			if (toAll) {
-				const currentSess = S.sessions.find(s => s.path === TV.sessPath);
-				const currentSerials = _getCameraSerials(currentSess?.meta);
+				const originSess = S.sessions.find(s => s.path === originPath);
+				const currentSerials = _getCameraSerials(originSess?.meta);
 				const compatible = S.sessions.filter(s => {
-					if (s.path === TV.sessPath) return false;
+					if (s.path === originPath) return false;
 					return _getCameraSerials(s.meta) === currentSerials;
 				});
 				for (const sess of compatible) {
-					await _applyRemap(sess.path, remap, false);
-					// Update in-memory meta
+					await _applyRemap(sess.path, remap, TV.sessPath === sess.path);
 					if (sess.meta) sess.meta.camera_remap = remap;
 				}
 				log(`Remap appliqué à ${compatible.length + 1} sessions`, 'OK');

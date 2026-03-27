@@ -1734,6 +1734,99 @@ async def session_camera_swap(req: CameraSwapRequest):
     return JSONResponse({"ok": True, "renamed": renamed_files})
 
 
+class TrackerSwapRequest(BaseModel):
+    session_path: str
+    # mapping complet role→nouvelle_source, e.g. {"head": "left", "left": "head", "right": "right"}
+    mapping: dict
+
+
+@app.post("/api/session/tracker_swap")
+async def session_tracker_swap(req: TrackerSwapRequest):
+    """
+    Échange les rôles des trackers dans tracker_positions.csv en renommant les colonnes.
+    Les colonnes tracker_{src}_* deviennent tracker_{dst}_*.
+    Opération atomique via fichier temporaire.
+    Met aussi à jour metadata.json["trackers"] si les entrées ont un champ "role".
+    """
+    import pandas as pd
+
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    mapping = req.mapping  # { dst: src }
+    sides = ("head", "left", "right")
+
+    if set(mapping.keys()) != set(sides) or set(mapping.values()) != set(sides):
+        raise HTTPException(400, "Le mapping doit être une permutation complète de head/left/right")
+
+    if all(mapping[s] == s for s in sides):
+        return JSONResponse({"ok": True, "swapped": []})
+
+    trk_path = sess / "tracker_positions.csv"
+    if not trk_path.exists():
+        raise HTTPException(404, "tracker_positions.csv introuvable")
+
+    df = pd.read_csv(trk_path)
+
+    # Construire le renommage des colonnes
+    # Pour chaque colonne tracker_{src}_{suffix}, la renommer en tracker_{dst}_{suffix}
+    # où mapping[dst] = src
+    rename_map = {}
+    for dst, src in mapping.items():
+        if src == dst:
+            continue
+        for col in df.columns:
+            if col.startswith(f"tracker_{src}_"):
+                suffix = col[len(f"tracker_{src}_"):]
+                new_col = f"tracker_{dst}_{suffix}"
+                rename_map[col] = new_col
+
+    if not rename_map:
+        return JSONResponse({"ok": True, "swapped": []})
+
+    df = df.rename(columns=rename_map)
+
+    # Écrire via fichier temporaire
+    tmp_path = trk_path.with_name("__swap_tmp_tracker_positions.csv")
+    try:
+        df.to_csv(tmp_path, index=False)
+        tmp_path.replace(trk_path)
+    except Exception as e:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise HTTPException(500, f"Erreur écriture CSV : {e}")
+
+    # Mettre à jour metadata.json["trackers"] si les entrées ont un champ "role"
+    meta_path = sess / "metadata.json"
+    try:
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            if "trackers" in meta:
+                updated = False
+                new_trackers = {}
+                for tid, tinfo in meta["trackers"].items():
+                    role = tinfo.get("role")
+                    if role and role in mapping.values():
+                        # Trouver le nouveau rôle : dst tel que mapping[dst] == role
+                        new_role = next(
+                            (dst for dst, src in mapping.items() if src == role),
+                            role
+                        )
+                        new_trackers[tid] = {**tinfo, "role": new_role}
+                        updated = True
+                    else:
+                        new_trackers[tid] = tinfo
+                if updated:
+                    meta["trackers"] = new_trackers
+                    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    except Exception:
+        pass  # CSV déjà mis à jour, on ignore l'erreur metadata
+
+    swapped = list(rename_map.keys())
+    return JSONResponse({"ok": True, "swapped": swapped})
+
+
 @app.get("/api/session/frame")
 async def session_frame(session_path: str, side: str, t_ms: float):
     """

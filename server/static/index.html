@@ -4601,6 +4601,49 @@
 				    <button class="btn sm p" style="flex:1" onclick="drawerRemapApply('${esc(sess.path)}')">Appliquer</button>
 				  </div>`;
 			}
+
+			// ── Trackers (swap colonnes CSV) ────────────────────────────────
+			const trackers = meta.trackers;
+			if (trackers && Object.keys(trackers).length) {
+				const slots = ['head', 'left', 'right'];
+				const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+				// Build map role→serial (si role présent), sinon afficher les serials dans l'ordre
+				const serialByRole = {};
+				Object.values(trackers).forEach(t => { if (t.role) serialByRole[t.role] = t.serial || '?'; });
+				html += `<div class="div" style="margin:8px 0"></div>
+				  <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Trackers</div>
+				  <table style="width:100%;font-size:.75rem;border-collapse:collapse">
+				    <thead><tr>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Rôle actuel</th>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Serial</th>
+				      <th style="color:var(--text3);font-weight:400;text-align:left;padding:2px 4px 4px 0">Renommer vers</th>
+				    </tr></thead>
+				    <tbody>`;
+				slots.forEach(slot => {
+					const col = slotColors[slot];
+					const serial = serialByRole[slot] || '—';
+					const opts = slots.map(s =>
+						`<option value="${s}"${s === slot ? ' selected' : ''}>${s}</option>`
+					).join('');
+					html += `<tr style="border-bottom:1px solid var(--border)22">
+					  <td style="padding:4px 4px 4px 0">
+					    <span style="display:inline-block;background:${col}33;color:${col};border-radius:4px;padding:1px 6px;font-size:.7rem;font-weight:700">${slot.toUpperCase()}</span>
+					  </td>
+					  <td style="padding:4px;color:var(--text2);font-family:monospace;font-size:.7rem">${serial}</td>
+					  <td style="padding:4px 0">
+					    <select data-drawer-tracker-slot="${slot}"
+					      style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.72rem;padding:2px 5px;cursor:pointer">
+					      ${opts}
+					    </select>
+					  </td>
+					</tr>`;
+				});
+				html += `</tbody></table>
+				  <div style="display:flex;gap:6px;margin-top:8px">
+				    <button class="btn sm" style="flex:1" onclick="drawerTrackerReset()">Annuler</button>
+				    <button class="btn sm p" style="flex:1" onclick="drawerTrackerSwapApply('${esc(sess.path)}')">Appliquer</button>
+				  </div>`;
+			}
 			body.innerHTML = html;
 		}
 
@@ -4626,6 +4669,63 @@
 		function drawerRemapReset(sessPath) {
 			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-remap-slot]');
 			selects.forEach(sel => { sel.value = sel.dataset.drawerRemapSlot; });
+		}
+
+		function drawerTrackerSwapApply(sessPath) {
+			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-tracker-slot]');
+			let src = null, dst = null;
+			selects.forEach(sel => {
+				if (sel.dataset.drawerTrackerSlot !== sel.value && !src) {
+					src = sel.dataset.drawerTrackerSlot;
+					dst = sel.value;
+				}
+			});
+			if (!src || src === dst) return;
+			const mapping = { head: 'head', left: 'left', right: 'right' };
+			mapping[dst] = src;
+			mapping[src] = dst;
+			_promptTrackerSwap(sessPath, mapping);
+		}
+
+		function drawerTrackerReset() {
+			const selects = ge('sess-drawer-body').querySelectorAll('[data-drawer-tracker-slot]');
+			selects.forEach(sel => { sel.value = sel.dataset.drawerTrackerSlot; });
+		}
+
+		let _pendingTrackerSwap = null;
+		let _pendingTrackerSwapSessPath = null;
+
+		function _promptTrackerSwap(sessPath, mapping) {
+			_pendingTrackerSwap = mapping;
+			_pendingTrackerSwapSessPath = sessPath;
+			const sess = S.sessions.find(s => s.path === sessPath);
+			const currentSerials = _getCameraSerials(sess?.meta);
+			const compatible = S.sessions.filter(s =>
+				s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
+			);
+			if (compatible.length > 0 && currentSerials) {
+				ge('tv-remap-propagate-msg').textContent =
+					`${compatible.length} autre(s) session(s) utilisent le même jeu de caméras. Appliquer ce renommage trackers à toutes ?`;
+				// Hijack modal callback for tracker swap
+				ge('tv-remap-propagate-modal').dataset.mode = 'tracker';
+				ge('tv-remap-propagate-modal').classList.add('open');
+			} else {
+				_doTrackerSwap(sessPath, mapping, true);
+				_pendingTrackerSwap = null;
+				_pendingTrackerSwapSessPath = null;
+			}
+		}
+
+		async function _doTrackerSwap(sessPath, mapping, reloadIfCurrent) {
+			try {
+				await api('POST', '/api/session/tracker_swap', { session_path: sessPath, mapping });
+				const sess = S.sessions.find(s => s.path === sessPath);
+				if (sess) await loadSessionPipelineState(sess);
+				if (reloadIfCurrent && TV.sessPath === sessPath) await tvSelectSession(sessPath);
+				if (S.drawerSess?.path === sessPath) renderDrawerContent(S.drawerSess);
+			} catch(e) {
+				log('Swap trackers : ' + e.message, 'ERROR');
+			}
 		}
 
 
@@ -5522,7 +5622,32 @@
 		}
 
 		async function tvRemapPropagate(toAll) {
-			ge('tv-remap-propagate-modal').classList.remove('open');
+			const modal = ge('tv-remap-propagate-modal');
+			const mode = modal.dataset.mode || 'camera';
+			modal.classList.remove('open');
+			delete modal.dataset.mode;
+			// Tracker swap
+			if (mode === 'tracker') {
+				if (!_pendingTrackerSwap) return;
+				const mapping = _pendingTrackerSwap;
+				const sessPath = _pendingTrackerSwapSessPath;
+				_pendingTrackerSwap = null;
+				_pendingTrackerSwapSessPath = null;
+				await _doTrackerSwap(sessPath, mapping, true);
+				if (toAll) {
+					const originSess = S.sessions.find(s => s.path === sessPath);
+					const currentSerials = _getCameraSerials(originSess?.meta);
+					const compatible = S.sessions.filter(s =>
+						s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
+					);
+					for (const sess of compatible) {
+						await _doTrackerSwap(sess.path, mapping, false);
+					}
+					log(`Renommage trackers appliqué à ${compatible.length + 1} sessions`, 'OK');
+				}
+				return;
+			}
+			// Camera swap
 			if (!_pendingRemap) return;
 			const mapping = _pendingRemap;
 			const sessPath = _pendingRemapSessPath;
@@ -5538,7 +5663,7 @@
 				for (const sess of compatible) {
 					await _doSwap(sess.path, mapping, false);
 				}
-				log(`Renommage appliqué à ${compatible.length + 1} sessions`, 'OK');
+				log(`Renommage caméras appliqué à ${compatible.length + 1} sessions`, 'OK');
 			}
 		}
 

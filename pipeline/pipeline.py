@@ -1120,12 +1120,17 @@ def step_ia_sync(state: SessionPipelineState, log: PipelineLogger,
     model  = ia.load_model(model_dir)
     fluxes = ia.load_all_fluxes(sess)
 
-    estimates = []
+    # Lancer toutes les estimations de paires en parallèle (I/O + inférence IA)
+    _valid_pairs = [
+        (ref_name, tgt_name)
+        for ref_name, tgt_name in ia.PAIRS
+        if ref_name in fluxes and tgt_name in fluxes
+    ]
     for ref_name, tgt_name in ia.PAIRS:
         if ref_name not in fluxes or tgt_name not in fluxes:
             log(f"Paire {ref_name}↔{tgt_name} ignorée (flux manquant)", "WARN")
-            continue
 
+    def _estimate_one(ref_name: str, tgt_name: str) -> dict:
         est = ia.estimate_pair_offset(
             model       = model,
             ref         = fluxes[ref_name],
@@ -1134,8 +1139,7 @@ def step_ia_sync(state: SessionPipelineState, log: PipelineLogger,
             max_lag_ms  = params["max_lag_ms"],
             window_ms   = params["window_ms"],
         )
-
-        d = {
+        return {
             "ref_name":          est.ref_name,
             "tgt_name":          est.tgt_name,
             "delta_start_ms":    float(est.delta_start_ms),
@@ -1146,12 +1150,27 @@ def step_ia_sync(state: SessionPipelineState, log: PipelineLogger,
             "is_reliable":       bool(est.is_reliable),
             "method":            est.method,
         }
-        estimates.append(d)
-        log(
-            f"{ref_name} ↔ {tgt_name}  shift={est.shift_to_apply_ms:+.1f}ms  "
-            f"conf={est.confidence:.3f}  reliable={est.is_reliable}",
-            "OK" if est.is_reliable else "WARN",
-        )
+
+    estimates = []
+    _n_workers = min(len(_valid_pairs), os.cpu_count() or 1)
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=_n_workers, thread_name_prefix="ia-pair"
+    ) as _tex:
+        _futs = {
+            _tex.submit(_estimate_one, ref, tgt): (ref, tgt)
+            for ref, tgt in _valid_pairs
+        }
+        for _fut in concurrent.futures.as_completed(_futs):
+            d = _fut.result()  # propagera l'exception si une paire échoue
+            estimates.append(d)
+            log(
+                f"{d['ref_name']} ↔ {d['tgt_name']}  shift={d['shift_to_apply_ms']:+.1f}ms  "
+                f"conf={d['confidence']:.3f}  reliable={d['is_reliable']}",
+                "OK" if d["is_reliable"] else "WARN",
+            )
+    # Remettre dans l'ordre PAIRS pour la reproductibilité
+    _pair_order = {(r, t): i for i, (r, t) in enumerate(ia.PAIRS)}
+    estimates.sort(key=lambda d: _pair_order.get((d["ref_name"], d["tgt_name"]), 99))
 
     # Appliquer les offsets fiables
     applied = set()
@@ -1471,22 +1490,36 @@ class PipelineRunner:
                 with self._step_ctx(state, "rotate") as ctx:
                     ctx.result = step_rotate(state, self.log, force=self.force_flux)
 
-            # ── Étape 3 : Tracker ──
-            if self._should_run(state, "tracker"):
-                with self._step_ctx(state, "tracker") as ctx:
-                    ctx.result = step_tracker(state, self.log)
+            # ── Étapes 3 / 4 / 4b : Tracker + Vidéo + Labels (parallèle) ──
+            _parallel_steps = [
+                ("tracker",       lambda: step_tracker(state, self.log)),
+                ("video",         lambda: step_video(state, self.log)),
+                ("verify_labels", lambda: step_verify_labels(
+                    state, self.log,
+                    min_confidence=self.params.get("label_min_confidence", 0.90),
+                )),
+            ]
+            _to_run = [(n, fn) for n, fn in _parallel_steps if self._should_run(state, n)]
+            if _to_run:
+                _par_errors: Dict[str, Exception] = {}
 
-            # ── Étape 4 : Vidéo ──
-            if self._should_run(state, "video"):
-                with self._step_ctx(state, "video") as ctx:
-                    ctx.result = step_video(state, self.log)
+                def _run_step(name: str, fn: Callable) -> None:
+                    with self._step_ctx(state, name) as ctx:
+                        ctx.result = fn()
 
-            # ── Étape 4b : Vérification labels caméra ──
-            if self._should_run(state, "verify_labels"):
-                with self._step_ctx(state, "verify_labels") as ctx:
-                    ctx.result = step_verify_labels(
-                        state, self.log,
-                        min_confidence=self.params.get("label_min_confidence", 0.90),
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(_to_run), thread_name_prefix="pipe-step"
+                ) as _tex:
+                    _futs = {_tex.submit(_run_step, n, fn): n for n, fn in _to_run}
+                    for _fut in concurrent.futures.as_completed(_futs):
+                        _n = _futs[_fut]
+                        exc = _fut.exception()
+                        if exc:
+                            _par_errors[_n] = exc
+                if _par_errors:
+                    raise RuntimeError(
+                        "Étapes parallèles échouées: "
+                        + "; ".join(f"{n}: {e}" for n, e in _par_errors.items())
                     )
 
             # ── Étape 5 : Flux CSV ──

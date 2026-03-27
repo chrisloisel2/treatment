@@ -24,8 +24,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import concurrent.futures
 import io
 import json
+import multiprocessing
+import os
 import sys
 import threading
 import time
@@ -577,56 +580,107 @@ async def _startup():
 # Worker pipeline
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _pipeline_log_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
-    def _cb(msg: str, level: str = "INFO"):
-        _log_job(job, msg, level)
-    return _cb
-
-
-def _pipeline_step_cb(job: "Job") -> "Callable":  # type: ignore[name-defined]
-    def _cb(state):
-        from pipeline.pipeline import StepStatus
-        # 11 étapes : detect, check_sync, verify, rotate, tracker, video, verify_labels, flux_csv, ia_sync, validate, store
-        step_names = ["detect", "check_sync", "verify", "rotate", "tracker", "video", "verify_labels",
-                      "flux_csv", "ia_sync", "validate", "store"]
-        done = sum(
-            1 for n in step_names
-            if state.steps.get(n) and state.steps[n].status
-               in (StepStatus.DONE, StepStatus.SKIPPED)
-        )
-        progress = int(done / len(step_names) * 100)
-        steps_serial = {
-            n: {
-                "status":     str(state.steps[n].status) if n in state.steps else "pending",
-                "duration_s": state.steps[n].duration_s if n in state.steps else 0,
-                "message":    state.steps[n].message    if n in state.steps else "",
+def _poll_pipeline_state(job: "Job", session_path: str,  # type: ignore[name-defined]
+                          stop_event: threading.Event) -> None:
+    """Thread de polling : lit pipeline_state.json toutes les 2s et broadcaste les mises à jour."""
+    from pipeline.pipeline import StepStatus, SessionPipelineState
+    STEP_NAMES = ["detect", "check_sync", "verify", "rotate", "tracker", "video",
+                  "verify_labels", "flux_csv", "ia_sync", "validate", "store"]
+    sess = Path(session_path)
+    last_current = None
+    while not stop_event.is_set():
+        try:
+            state = SessionPipelineState.load(sess)
+            if state is None:
+                time.sleep(2)
+                continue
+            done = sum(
+                1 for n in STEP_NAMES
+                if state.steps.get(n) and state.steps[n].status
+                   in (StepStatus.DONE, StepStatus.SKIPPED)
+            )
+            progress = int(done / len(STEP_NAMES) * 100)
+            steps_serial = {
+                n: {
+                    "status":     str(state.steps[n].status) if n in state.steps else "pending",
+                    "duration_s": state.steps[n].duration_s if n in state.steps else 0,
+                    "message":    state.steps[n].message    if n in state.steps else "",
+                }
+                for n in STEP_NAMES
             }
-            for n in step_names
-        }
-        _update_job(
-            job,
-            progress = progress,
-            result   = {
-                "session":     state.session_name,
-                "steps":       steps_serial,
-                "n_reliable":  state.n_reliable,
-                "mean_conf":   state.mean_conf,
-                "silver_path": state.silver_path,
-                "success":     state.success,
-                "error":       state.error,
-            } if state.finished else {
-                "session": state.session_name,
-                "steps":   steps_serial,
-                "current": state.current_step,
-            },
-        )
-        asyncio.run_coroutine_threadsafe(
-            _broadcast({"type": "pipeline_step", "job_id": job.id, "steps": steps_serial,
-                        "current": state.current_step, "finished": state.finished,
-                        "success": getattr(state, "success", False)}),
-            _loop,
-        )
-    return _cb
+            if state.current_step != last_current:
+                last_current = state.current_step
+                _update_job(job, progress=progress, result={
+                    "session": state.session_name,
+                    "steps":   steps_serial,
+                    "current": state.current_step,
+                })
+                if _loop:
+                    asyncio.run_coroutine_threadsafe(
+                        _broadcast({"type": "pipeline_step", "job_id": job.id,
+                                    "steps": steps_serial, "current": state.current_step,
+                                    "finished": state.finished,
+                                    "success": getattr(state, "success", False)}),
+                        _loop,
+                    )
+        except Exception:
+            pass
+        time.sleep(2)
+
+
+def _run_pipeline_in_process(source_path: str, params: dict,
+                              write_mode: bool, force_flux: bool,
+                              delete_after_store: bool,
+                              steps_whitelist: Optional[List[str]]) -> dict:
+    """Fonction top-level picklable — exécutée dans un processus séparé (ProcessPoolExecutor).
+    Retourne un dict sérialisable avec logs, succès et erreur."""
+    import sys
+    from pathlib import Path
+    _root = Path(__file__).resolve().parent.parent
+    if str(_root) not in sys.path:
+        sys.path.insert(0, str(_root))
+    from pipeline.pipeline import PipelineRunner
+
+    collected_logs: list = []
+
+    def _log_cb(msg: str, level: str = "INFO") -> None:
+        collected_logs.append({"msg": msg, "level": level, "ts": _now()})
+
+    runner = PipelineRunner(
+        source_path        = source_path,
+        params             = params,
+        write_mode         = write_mode,
+        delete_after_store = delete_after_store,
+        log_callback       = _log_cb,
+        step_callback      = None,
+        force_flux         = force_flux,
+        resume             = True,
+        steps_whitelist    = steps_whitelist,
+    )
+    state = runner.run()
+    return {
+        "success":  state.success,
+        "error":    state.error,
+        "logs":     collected_logs,
+        "steps":    {n: s.status for n, s in state.steps.items()},
+    }
+
+
+# Pool de processus partagé pour le batch (max = nb CPU - 1, min = 2)
+_PROCESS_POOL: Optional[concurrent.futures.ProcessPoolExecutor] = None
+_PROCESS_POOL_LOCK = threading.Lock()
+
+
+def _get_process_pool() -> concurrent.futures.ProcessPoolExecutor:
+    global _PROCESS_POOL
+    with _PROCESS_POOL_LOCK:
+        if _PROCESS_POOL is None:
+            n_workers = max(2, (os.cpu_count() or 4) - 1)
+            _PROCESS_POOL = concurrent.futures.ProcessPoolExecutor(
+                max_workers=n_workers,
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+    return _PROCESS_POOL
 
 
 def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore[name-defined]
@@ -634,32 +688,43 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
                      delete_after_store: bool = False,
                      steps_whitelist: Optional[List[str]] = None):
     try:
-        from pipeline.pipeline import PipelineRunner
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
-        runner = PipelineRunner(
-            source_path        = source_path,
-            params             = params,
-            write_mode         = write_mode,
-            delete_after_store = delete_after_store,
-            log_callback       = _pipeline_log_cb(job),
-            step_callback      = _pipeline_step_cb(job),
-            force_flux         = force_flux,
-            resume             = True,
-            steps_whitelist    = steps_whitelist,
-        )
         if not _session_writable(source_path):
             raise PermissionError(
                 f"Le dossier session n'est pas accessible en écriture : {source_path}\n"
                 "Vérifiez les permissions (chmod 777) ou le montage NFS."
             )
-        state = runner.run()
-        final_status = JobStatus.DONE if state.success else JobStatus.ERROR
+        # Démarrer le polling WebSocket pendant que le process tourne
+        stop_poll = threading.Event()
+        threading.Thread(
+            target=_poll_pipeline_state,
+            args=(job, source_path, stop_poll),
+            daemon=True,
+        ).start()
+
+        # Déléguer au process pool pour libérer le GIL sur le CPU-bound
+        pool = _get_process_pool()
+        fut  = pool.submit(
+            _run_pipeline_in_process,
+            source_path, params, write_mode, force_flux,
+            delete_after_store, steps_whitelist,
+        )
+        try:
+            result = fut.result()  # bloque ce thread (pas le GIL global)
+        finally:
+            stop_poll.set()
+
+        # Rejouer les logs collectés dans le process
+        for entry in result.get("logs", []):
+            _log_job(job, entry["msg"], entry.get("level", "INFO"))
+
+        final_status = JobStatus.DONE if result["success"] else JobStatus.ERROR
         _update_job(
             job,
             status   = final_status,
             ended_at = _now(),
-            progress = 100 if state.success else job.progress,
-            error    = state.error,
+            progress = 100 if result["success"] else job.progress,
+            error    = result.get("error"),
         )
     except Exception:
         err = traceback.format_exc()

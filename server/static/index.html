@@ -3015,6 +3015,9 @@
 
 				<div class="nav-sep"></div>
 				<div class="nav-group">Système</div>
+				<button class="nav-btn" onclick="nav('s3browser',this)">
+					<span class="ico">☁</span>S3 Browser
+				</button>
 				<button class="nav-btn" onclick="nav('settings',this)">
 					<span class="ico">⚙</span>Configuration
 				</button>
@@ -3895,8 +3898,30 @@
 					<div class="g2">
 						<div class="card">
 							<div class="card-h">Chemins</div>
+							<div class="fr" style="align-items:center">
+								<label>Format d'input</label>
+								<div style="display:flex;align-items:center;gap:10px">
+									<span id="s-fmt-label-custom" style="font-size:.82rem;font-weight:600;color:var(--accent)">Custom</span>
+									<div id="s-input-fmt-toggle" onclick="toggleInputFormat()" style="
+										width:42px;height:22px;border-radius:11px;background:var(--bg4);border:1px solid var(--border2);
+										cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
+										<div id="s-input-fmt-knob" style="
+											position:absolute;top:2px;left:2px;width:16px;height:16px;
+											border-radius:50%;background:var(--accent);transition:left .2s"></div>
+									</div>
+									<span id="s-fmt-label-lerobot" style="font-size:.82rem;color:var(--text3)">LeRobot</span>
+								</div>
+							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
 								<input type="text" id="s-root" value="/Volumes/T9/data" />
+							</div>
+							<div id="s-lerobot-input-opts" style="display:none">
+								<div class="fr"><label>Dataset LeRobot</label>
+									<input type="text" id="s-lerobot-input-path" placeholder="/data/my_lerobot_dataset" />
+								</div>
+								<div style="font-size:.73rem;color:var(--text3);margin-bottom:8px;padding-left:158px">
+									Chemin vers le dossier racine du dataset LeRobot (contient <code style="color:var(--accent3)">meta/info.json</code>).
+								</div>
 							</div>
 							<div class="fr"><label>Modèle IA</label>
 								<input type="text" id="s-model" value="_sync_ml_model" />
@@ -3933,6 +3958,23 @@
 									Démarrer</button>
 								<button class="btn" onclick="loadWatcherStatus()">⟳ Rafraîchir</button>
 							</div>
+						</div>
+					</div>
+
+					<!-- ══ Section Source S3 ══ -->
+					<div class="card" style="margin-top:16px">
+						<div class="card-h">Source S3 (dossier d'input)</div>
+						<div class="ps" style="margin:0 0 12px">Configurez un bucket S3 comme source de données. Vous pourrez parcourir et streamer les sessions directement depuis S3.</div>
+						<div class="fr"><label>Bucket S3</label><input type="text" id="s-src-s3-bucket" placeholder="my-robot-data" /></div>
+						<div class="fr"><label>Préfixe racine</label><input type="text" id="s-src-s3-prefix" placeholder="sessions/" /></div>
+						<div class="fr"><label>Région AWS</label><input type="text" id="s-src-s3-region" placeholder="eu-west-1" /></div>
+						<div class="fr"><label>Access Key ID</label><input type="text" id="s-src-s3-key" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
+						<div class="fr"><label>Secret Key</label><input type="password" id="s-src-s3-secret" placeholder="••••••••" autocomplete="off" /></div>
+						<div class="fr"><label>Dossier local temp</label><input type="text" id="s-src-s3-localdir" placeholder="/tmp/s3_stream" /></div>
+						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">Dossier local où seront streamés les fichiers S3 pour vérification.</div>
+						<div class="row">
+							<button class="btn p" onclick="saveSrcS3Settings()">Sauvegarder</button>
+							<button class="btn c" onclick="nav('s3browser', document.querySelector('.nav-btn[onclick*=s3browser]'))">☁ Ouvrir S3 Browser</button>
 						</div>
 					</div>
 
@@ -4018,6 +4060,10 @@
 							</div>
 							<div class="fr"><label>FPS vidéo</label><input type="number" id="s-lerobot-fps" value="30"
 									min="1" max="120" /></div>
+							<div class="fr"><label>Sessions par chunk</label><input type="number" id="s-lerobot-chunks-size" value="1000"
+									min="1" max="100000" title="Nombre d'épisodes (sessions) par chunk LeRobot" /></div>
+							<div class="fr"><label title="Épisodes traités en mémoire à la fois — réduire si l'ordi plante (défaut: 5)">Batch mémoire</label><input type="number" id="s-lerobot-batch-size" value="5"
+									min="1" max="100" title="Épisodes traités en mémoire à la fois. Réduire si l'ordi plante." /></div>
 							<div class="chk" style="margin-top:4px"><input type="checkbox" id="s-lerobot-push-hub" />
 								<label>Pousser sur HuggingFace Hub</label>
 							</div>
@@ -4063,6 +4109,55 @@
 
 						<div class="div" style="margin:14px 0"></div>
 						<button class="btn p" onclick="saveExportSettings()">Sauvegarder export</button>
+					</div>
+				</div>
+
+				<!-- ══════════════════════════════════════════════════════
+  PAGE : S3 BROWSER
+══════════════════════════════════════════════════════ -->
+				<div class="page" id="page-s3browser">
+					<div class="ph">S3 Browser</div>
+					<div class="ps">Parcourez votre bucket S3, streamez les sessions et déplacez les dossiers.</div>
+
+					<!-- Barre de navigation S3 -->
+					<div class="card" style="padding:12px 16px;margin-bottom:12px">
+						<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+							<span style="font-size:.78rem;color:var(--text3);flex-shrink:0">s3://</span>
+							<span id="s3b-bucket-label" style="font-size:.78rem;color:var(--accent);font-weight:700;flex-shrink:0">—</span>
+							<span style="font-size:.78rem;color:var(--text3);flex-shrink:0">/</span>
+							<span id="s3b-prefix-label" style="font-size:.78rem;color:var(--text2);font-family:monospace;word-break:break-all"></span>
+							<div style="flex:1"></div>
+							<button class="btn sm" onclick="s3bNavUp()" id="s3b-btn-up" title="Remonter">↑ Parent</button>
+							<button class="btn sm" onclick="s3bRefresh()">⟳ Rafraîchir</button>
+							<button class="btn sm" onclick="nav('settings', document.querySelector('.nav-btn[onclick*=settings]'))">⚙ Config S3</button>
+						</div>
+						<!-- Breadcrumb -->
+						<div id="s3b-breadcrumb" style="margin-top:8px;font-size:.75rem;color:var(--text3);display:flex;gap:4px;flex-wrap:wrap"></div>
+					</div>
+
+					<!-- Status / messages -->
+					<div id="s3b-status" style="display:none;padding:10px 14px;border-radius:var(--r);margin-bottom:12px;font-size:.82rem"></div>
+
+					<!-- Actions sur sélection -->
+					<div id="s3b-actions-bar" style="display:none;margin-bottom:10px;gap:8px;align-items:center;flex-wrap:wrap">
+						<span id="s3b-sel-count" style="font-size:.78rem;color:var(--text2)">0 sélectionné(s)</span>
+						<button class="btn sm c" onclick="s3bStreamSelected()">⬇ Streamer localement</button>
+						<button class="btn sm" onclick="s3bMoveSelected()">✂ Déplacer vers…</button>
+						<button class="btn sm" onclick="s3bDeselectAll()">✕ Désélectionner</button>
+					</div>
+
+					<!-- Liste dossiers / fichiers -->
+					<div class="card" style="padding:0;overflow:hidden">
+						<!-- En-tête colonnes -->
+						<div style="display:grid;grid-template-columns:28px 1fr 110px 90px;gap:0;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.7rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">
+							<span></span>
+							<span>Nom</span>
+							<span style="text-align:right">Taille</span>
+							<span style="text-align:right">Modifié</span>
+						</div>
+						<div id="s3b-list" style="min-height:120px"></div>
+						<div id="s3b-empty" style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">Dossier vide</div>
+						<div id="s3b-loading" style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">Chargement…</div>
 					</div>
 				</div>
 
@@ -4188,6 +4283,25 @@
 		</div>
 	</div>
 
+	<!-- ══ Modal S3 Move ════════════════════════════════════════════════ -->
+	<div id="s3-move-backdrop" onclick="s3MoveModalClose(event)" style="display:none;position:fixed;inset:0;background:#00000088;z-index:1200;align-items:center;justify-content:center">
+		<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;width:480px;max-width:95vw">
+			<h3 style="margin-bottom:16px;font-size:1rem">✂ Déplacer vers…</h3>
+			<div style="font-size:.78rem;color:var(--text3);margin-bottom:10px" id="s3-move-items-label">0 dossier(s) sélectionné(s)</div>
+			<div style="margin-bottom:12px">
+				<label style="font-size:.78rem;color:var(--text2);display:block;margin-bottom:4px">Préfixe de destination (dans le même bucket)</label>
+				<input type="text" id="s3-move-dest" placeholder="rejected/" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:7px 10px;font:inherit" />
+			</div>
+			<div style="padding:10px 12px;background:var(--orange)11;border:1px solid var(--orange)33;border-radius:var(--rs);font-size:.78rem;color:var(--orange);margin-bottom:16px">
+				⚠ Les dossiers seront déplacés (copiés puis supprimés sur S3). Cette opération est irréversible.
+			</div>
+			<div style="display:flex;gap:8px;justify-content:flex-end">
+				<button class="btn" onclick="s3MoveModalClose()">Annuler</button>
+				<button class="btn p" onclick="s3MoveConfirm()">✂ Confirmer le déplacement</button>
+			</div>
+		</div>
+	</div>
+
 	<div id="log-panel" class="collapsed">
 		<div id="log-hdr" onclick="toggleLog()">
 			<span>Journal — <span id="log-cnt">0</span> lignes</span>
@@ -4210,7 +4324,8 @@
 			watcher: { running: false },
 			cfg: {
 				root: '/Volumes/T9/data', model: '_sync_ml_model', nas: '',
-				resample_ms: 5, max_lag_ms: 400, window_ms: 2200
+				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
+				input_format: 'custom', lerobot_input_path: '',
 			}
 		};
 
@@ -4399,21 +4514,34 @@
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
-			const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data			';
+			const fmt  = S.cfg.input_format || 'custom';
+			const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data';
+			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
+			const scanBody = { root, input_format: fmt };
+			if (fmt === 'lerobot') {
+				if (!lrPath) { _scanInProgress = false; log('Scan LeRobot : chemin dataset non configuré', 'ERROR'); return; }
+				scanBody.lerobot_path = lrPath;
+				log(`Scan LeRobot : ${lrPath}`, 'INFO');
+			}
 			try {
-				const { job_id } = await api('POST', '/api/scan', { root });
+				const { job_id } = await api('POST', '/api/scan', scanBody);
 				log(`Scan lancé (${job_id})`, 'OK');
 				pollJobUntilDone(job_id, job => {
 					if (job.status === 'done' && job.result) {
 						_scanInProgress = false;
 						const { sessions } = job.result;
-						Promise.all(sessions.map(loadSessionPipelineState)).then(() => {
+						// Pour LeRobot, on skip le loadSessionPipelineState (pas de pipeline_state.json)
+						const loaders = fmt === 'lerobot'
+							? sessions.map(s => Promise.resolve(s))
+							: sessions.map(loadSessionPipelineState);
+						Promise.all(loaders).then(() => {
 							S.sessions = sessions;
 							S.selected = new Set(sessions.map(s => s.path));
 							renderAll();
-							log(`${sessions.length} sessions détectées`, 'OK');
+							const label = fmt === 'lerobot' ? 'épisodes LeRobot' : 'sessions';
+							log(`${sessions.length} ${label} détecté(e)s`, 'OK');
 						});
 					} else if (job.status === 'failed') {
 						_scanInProgress = false;
@@ -4684,7 +4812,9 @@
 
 					const existing = body.querySelector(`.pipe-card[data-sess="${CSS.escape(sess.name)}"]`);
 
-					const badge = scoreBadgeHTML(ps);
+					const badge = sess.lerobot
+					? `<span style="margin-left:5px;font-size:.6rem;padding:1px 5px;border-radius:3px;background:#a78bfa22;color:#a78bfa;border:1px solid #a78bfa44;vertical-align:middle">LeRobot</span>`
+					: scoreBadgeHTML(ps);
 
 					if (existing && !moved) {
 						// Mise à jour en place (pas d'animation, juste rafraîchir le contenu)
@@ -4729,6 +4859,12 @@
 			ge('sess-drawer-title').textContent = sess.name;
 			ge('btn-drawer-run').onclick = () => { openStepsModal('drawer'); };
 			ge('btn-drawer-rollback').onclick = () => rollbackDrawer();
+			// Masquer les actions pipeline pour les sessions LeRobot
+			const isLR = !!sess.lerobot;
+			ge('btn-drawer-run').style.display       = isLR ? 'none' : '';
+			ge('btn-drawer-rollback').style.display  = isLR ? 'none' : '';
+			ge('btn-drawer-unlock').style.display    = isLR ? 'none' : '';
+			ge('btn-drawer-verify').style.display    = isLR ? 'none' : '';
 			renderDrawerContent(sess);
 			ge('sess-drawer').classList.add('open');
 		}
@@ -4745,6 +4881,48 @@
 
 			let html = ``;
 
+			// ── Mode LeRobot ──────────────────────────────────────────────────────
+			if (sess.lerobot) {
+				html += `
+    <div style="margin-bottom:10px;padding:8px 10px;background:#a78bfa18;border:1px solid #a78bfa44;border-radius:var(--rs)">
+      <span style="font-size:.72rem;font-weight:700;color:#a78bfa">LeRobot v3</span>
+      <span style="font-size:.72rem;color:var(--text3);margin-left:6px">${esc(sess.robot_type || '—')}</span>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Métadonnées épisode</div>
+      <table style="width:100%;font-size:.78rem">
+        <tr><td style="color:var(--text3);padding:2px 0;width:110px">Fichier</td><td style="font-family:monospace;font-size:.72rem">${esc(meta.scenario || '—')}</td></tr>
+        <tr><td style="color:var(--text3);padding:2px 0">Durée</td><td>${meta.duration_seconds != null ? meta.duration_seconds.toFixed(2) + 's' : '—'}</td></tr>
+        <tr><td style="color:var(--text3);padding:2px 0">Frames</td><td>${meta.n_frames ?? '—'}</td></tr>
+        <tr><td style="color:var(--text3);padding:2px 0">FPS</td><td>${meta.fps ?? '—'}</td></tr>
+        <tr><td style="color:var(--text3);padding:2px 0">Robot</td><td>${meta.robot_type || '—'}</td></tr>
+      </table>
+    </div>`;
+
+				const vkeys = sess.video_keys || [];
+				if (vkeys.length) {
+					html += `<div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">Vidéos disponibles</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">`;
+					vkeys.forEach(vk => {
+						const avail = sess.available_videos?.[vk];
+						html += `<span style="font-size:.72rem;padding:2px 7px;border-radius:3px;
+							background:${avail ? 'var(--green)18' : 'var(--bg3)'};
+							border:1px solid ${avail ? 'var(--green)44' : 'var(--border)'};
+							color:${avail ? 'var(--green)' : 'var(--text3)'}">${esc(vk)}</span>`;
+					});
+					html += `</div>`;
+				}
+
+				if (sess.tasks?.length) {
+					html += `<div style="font-size:.78rem;color:var(--text3);margin-bottom:4px">Tâches</div>
+    <div style="font-size:.78rem;color:var(--text2)">${esc(sess.tasks.join(', '))}</div>`;
+				}
+
+				body.innerHTML = html;
+				return;
+			}
+
+			// ── Mode Custom (pipeline standard) ──────────────────────────────────
 			// Score en haut si disponible
 			const scoreBlock = scoreBadgeHTML(ps, 'lg');
 			if (scoreBlock) html += scoreBlock;
@@ -7273,13 +7451,32 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Settings save
 		// ══════════════════════════════════════════════════════════════════
+		// ══════════════════════════════════════════════════════════════════
+		// Input format toggle (Custom ↔ LeRobot)
+		// ══════════════════════════════════════════════════════════════════
+		function _applyInputFormat(fmt) {
+			const isLR = fmt === 'lerobot';
+			ge('s-input-fmt-knob').style.left   = isLR ? '22px' : '2px';
+			ge('s-input-fmt-toggle').style.background = isLR ? 'var(--accent2)' : 'var(--bg4)';
+			ge('s-fmt-label-custom').style.color  = isLR ? 'var(--text3)' : 'var(--accent)';
+			ge('s-fmt-label-lerobot').style.color = isLR ? 'var(--accent2)' : 'var(--text3)';
+			ge('s-lerobot-input-opts').style.display = isLR ? '' : 'none';
+			S.cfg.input_format = fmt;
+		}
+
+		function toggleInputFormat() {
+			const next = S.cfg.input_format === 'lerobot' ? 'custom' : 'lerobot';
+			_applyInputFormat(next);
+		}
+
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/Volumes/T9/data			';
+			S.cfg.root = ge('s-root').value || '/Volumes/T9/data';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
 			S.cfg.max_lag_ms = +ge('s-ml').value;
 			S.cfg.window_ms = +ge('s-wn').value;
+			S.cfg.lerobot_input_path = ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = S.cfg.root;
 			ge('cfg-nas').value = S.cfg.nas;
 			ge('cfg-root-display').textContent = S.cfg.root;
@@ -7291,7 +7488,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/Volumes/T9/data				';
+				const root = c.root || '/Volumes/T9/data';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -7301,6 +7498,8 @@
 				if (c.resample_ms) { S.cfg.resample_ms = c.resample_ms; ge('s-rs').value = c.resample_ms; }
 				if (c.max_lag_ms) { S.cfg.max_lag_ms = c.max_lag_ms; ge('s-ml').value = c.max_lag_ms; }
 				if (c.window_ms) { S.cfg.window_ms = c.window_ms; ge('s-wn').value = c.window_ms; }
+				if (c.lerobot_input_path) { S.cfg.lerobot_input_path = c.lerobot_input_path; ge('s-lerobot-input-path').value = c.lerobot_input_path; }
+				_applyInputFormat(c.input_format || 'custom');
 			} catch (e) { }
 		}
 
@@ -7350,6 +7549,8 @@
 				lr_name: ge('s-lerobot-name').value,
 				lr_robot: ge('s-lerobot-robot').value,
 				lr_fps: +ge('s-lerobot-fps').value || 30,
+				lr_chunks_size: +ge('s-lerobot-chunks-size').value || 1000,
+				lr_batch_size: +ge('s-lerobot-batch-size').value || 5,
 				lr_push: ge('s-lerobot-push-hub').checked,
 				lr_token: ge('s-lerobot-hf-token').value,
 				lr_repo: ge('s-lerobot-repo').value,
@@ -7378,6 +7579,8 @@
 				if (c.lr_name) ge('s-lerobot-name').value = c.lr_name;
 				if (c.lr_robot) ge('s-lerobot-robot').value = c.lr_robot;
 				if (c.lr_fps) ge('s-lerobot-fps').value = c.lr_fps;
+				if (c.lr_chunks_size) ge('s-lerobot-chunks-size').value = c.lr_chunks_size;
+				if (c.lr_batch_size) ge('s-lerobot-batch-size').value = c.lr_batch_size;
 				if (c.lr_push) { ge('s-lerobot-push-hub').checked = c.lr_push; onHfPushChange(); }
 				if (c.lr_token) ge('s-lerobot-hf-token').value = c.lr_token;
 				if (c.lr_repo) ge('s-lerobot-repo').value = c.lr_repo;
@@ -7526,7 +7729,8 @@
 				body.dest_sftp = { host: cfg.sftp_host, port: cfg.sftp_port, user: cfg.sftp_user, password: cfg.sftp_pass, remote_path: cfg.sftp_path };
 			}
 			if (cfg.lerobot) {
-				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30, push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
+				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30, chunks_size: cfg.lr_chunks_size || 1000,
+						batch_size: cfg.lr_batch_size || 5, push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
 			}
 
 			try {
@@ -7683,6 +7887,8 @@
 					dataset_name: cfg.lr_name || 'robot_dataset',
 					robot_type: cfg.lr_robot || 'so100',
 					fps: cfg.lr_fps || 30,
+					chunks_size: cfg.lr_chunks_size || 1000,
+					batch_size: cfg.lr_batch_size || 5,
 					push_to_hub: cfg.lr_push,
 					hf_token: cfg.lr_token || '',
 					repo_id: cfg.lr_repo || '',
@@ -7917,6 +8123,7 @@
 				requestAnimationFrame(() => Object.values(TV.charts).forEach(ch => ch?.resize()));
 			}
 			if (name === 'jobs') refreshPoolStatus();
+			if (name === 's3browser') s3bInit();
 		}
 
 		function vtab(name, el) {
@@ -8006,6 +8213,7 @@
 		document.addEventListener('DOMContentLoaded', () => {
 			loadSettings();
 			loadExportSettings();
+			loadSrcS3Settings();
 			ge('s-lerobot-push-hub')?.addEventListener('change', onHfPushChange);
 			connectWS();
 			loadHealth();
@@ -8013,6 +8221,343 @@
 			log('SyncML Studio démarré', 'OK');
 			log('Étapes: scan → tracker → vidéo → flux CSV → IA sync → validation → NAS', 'DIM');
 		});
+
+		// ══════════════════════════════════════════════════════════════════
+		// Source S3 — settings save/load
+		// ══════════════════════════════════════════════════════════════════
+		function saveSrcS3Settings() {
+			const cfg = getSrcS3Cfg();
+			localStorage.setItem('syncml-src-s3-cfg', JSON.stringify(cfg));
+			log('Configuration source S3 sauvegardée', 'OK');
+		}
+
+		function loadSrcS3Settings() {
+			try {
+				const c = JSON.parse(localStorage.getItem('syncml-src-s3-cfg') || '{}');
+				if (c.bucket)   ge('s-src-s3-bucket').value   = c.bucket;
+				if (c.prefix)   ge('s-src-s3-prefix').value   = c.prefix;
+				if (c.region)   ge('s-src-s3-region').value   = c.region;
+				if (c.key)      ge('s-src-s3-key').value      = c.key;
+				if (c.secret)   ge('s-src-s3-secret').value   = c.secret;
+				if (c.localdir) ge('s-src-s3-localdir').value = c.localdir;
+			} catch (e) { }
+		}
+
+		function getSrcS3Cfg() {
+			return {
+				bucket:   ge('s-src-s3-bucket').value.trim(),
+				prefix:   ge('s-src-s3-prefix').value.trim(),
+				region:   ge('s-src-s3-region').value.trim() || 'us-east-1',
+				key:      ge('s-src-s3-key').value.trim(),
+				secret:   ge('s-src-s3-secret').value,
+				localdir: ge('s-src-s3-localdir').value.trim() || '/tmp/s3_stream',
+			};
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// S3 Browser — state & navigation
+		// ══════════════════════════════════════════════════════════════════
+		const S3B = {
+			bucket:   '',
+			prefix:   '',         // préfixe courant (toujours "/" à la fin ou "")
+			rootPrefix: '',       // préfixe racine configuré
+			folders:  [],
+			files:    [],
+			selected: new Set(),  // préfixes de dossiers sélectionnés
+			loading:  false,
+		};
+
+		function s3bInit() {
+			const cfg = getSrcS3Cfg();
+			if (!cfg.bucket) {
+				s3bStatus('Configurez d\'abord un bucket S3 dans Paramètres → Source S3.', 'warn');
+				return;
+			}
+			S3B.bucket     = cfg.bucket;
+			S3B.rootPrefix = cfg.prefix;
+			S3B.prefix     = cfg.prefix;
+			ge('s3b-bucket-label').textContent = cfg.bucket;
+			s3bLoad(cfg.prefix);
+		}
+
+		async function s3bLoad(prefix) {
+			if (S3B.loading) return;
+			S3B.loading = true;
+			S3B.selected.clear();
+			s3bUpdateActionsBar();
+			ge('s3b-loading').style.display = '';
+			ge('s3b-empty').style.display = 'none';
+			ge('s3b-list').innerHTML = '';
+			s3bStatus('', '');
+
+			try {
+				const cfg = getSrcS3Cfg();
+				const r = await api('POST', '/api/s3/browse', {
+					bucket:     S3B.bucket,
+					prefix:     prefix,
+					access_key: cfg.key,
+					secret_key: cfg.secret,
+					region:     cfg.region,
+				});
+				S3B.folders  = r.folders;
+				S3B.files    = r.files;
+				S3B.prefix   = r.prefix;
+
+				ge('s3b-prefix-label').textContent = r.prefix;
+				s3bRenderBreadcrumb(r.prefix);
+				s3bRenderList();
+			} catch (e) {
+				s3bStatus('Erreur : ' + e.message, 'error');
+			} finally {
+				S3B.loading = false;
+				ge('s3b-loading').style.display = 'none';
+			}
+		}
+
+		function s3bRenderBreadcrumb(prefix) {
+			const bc = ge('s3b-breadcrumb');
+			bc.innerHTML = '';
+
+			const root = S3B.rootPrefix;
+			const parts = prefix.replace(root, '').split('/').filter(Boolean);
+
+			// Lien racine
+			const rootSpan = document.createElement('span');
+			rootSpan.style.cssText = 'cursor:pointer;color:var(--accent)';
+			rootSpan.textContent = S3B.bucket + '/' + (root || '');
+			rootSpan.onclick = () => s3bLoad(root);
+			bc.appendChild(rootSpan);
+
+			let cumul = root;
+			parts.forEach((part, i) => {
+				cumul += part + '/';
+				const sep = document.createElement('span');
+				sep.textContent = ' / ';
+				sep.style.color = 'var(--text3)';
+				bc.appendChild(sep);
+
+				const span = document.createElement('span');
+				span.textContent = part;
+				if (i === parts.length - 1) {
+					span.style.color = 'var(--text)';
+				} else {
+					const c = cumul;
+					span.style.cssText = 'cursor:pointer;color:var(--accent)';
+					span.onclick = () => s3bLoad(c);
+				}
+				bc.appendChild(span);
+			});
+
+			ge('s3b-btn-up').disabled = (prefix === root || prefix === '' || prefix === root);
+		}
+
+		function s3bRenderList() {
+			const list = ge('s3b-list');
+			list.innerHTML = '';
+
+			if (!S3B.folders.length && !S3B.files.length) {
+				ge('s3b-empty').style.display = '';
+				return;
+			}
+			ge('s3b-empty').style.display = 'none';
+
+			const rowStyle = `display:grid;grid-template-columns:28px 1fr 110px 90px;align-items:center;gap:0;
+				padding:9px 14px;border-bottom:1px solid var(--border)22;cursor:pointer;transition:background .1s`;
+
+			// Dossiers
+			S3B.folders.forEach(f => {
+				const div = document.createElement('div');
+				div.style.cssText = rowStyle;
+				const isSelected = S3B.selected.has(f.prefix);
+				if (isSelected) div.style.background = 'var(--accent)18';
+
+				div.innerHTML = `
+					<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="s3bToggle(event,'${f.prefix}')" style="cursor:pointer">
+					<span style="display:flex;align-items:center;gap:8px;color:var(--text)">
+						<span style="font-size:1rem">📁</span>
+						<span style="font-weight:500">${esc(f.name)}</span>
+					</span>
+					<span style="text-align:right;font-size:.75rem;color:var(--text3)">—</span>
+					<span style="text-align:right;font-size:.75rem;color:var(--text3)">—</span>
+				`;
+
+				// Naviguer dans le dossier au clic (sauf sur la checkbox)
+				div.addEventListener('click', e => {
+					if (e.target.type === 'checkbox') return;
+					s3bLoad(f.prefix);
+				});
+
+				div.addEventListener('mouseenter', () => { if (!S3B.selected.has(f.prefix)) div.style.background = 'var(--bg3)'; });
+				div.addEventListener('mouseleave', () => { div.style.background = S3B.selected.has(f.prefix) ? 'var(--accent)18' : ''; });
+				list.appendChild(div);
+			});
+
+			// Fichiers (lecture seule, non sélectionnables)
+			S3B.files.forEach(f => {
+				const div = document.createElement('div');
+				div.style.cssText = rowStyle + ';cursor:default';
+				const sz = f.size > 1048576 ? (f.size/1048576).toFixed(1)+' Mo'
+				         : f.size > 1024    ? (f.size/1024).toFixed(0)+' Ko'
+				         :                    f.size+' o';
+				const mod = f.last_modified ? f.last_modified.slice(0,10) : '—';
+				div.innerHTML = `
+					<span></span>
+					<span style="display:flex;align-items:center;gap:8px;color:var(--text2)">
+						<span style="font-size:.9rem">📄</span>
+						<span style="font-size:.82rem">${esc(f.name)}</span>
+					</span>
+					<span style="text-align:right;font-size:.75rem;color:var(--text3)">${esc(sz)}</span>
+					<span style="text-align:right;font-size:.75rem;color:var(--text3)">${esc(mod)}</span>
+				`;
+				list.appendChild(div);
+			});
+		}
+
+		function s3bToggle(e, prefix) {
+			e.stopPropagation();
+			if (S3B.selected.has(prefix)) {
+				S3B.selected.delete(prefix);
+			} else {
+				S3B.selected.add(prefix);
+			}
+			s3bUpdateActionsBar();
+			s3bRenderList();
+		}
+
+		function s3bDeselectAll() {
+			S3B.selected.clear();
+			s3bUpdateActionsBar();
+			s3bRenderList();
+		}
+
+		function s3bUpdateActionsBar() {
+			const bar = ge('s3b-actions-bar');
+			const n = S3B.selected.size;
+			bar.style.display = n > 0 ? 'flex' : 'none';
+			ge('s3b-sel-count').textContent = `${n} dossier${n>1?'s':''} sélectionné${n>1?'s':''}`;
+		}
+
+		function s3bNavUp() {
+			const p = S3B.prefix.replace(/\/$/, '');
+			const parent = p.substring(0, p.lastIndexOf('/') + 1);
+			const root   = S3B.rootPrefix;
+			s3bLoad(parent.length >= root.length ? parent : root);
+		}
+
+		function s3bRefresh() {
+			s3bLoad(S3B.prefix);
+		}
+
+		function s3bStatus(msg, type) {
+			const el = ge('s3b-status');
+			if (!msg) { el.style.display = 'none'; return; }
+			const colors = {
+				error: 'var(--red)',
+				warn:  'var(--orange)',
+				ok:    'var(--green)',
+				info:  'var(--text2)',
+			};
+			el.style.cssText = `display:block;padding:10px 14px;border-radius:var(--r);margin-bottom:12px;font-size:.82rem;
+				background:${colors[type]||'var(--text2)'}18;border:1px solid ${colors[type]||'var(--text2)'}44;
+				color:${colors[type]||'var(--text2)'}`;
+			el.textContent = msg;
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// S3 Browser — Stream
+		// ══════════════════════════════════════════════════════════════════
+		async function s3bStreamSelected() {
+			const cfg = getSrcS3Cfg();
+			if (!cfg.localdir) { alert('Configurez d\'abord un dossier local dans Paramètres → Source S3'); return; }
+
+			const prefixes = [...S3B.selected];
+			if (!prefixes.length) return;
+
+			s3bStatus(`Démarrage du streaming de ${prefixes.length} dossier(s)…`, 'info');
+
+			for (const prefix of prefixes) {
+				const name = prefix.replace(/\/$/, '').split('/').pop();
+				const localDir = cfg.localdir.replace(/\/$/, '') + '/' + name;
+				try {
+					const r = await api('POST', '/api/s3/stream', {
+						bucket:     S3B.bucket,
+						prefix:     prefix,
+						local_dir:  localDir,
+						access_key: cfg.key,
+						secret_key: cfg.secret,
+						region:     cfg.region,
+					});
+					log(`S3 stream démarré → ${name}  (job ${r.job_id})`, 'OK');
+				} catch(e) {
+					log(`Erreur stream ${name}: ${e.message}`, 'ERROR');
+				}
+			}
+
+			s3bStatus(`${prefixes.length} job(s) de streaming lancé(s) — suivez la progression dans Jobs.`, 'ok');
+			S3B.selected.clear();
+			s3bUpdateActionsBar();
+			s3bRenderList();
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// S3 Browser — Move modal
+		// ══════════════════════════════════════════════════════════════════
+		function s3bMoveSelected() {
+			const n = S3B.selected.size;
+			if (!n) return;
+			ge('s3-move-items-label').textContent = `${n} dossier${n>1?'s':''} sélectionné${n>1?'s':''}`;
+			ge('s3-move-dest').value = '';
+			ge('s3-move-backdrop').style.display = 'flex';
+		}
+
+		function s3MoveModalClose(e) {
+			if (e && e.target !== ge('s3-move-backdrop')) return;
+			ge('s3-move-backdrop').style.display = 'none';
+		}
+
+		async function s3MoveConfirm() {
+			const dest = ge('s3-move-dest').value.trim();
+			if (!dest) { alert('Entrez un préfixe de destination'); return; }
+
+			const cfg = getSrcS3Cfg();
+			const prefixes = [...S3B.selected];
+			ge('s3-move-backdrop').style.display = 'none';
+
+			s3bStatus(`Déplacement de ${prefixes.length} dossier(s) vers "${dest}"…`, 'info');
+			let ok = 0, errors = 0;
+
+			for (const prefix of prefixes) {
+				const name = prefix.replace(/\/$/, '').split('/').pop();
+				const destPrefix = dest.replace(/\/$/, '') + '/' + name + '/';
+				try {
+					const r = await api('POST', '/api/s3/move', {
+						bucket:      S3B.bucket,
+						src_prefix:  prefix,
+						dest_prefix: destPrefix,
+						access_key:  cfg.key,
+						secret_key:  cfg.secret,
+						region:      cfg.region,
+					});
+					log(`S3 déplacé : ${prefix} → ${destPrefix}  (${r.moved} objets)`, 'OK');
+					ok++;
+				} catch(e) {
+					log(`Erreur déplacement ${name}: ${e.message}`, 'ERROR');
+					errors++;
+				}
+			}
+
+			S3B.selected.clear();
+			s3bUpdateActionsBar();
+
+			if (errors === 0) {
+				s3bStatus(`${ok} dossier(s) déplacé(s) avec succès.`, 'ok');
+			} else {
+				s3bStatus(`${ok} déplacé(s), ${errors} erreur(s). Voir le journal.`, 'warn');
+			}
+
+			// Rafraîchir la liste après le déplacement
+			s3bLoad(S3B.prefix);
+		}
 	</script>
 	<script src="/static/tv3d.js"></script>
 	<script src="/static/annotator.js"></script>

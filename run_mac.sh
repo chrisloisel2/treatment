@@ -168,16 +168,12 @@ if [ "$CMD" = "server" ]; then
   echo "  URL      : http://${HOST}:${PORT}"
   echo ""
 
-  # Ouvre le navigateur après un court délai
   if [ "$NO_BROWSER" = "false" ] && [ "$OPEN_BROWSER" = "true" ] && command -v open &>/dev/null; then
     (sleep 2 && open "http://127.0.0.1:${PORT}") &
   fi
 
-  # cd dans server/ pour que __file__ et sys.path résolvent server/static/
-  # et non pas le vieux server.py à la racine du projet
-  cd "${SCRIPT_DIR}/server"
   BRONZE_DIR="$BRONZE_DIR" SILVER_DIR="$SILVER_DIR" \
-    "${VENV_DIR}/bin/python" "server.py" \
+    "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/main.py" server \
       --host "$HOST" \
       --port "$PORT" \
       "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
@@ -194,7 +190,7 @@ if [ "$CMD" = "run" ]; then
   echo "  Bronze : ${BRONZE_DIR}"
   echo ""
 
-  "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/pipeline/pipeline.py" run \
+  "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/main.py" run \
     --bronze-dir "$BRONZE_DIR" \
     "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
   exit $?
@@ -216,7 +212,7 @@ if [ "$CMD" = "gui" ]; then
   echo ""
 
   BRONZE_DIR="$BRONZE_DIR" SILVER_DIR="$SILVER_DIR" \
-    "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/server/app_gui.py" \
+    "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/main.py" gui \
       "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
   exit $?
 fi

@@ -75,6 +75,9 @@ import matplotlib.pyplot as plt
 
 import multiprocessing
 import os
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+from check import check_session, MIN_IA_SCORE as _CHECK_MIN_IA_SCORE
 
 import torch
 import torch.nn as nn
@@ -119,7 +122,7 @@ PSEUDO_POS_THR = 0.72
 PSEUDO_NEG_THR = 0.30
 EDGE_MARGIN_MS = 20.0
 
-MIN_CONFIDENCE_TO_APPLY = 0.62
+MIN_CONFIDENCE_TO_APPLY = _CHECK_MIN_IA_SCORE  # aligné sur check.py
 MIN_PEAK_MARGIN = 0.06
 MIN_PAIR_WINDOWS = 10
 
@@ -132,7 +135,7 @@ MODEL_DIRNAME = "_sync_ml_model"
 RESULTS_JSON  = "sync_ml_advanced_results.json"
 
 # Espace de travail fixe — toutes les sessions sont dans ce répertoire
-ROOT_DIR = Path("/mnt/ingest")
+ROOT_DIR = Path("/Volumes/T9/data")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -800,56 +803,9 @@ def train_model(model, loader, epochs, lr, weight_decay):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _session_is_clean(session_dir: Path) -> bool:
-    """
-    Retourne True uniquement si la session a été nettoyée par les deux étapes
-    obligatoires de la pipeline d'ingestion :
-
-      1. verify_labels  — vérification des labels caméra (left/right/head)
-         → metadata.json doit contenir "camera_label_verification.global_ok" == True
-
-      2. tracker        — validation du fichier tracker_positions.csv
-         → la session doit avoir un pipeline_state.json avec les étapes
-           "tracker" et "video" en statut "done"
-
-    Une session qui ne satisfait pas ces deux conditions est exclue de
-    l'entraînement pour éviter de polluer le modèle avec des données
-    mal labelisées ou des trackers corrompus.
-    """
-    meta_path  = session_dir / "metadata.json"
-    state_path = session_dir / "pipeline_state.json"
-
-    if not meta_path.exists():
-        return False
-
-    # ── Condition 1 : labels caméra vérifiés ─────────────────────────────
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-
-    label_verif = meta.get("camera_label_verification")
-    if not isinstance(label_verif, dict):
-        return False
-    if not label_verif.get("global_ok", False):
-        return False
-    if label_verif.get("confidence", 0.0) < 0.90:
-        return False
-
-    # ── Condition 2 : étapes tracker + video validées par la pipeline ────
-    if not state_path.exists():
-        return False
-
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-
-    steps = state.get("steps", {})
-    for required_step in ("tracker", "video", "verify_labels"):
-        if steps.get(required_step, {}).get("status") != "done":
-            return False
-
-    return True
+    """Délègue à check_session — exclut les sessions avec score < 40% (bloquées ou très mauvaises)."""
+    report = check_session(session_dir, model=None)
+    return report.score >= 40.0 or not report.is_blocked()
 
 
 def discover_sessions(root: Path, only_session: Optional[str]) -> List[Path]:
@@ -1284,14 +1240,23 @@ def estimate_session(root: Path, session_dir: Path, args):
     save_session_results(session_dir, estimates, args.dry_run)
 
     if args.apply and not args.dry_run:
-        applied_targets = set()
-        for est in estimates:
-            if not est.is_reliable:
-                continue
-            if est.tgt_name in applied_targets:
-                continue
-            apply_shift_to_target(session_dir, est.tgt_name, est.shift_to_apply_ms, dry_run=False)
-            applied_targets.add(est.tgt_name)
+        pre_report = check_session(session_dir, model=None)
+        if pre_report.verdict == "FAIL":
+            failed = [g for g in pre_report.gates if not g.passed]
+            details = "\n".join(f"         ✗ {g.name}: {g.message}" for g in failed)
+            print(
+                f"[apply] {session_dir.name} — BLOQUÉ (score={pre_report.score:.0f}%)\n"
+                + (details if details else f"         {pre_report.blocking_reason}")
+            )
+        else:
+            applied_targets = set()
+            for est in estimates:
+                if not est.is_reliable:
+                    continue
+                if est.tgt_name in applied_targets:
+                    continue
+                apply_shift_to_target(session_dir, est.tgt_name, est.shift_to_apply_ms, dry_run=False)
+                applied_targets.add(est.tgt_name)
 
     return estimates
 

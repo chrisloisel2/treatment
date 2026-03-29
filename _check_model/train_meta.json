@@ -1,0 +1,9 @@
+{
+  "n_sessions": 92,
+  "n_examples": 42917,
+  "n_pos": 4295,
+  "n_neg": 34327,
+  "epochs": 24,
+  "emb": 128,
+  "best_acc": 100.0
+}

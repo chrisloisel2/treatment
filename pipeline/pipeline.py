@@ -4,13 +4,13 @@
 Pipeline d'ingestion big data — 8 étapes.
 
 Chemins :
-  /mnt/storage/bronze/    — source ET espace de travail. Les sessions sont déposées
+  /Volumes/T9/data/    — source ET espace de travail. Les sessions sont déposées
                    directement ici par l'opérateur. Tout le traitement se fait
                    sur place, en mode safe (aucune suppression sans confirmation).
  /home/ia/silver    — sortie finale validée. Écriture uniquement si write_mode=True.
 
 Étapes :
-  1. DETECT         — Vérifie l'intégrité minimale de la session dans /mnt/storage/bronze/.
+  1. DETECT         — Vérifie l'intégrité minimale de la session dans /Volumes/T9/data/.
   2. ROTATE         — Rotation 180° des vidéos (FFmpeg, idempotente)
   3. TRACKER        — Validation du fichier tracker_positions.csv
   4. VIDEO          — Validation des vidéos et fichiers JSONL
@@ -22,9 +22,9 @@ Chemins :
   8. STORE          — Copie vers/home/ia/silver (seulement si write_mode=True)
 
 Chaque session traverse les étapes indépendamment.
-L'état de chaque étape est persisté dans /mnt/storage/bronze//<session>/pipeline_state.json.
+L'état de chaque étape est persisté dans /Volumes/T9/data//<session>/pipeline_state.json.
 Tout rollback restaure les .bak créés automatiquement.
-Aucune suppression dans /mnt/storage/bronze/ sauf si delete_after_store=True (opt-in explicite).
+Aucune suppression dans /Volumes/T9/data/ sauf si delete_after_store=True (opt-in explicite).
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ if str(_ROOT) not in sys.path:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Chemins fixes ─────────────────────────────────────────────────────────────
-INGEST_DIR   = Path("/mnt/storage/bronze/")  # source ET espace de travail (déposé par l'opérateur)
+INGEST_DIR   = Path("/Volumes/T9/data/")  # source ET espace de travail (déposé par l'opérateur)
 SILVER_DIR   = Path("/home/exoria/silver")     # sortie finale validée (écriture explicite)
 MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
 # Alias pour compatibilité rétrograde
@@ -124,14 +124,14 @@ class StepState:
 @dataclass
 class SessionPipelineState:
     session_name:   str
-    session_path:   str           # chemin dans /mnt/storage/bronze/
+    session_path:   str           # chemin dans /Volumes/T9/data/
     created_at:  str = field(default_factory=lambda: _now())
     updated_at:  str = field(default_factory=lambda: _now())
     current_step: str = "detect"
     finished:    bool = False
     success:     bool = False
     write_mode:  bool = False        # si True, copie vers/home/ia/silver après validation
-    delete_after_store: bool = False # si True, supprime de /mnt/storage/bronze/
+    delete_after_store: bool = False # si True, supprime de /Volumes/T9/data/
     error:       Optional[str] = None
     steps:       Dict[str, StepState] = field(default_factory=dict)
     # Résultats pour accès rapide
@@ -363,7 +363,11 @@ def step_check_sync(state: SessionPipelineState, log: PipelineLogger) -> dict:
     # Lire le trigger depuis metadata.json
     meta_path = sess / "metadata.json"
     meta = json.loads(meta_path.read_text())
-    trigger_ms = int(meta["trigger_time_ns"]) // 1_000_000
+    trigger_ns = meta.get("trigger_time_ns") or meta.get("start_time_ns")
+    if trigger_ns is None:
+        log("check_sync: trigger_time_ns et start_time_ns absents — vérification ignorée", "WARN")
+        return {"status": "skipped", "reason": "no_trigger"}
+    trigger_ms = int(trigger_ns) // 1_000_000
 
     videos_dir = sess / "videos"
     camera_delays: Dict[str, int] = {}
@@ -443,7 +447,8 @@ def step_verify(state: SessionPipelineState, log: PipelineLogger) -> dict:
     sess = Path(state.session_path)
     meta_path = sess / "metadata.json"
     meta = json.loads(meta_path.read_text())
-    trigger_ms = int(meta["trigger_time_ns"]) // 1_000_000
+    trigger_ns = meta.get("trigger_time_ns") or meta.get("start_time_ns")
+    trigger_ms = int(trigger_ns) // 1_000_000 if trigger_ns is not None else None
 
     issues: List[str] = []
     warnings_list: List[str] = []
@@ -561,7 +566,7 @@ def step_verify(state: SessionPipelineState, log: PipelineLogger) -> dict:
                     except Exception:
                         pass
                     break
-        if first_ms is not None:
+        if first_ms is not None and trigger_ms is not None:
             cam_delays[cam] = first_ms - trigger_ms
 
     stats["video_delays_ms"] = cam_delays
@@ -1319,12 +1324,12 @@ def step_validate(state: SessionPipelineState, log: PipelineLogger,
 
 def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
     """
-    Étape 8 — Copie la session traitée de /mnt/storage/bronze/ vers/home/ia/silver.
+    Étape 8 — Copie la session traitée de /Volumes/T9/data/ vers/home/ia/silver.
     N'est appelée que si write_mode=True dans l'état de session.
     Exclut les fichiers temporaires (.bak, locks, backups).
-    Si delete_after_store=True, supprime la session de /mnt/storage/bronze/ après copie.
+    Si delete_after_store=True, supprime la session de /Volumes/T9/data/ après copie.
     """
-    sess        = Path(state.session_path)   # dans /mnt/storage/bronze/
+    sess        = Path(state.session_path)   # dans /Volumes/T9/data/
     silver_path = SILVER_DIR / sess.name
 
     if not SILVER_DIR.exists():
@@ -1376,15 +1381,15 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
         "OK",
     )
 
-    # Suppression de /mnt/storage/bronze/ seulement si opt-in explicite
+    # Suppression de /Volumes/T9/data/ seulement si opt-in explicite
     deleted = False
     if state.delete_after_store:
         log(f"Suppression de {sess} (delete_after_store=True)…", "WARN")
         shutil.rmtree(sess, ignore_errors=True)
         deleted = True
-        log("Session supprimée de /mnt/storage/bronze/", "OK")
+        log("Session supprimée de /Volumes/T9/data/", "OK")
     else:
-        log("Session conservée dans /mnt/storage/bronze/ (delete_after_store=False)", "INFO")
+        log("Session conservée dans /Volumes/T9/data/ (delete_after_store=False)", "INFO")
 
     return {
         "silver_path": str(silver_path),
@@ -1439,8 +1444,8 @@ class PipelineRunner:
 
         if not sess.exists():
             raise FileNotFoundError(
-                f"Session introuvable dans /mnt/storage/bronze/: {sess}\n"
-                "Déposez la session dans /mnt/storage/bronze/ avant de lancer la pipeline."
+                f"Session introuvable dans /Volumes/T9/data/: {sess}\n"
+                "Déposez la session dans /Volumes/T9/data/ avant de lancer la pipeline."
             )
 
         # Charger ou créer l'état dans le dossier session
@@ -1554,7 +1559,7 @@ class PipelineRunner:
                 else:
                     state.steps["store"].status  = StepStatus.SKIPPED
                     state.steps["store"].message = "write_mode désactivé — aucune écriture vers/home/ia/silver"
-                    self.log("Store ignoré (write_mode=False) — données disponibles dans /mnt/storage/bronze/", "INFO")
+                    self.log("Store ignoré (write_mode=False) — données disponibles dans /Volumes/T9/data/", "INFO")
 
             state.finished = True
             state.success  = True
@@ -1661,7 +1666,7 @@ class _StepContext:
 
 class IngestionWatcher:
     """
-    Surveille /mnt/storage/bronze/ et lance la pipeline automatiquement
+    Surveille /Volumes/T9/data/ et lance la pipeline automatiquement
     sur les nouvelles sessions déposées par l'opérateur.
     Si write_mode=True, les sessions validées sont copiées vers/home/ia/silver.
     """
@@ -1718,7 +1723,7 @@ class IngestionWatcher:
             time.sleep(self.poll_interval)
 
     def _scan(self):
-        """Scanne /mnt/storage/bronze/ pour de nouvelles sessions déposées."""
+        """Scanne /Volumes/T9/data/ pour de nouvelles sessions déposées."""
         if not self.watch_dir.exists():
             return
         for child in sorted(self.watch_dir.iterdir()):
@@ -1775,7 +1780,7 @@ class IngestionWatcher:
         return list(self._seen)
 
     def enqueue(self, session_path: str):
-        """Enfile manuellement une session (chemin dans /mnt/storage/bronze/)."""
+        """Enfile manuellement une session (chemin dans /Volumes/T9/data/)."""
         with self._lock:
             self._queue.append(Path(session_path))
 
@@ -1928,9 +1933,12 @@ if __name__ == "__main__":
 
     # ── Sous-commande : run ────────────────────────────────────────────────
     p_run = sub.add_parser("run", help=f"Traiter des sessions dans {INGEST_DIR}")
+    p_run.add_argument("--bronze-dir", type=Path, default=Path("/Volumes/T9/data/"),
+                       metavar="DIR",
+                       help="Dossier de travail bronze (défaut: /Volumes/T9/data/)")
     grp = p_run.add_mutually_exclusive_group(required=True)
     grp.add_argument("--session", metavar="NAME",
-                     help=f"Traiter une session spécifique dans {INGEST_DIR}")
+                     help="Traiter une session spécifique dans --bronze-dir")
     grp.add_argument("--all", action="store_true",
                      help="Traiter toutes les sessions non encore traitées")
     p_run.add_argument("--write", action="store_true", default=False,
@@ -1971,6 +1979,17 @@ if __name__ == "__main__":
     p_tr.add_argument("--lr",         type=float, default=None)
 
     args = top.parse_args()
+
+    # ── Dossier de travail dynamique (run uniquement) ───────────────────────
+    if args.cmd == "run":
+        import sys as _sys
+        _mod = _sys.modules[__name__]
+        _mod.INGEST_DIR   = args.bronze_dir
+        _mod.MODEL_DIR    = args.bronze_dir / "_sync_ml_model"
+        _mod.DATASETS_DIR = args.bronze_dir
+        INGEST_DIR   = args.bronze_dir
+        MODEL_DIR    = _mod.MODEL_DIR
+        DATASETS_DIR = _mod.DATASETS_DIR
 
     # ── preprocess ─────────────────────────────────────────────────────────
     if args.cmd == "preprocess":
@@ -2022,7 +2041,7 @@ if __name__ == "__main__":
         "label_min_confidence": args.label_min_confidence,
     }
 
-    # ── Résolution des sessions à traiter (depuis /mnt/storage/bronze/) ────────────
+    # ── Résolution des sessions à traiter (depuis /Volumes/T9/data/) ────────────
     if args.session:
         source_paths = [INGEST_DIR / args.session]
         if not source_paths[0].is_dir():

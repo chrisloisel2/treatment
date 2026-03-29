@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /mnt/storage/bronze  → source brute, lecture seule
-  /mnt/storage/bronze/    → espace de travail (copie de travail)
+  /Volumes/T9/data  → source brute, lecture seule
+  /Volumes/T9/data/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/storage/bronze")
+    INGEST_DIR = Path("/Volumes/T9/data")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/storage/bronze"
+DEFAULT_WATCH_DIR = "/Volumes/T9/data"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -286,7 +286,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /mnt/storage/bronze/ (sessions déposées par l'opérateur)
+        # Découverte dans /Volumes/T9/data/ (sessions déposées par l'opérateur)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
             if s.is_dir() and not s.name.startswith("_")
@@ -689,7 +689,9 @@ def _get_process_pool() -> concurrent.futures.ProcessPoolExecutor:
 def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore[name-defined]
                      write_mode: bool, force_flux: bool,
                      delete_after_store: bool = False,
-                     steps_whitelist: Optional[List[str]] = None):
+                     steps_whitelist: Optional[List[str]] = None,
+                     auto_reject_missing: bool = False,
+                     reject_path: Optional[str] = None):
     try:
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
         if not _session_writable(source_path):
@@ -733,6 +735,35 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
             progress = 100 if result["success"] else job.progress,
             error    = result.get("error"),
         )
+
+        # Rejet automatique si fichiers requis manquants et option activée
+        if not result["success"] and auto_reject_missing and reject_path:
+            from pipeline.pipeline import REQUIRED_FILES
+            sess_path = Path(source_path)
+            missing_required = any(
+                not (sess_path / f).exists() for f in REQUIRED_FILES
+            )
+            error_msg = result.get("error", "")
+            missing_signals = (
+                "No such file or directory" in error_msg
+                or "Fichier manquant" in error_msg
+                or "Détection échouée" in error_msg
+            )
+            if missing_required or missing_signals:
+                import shutil
+                sess = Path(source_path)
+                dest_root = Path(reject_path)
+                _log_job(job, f"Fichiers requis manquants — rejet automatique vers {dest_root}", "WARN")
+                try:
+                    dest_root.mkdir(parents=True, exist_ok=True)
+                    dest = dest_root / sess.name
+                    if dest.exists():
+                        dest = dest_root / f"{sess.name}_{int(time.time())}"
+                    shutil.move(str(sess), str(dest))
+                    _log_job(job, f"Session rejetée automatiquement → {dest}", "WARN")
+                except Exception as re:
+                    _log_job(job, f"Rejet automatique échoué : {re}", "ERROR")
+
     except Exception:
         err = traceback.format_exc()
         _log_job(job, err, "ERROR")
@@ -786,7 +817,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /mnt/storage/bronze/
+    session:       str        # chemin dans /Volumes/T9/data/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -795,14 +826,16 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:            str          # nom ou chemin de session dans /mnt/storage/bronze/
-    write_mode:         bool  = False
-    delete_after_store: bool  = False
-    force_flux:         bool  = False
-    resample_ms:        float = 5.0
-    max_lag_ms:         float = 400.0
-    window_ms:          float = 2200.0
-    steps:              Optional[List[str]] = None  # None = toutes les étapes
+    session:              str          # nom ou chemin de session dans /Volumes/T9/data/
+    write_mode:           bool  = False
+    delete_after_store:   bool  = False
+    force_flux:           bool  = False
+    resample_ms:          float = 5.0
+    max_lag_ms:           float = 400.0
+    window_ms:            float = 2200.0
+    steps:                Optional[List[str]] = None  # None = toutes les étapes
+    auto_reject_missing:  bool  = False
+    reject_path:          Optional[str] = None
 
 class WatcherStartRequest(BaseModel):
     watch_dir:          str   = DEFAULT_WATCH_DIR
@@ -848,7 +881,7 @@ async def health():
 
 @app.post("/api/scan")
 async def scan():
-    """Lance un scan asynchrone de /mnt/storage/bronze."""
+    """Lance un scan asynchrone de /Volumes/T9/data."""
     job = _new_job("scan")
     threading.Thread(target=_worker_scan, args=(job,), daemon=True).start()
     return {"job_id": job.id}
@@ -866,7 +899,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/bronze/."""
+    """Lance un entraînement asynchrone sur les sessions de /Volumes/T9/data/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -887,7 +920,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /mnt/storage/bronze/."""
+    """Lance une inférence asynchrone sur une session de /Volumes/T9/data/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -931,20 +964,21 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/bronze/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /Volumes/T9/data/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/storage/bronze/
+    # req.session peut être un nom ou un chemin complet dans /Volumes/T9/data/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
     threading.Thread(
         target = _worker_pipeline,
         args   = (job, source_path, params, req.write_mode, req.force_flux,
-                  req.delete_after_store, req.steps),
+                  req.delete_after_store, req.steps,
+                  req.auto_reject_missing, req.reject_path),
         daemon = True,
     ).start()
     return {"job_id": job.id}
@@ -952,7 +986,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /mnt/storage/bronze/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /Volumes/T9/data/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -1088,6 +1122,94 @@ async def pipeline_verify(req: PipelineStateRequest):
         raise HTTPException(500, str(e))
 
 
+@app.post("/api/pipeline/check")
+async def pipeline_check(req: PipelineStateRequest):
+    """Lance check_session sur une session (diagnostic seul, sans correction)."""
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    job = _new_job("check")
+    threading.Thread(target=_worker_check_only, args=(job, sess), daemon=True).start()
+    return {"job_id": job.id}
+
+
+@app.post("/api/pipeline/check_score")
+async def pipeline_check_score(req: PipelineStateRequest):
+    """Retourne immédiatement le score check.py pour une session (sans job).
+
+    Utilisé par le drawer de vérification dans la page Sessions.
+    Écrit le score dans metadata.json["check_score"] et ["check_ia_score"].
+    """
+    import asyncio
+    from check import check_session, load_model
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+
+    loop = asyncio.get_event_loop()
+    def _run():
+        model = load_model()
+        return check_session(sess, model=model)
+
+    report = await loop.run_in_executor(None, _run)
+
+    # Persister le score dans metadata.json
+    meta_path = sess / "metadata.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        meta["check_score"]    = report.score
+        meta["check_ia_score"] = report.ia_score
+        meta["check_blocking"] = report.blocking_reason
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+    failed_gates = [{"name": g.name, "message": g.message} for g in report.gates if not g.passed]
+    return {
+        "status":          "ok" if report.score >= 70 else ("issues" if report.score >= 40 else "fail"),
+        "score":           report.score,
+        "ia_score":        report.ia_score,
+        "blocking_reason": report.blocking_reason,
+        "failed_gates":    failed_gates,
+    }
+
+
+def _worker_check_only(job: "Job", sess: Path):
+    """Worker thread : check_session seul, sans appliquer de correctif."""
+    try:
+        from check import check_session
+        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
+        _log_job(job, f"Diagnostic {sess.name}…", "INFO")
+
+        report = check_session(sess, model=None)
+
+        failed_gates = [g for g in report.gates if not g.passed]
+        for g in failed_gates:
+            _log_job(job, f"  ✗ {g.name}: {g.message}", "ERROR")
+
+        score_pct = report.score
+        log_level = "OK" if score_pct >= 70 else ("WARN" if score_pct >= 40 else "ERROR")
+        _log_job(job, f"Score : {score_pct:.0f}%  (IA={report.ia_score:.3f})", log_level)
+        _update_job(
+            job,
+            status=JobStatus.DONE,
+            ended_at=_now(),
+            progress=100,
+            result={
+                "session":  str(sess),
+                "score":    score_pct,
+                "ia_score": report.ia_score,
+                "verdict":  report.verdict,
+                "gates":    [{"name": g.name, "passed": g.passed, "message": g.message} for g in report.gates],
+                "blocking_reason": report.blocking_reason,
+            },
+        )
+    except Exception:
+        err = traceback.format_exc()
+        _log_job(job, err, "ERROR")
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
+
+
 @app.post("/api/pipeline/align_pro")
 async def pipeline_align_pro(req: PipelineStateRequest):
     """
@@ -1110,37 +1232,91 @@ async def pipeline_align_pro(req: PipelineStateRequest):
 
 
 def _worker_align_pro(job: "Job", sess: Path, force: bool = False):
-    """Worker thread : exécute pipeline_align_pro.align_session en sous-processus."""
-    import subprocess, sys
+    """Worker thread : check.py → diagnostic + fix_camera_offset si nécessaire."""
     try:
+        from check import check_session
+        import importlib.util
+
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=5)
-        _log_job(job, f"align_pro démarré sur {sess.name}", "INFO")
+        _log_job(job, f"Check démarré sur {sess.name}", "INFO")
 
-        script = Path(__file__).resolve().parent.parent / "pipeline_align_pro.py"
-        cmd = [sys.executable, str(script), str(sess)]
-        if force:
-            cmd.append("--force")
+        # ── Étape 1 : diagnostic via check_session ────────────────────────
+        report = check_session(sess, model=None)
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                _log_job(job, line, "INFO")
+        failed_gates = [g for g in report.gates if not g.passed]
+        for g in failed_gates:
+            _log_job(job, f"  ✗ {g.name}: {g.message}", "ERROR")
 
-        proc.wait()
-        if proc.returncode == 0:
-            _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100)
-            _log_job(job, "align_pro terminé avec succès", "OK")
+        _log_job(job, f"Score check : {report.score:.0f}%  (IA={report.ia_score:.3f})",
+                 "OK" if report.score >= 70 else ("WARN" if report.score >= 40 else "ERROR"))
+        _update_job(job, progress=40)
+
+        # ── Étape 2 : corriger l'offset caméra si nécessaire ─────────────
+        # Détecte un offset via la pénalité : si score faible mais portes OK
+        # → l'offset est peut-être le problème. On tente fix_camera_offset.
+        # On s'appuie aussi sur force.
+        has_offset_issue = (report.score < 70 and not report.is_blocked())
+        offset_errors = []  # compat variable name
+
+        fix_result = None
+        if has_offset_issue or offset_errors or force:
+            fix_script = _ROOT / "fix_camera_offset.py"
+            if fix_script.exists():
+                spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+
+                _log_job(job, "Application fix_camera_offset…", "INFO")
+                fix_result = mod.fix_session(sess, dry_run=False, force=force)
+                status = fix_result.get("status", "?")
+                if status == "corrected":
+                    cams = fix_result.get("cameras_fixed", [])
+                    for c in cams:
+                        _log_job(job, f"  ✓ {c['camera']}: {c['offset_ms']:.0f} ms corrigé ({c['frames']} frames)", "OK")
+                    _log_job(job, f"Offset caméra corrigé sur {len(cams)} caméra(s)", "OK")
+                else:
+                    reason = fix_result.get("reason", "")
+                    _log_job(job, f"fix_camera_offset [{status}]: {reason}", "WARN")
+            else:
+                _log_job(job, "fix_camera_offset.py introuvable", "WARN")
         else:
-            _update_job(job, status=JobStatus.ERROR, ended_at=_now(),
-                        error=f"align_pro a retourné code {proc.returncode}")
+            _log_job(job, "Aucun offset à corriger", "INFO")
+
+        _update_job(job, progress=80)
+
+        # ── Étape 3 : re-check post-correction ───────────────────────────
+        if fix_result and fix_result.get("status") == "corrected":
+            report2 = check_session(sess, model=None)
+            _log_job(job, f"Score post-correction : {report2.score:.0f}%",
+                     "OK" if report2.score >= 70 else ("WARN" if report2.score >= 40 else "ERROR"))
+            final_score = report2.score
+            final_ia    = report2.ia_score
+            final_verdict = report2.verdict
+            final_gates = [{"name": g.name, "passed": g.passed, "message": g.message} for g in report2.gates]
+            final_blocking = report2.blocking_reason
+        else:
+            final_score = report.score
+            final_ia    = report.ia_score
+            final_verdict = report.verdict
+            final_gates = [{"name": g.name, "passed": g.passed, "message": g.message} for g in report.gates]
+            final_blocking = report.blocking_reason
+
+        _update_job(
+            job,
+            status=JobStatus.DONE,
+            ended_at=_now(),
+            progress=100,
+            result={
+                "session":        str(sess),
+                "score":          final_score,
+                "ia_score":       final_ia,
+                "verdict":        final_verdict,
+                "gates":          final_gates,
+                "blocking_reason": final_blocking,
+                "fix_applied":    fix_result is not None and fix_result.get("status") == "corrected",
+                "fix_result":     fix_result,
+            },
+        )
     except Exception:
         err = traceback.format_exc()
         _log_job(job, err, "ERROR")
@@ -2653,6 +2829,55 @@ async def reject_sessions(req: RejectRequest):
         raise HTTPException(400, "reject_path manquant")
     job = _new_job("reject")
     threading.Thread(target=_worker_reject, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Fix camera offset
+# ──────────────────────────────────────────────────────────────────────────────
+
+class FixCameraOffsetRequest(BaseModel):
+    session: str
+    force: bool = False
+
+
+def _worker_fix_camera_offset(job: Job, req: FixCameraOffsetRequest):
+    import importlib.util, sys as _sys
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        fix_script = _ROOT / "fix_camera_offset.py"
+        spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        sess_path = Path(req.session)
+        _log_job(job, f"Correction offset caméra : {sess_path.name}", "INFO")
+        report = mod.fix_session(sess_path, dry_run=False, force=req.force)
+        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(), result=report)
+
+        status = report.get("status", "?")
+        if status == "corrected":
+            cams = report.get("cameras_fixed", [])
+            for c in cams:
+                _log_job(job, f"  {c['camera']}: offset {c['offset_ms']:.1f} ms → {c['offset_applied_ms']} ms ({c['frames']} frames)", "OK")
+            _log_job(job, f"✓ Correction terminée ({len(cams)} caméra(s))", "OK")
+        else:
+            reason = report.get("reason", "")
+            _log_job(job, f"[{status.upper()}] {reason}", "WARN" if status in ("skipped", "ok") else "ERROR")
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur : {e}", "ERROR")
+
+
+@app.post("/api/session/fix_camera_offset")
+async def fix_camera_offset(req: FixCameraOffsetRequest):
+    """Corrige le décalage temporel des caméras d'une session."""
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    if not Path(req.session).exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    job = _new_job("fix_camera_offset")
+    threading.Thread(target=_worker_fix_camera_offset, args=(job, req), daemon=True).start()
     return {"job_id": job.id}
 
 

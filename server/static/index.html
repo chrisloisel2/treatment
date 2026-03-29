@@ -436,6 +436,34 @@
 			pointer-events: none;
 		}
 
+		/* Bouton réparer orange */
+		.btn-repair-big {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 8px;
+			padding: 18px 20px;
+			border-radius: var(--rs);
+			border: 2px solid var(--accent3);
+			background: var(--accent3)22;
+			color: var(--accent3);
+			font-size: 1rem;
+			font-weight: 700;
+			cursor: pointer;
+			transition: all .15s;
+			white-space: nowrap;
+		}
+
+		.btn-repair-big:hover {
+			background: var(--accent3)44;
+		}
+
+		.btn-repair-big:disabled {
+			opacity: .35;
+			cursor: not-allowed;
+			pointer-events: none;
+		}
+
 		/* Bouton export big green */
 		.btn-export-big {
 			display: flex;
@@ -463,6 +491,39 @@
 		}
 
 		.btn-export-big:disabled {
+			opacity: .35;
+			cursor: not-allowed;
+			pointer-events: none;
+			transform: none;
+		}
+
+		/* Bouton vérifier et exporter */
+		.btn-verify-export {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 10px;
+			width: 100%;
+			padding: 18px 24px;
+			border-radius: var(--rs);
+			border: 2px solid #0e7490;
+			background: linear-gradient(135deg, #155e75 0%, #0e7490 100%);
+			color: #fff;
+			font-size: 1.1rem;
+			font-weight: 700;
+			letter-spacing: .02em;
+			cursor: pointer;
+			transition: all .15s;
+			box-shadow: 0 4px 18px #0e749044;
+		}
+
+		.btn-verify-export:hover {
+			background: linear-gradient(135deg, #164e63 0%, #155e75 100%);
+			box-shadow: 0 6px 24px #0e749066;
+			transform: translateY(-1px);
+		}
+
+		.btn-verify-export:disabled {
 			opacity: .35;
 			cursor: not-allowed;
 			pointer-events: none;
@@ -1129,6 +1190,52 @@
 			line-height: 1.5
 		}
 
+		/* Post group header */
+		.post-group {
+			margin-bottom: 6px;
+		}
+		.post-group-header {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 5px 10px;
+			background: var(--bg3);
+			border-radius: var(--rs);
+			border: 1px solid var(--border);
+			margin-bottom: 3px;
+			cursor: pointer;
+			user-select: none;
+		}
+		.post-group-header:hover {
+			background: var(--bg4);
+		}
+		.post-group-label {
+			font-size: .72rem;
+			font-weight: 700;
+			color: var(--text2);
+			text-transform: uppercase;
+			letter-spacing: .04em;
+			flex: 1;
+		}
+		.post-group-serials {
+			font-size: .65rem;
+			color: var(--text3);
+			font-family: monospace;
+		}
+		.post-group-count {
+			font-size: .68rem;
+			color: var(--text3);
+			background: var(--bg4);
+			border: 1px solid var(--border);
+			border-radius: 99px;
+			padding: 1px 6px;
+		}
+		.post-group-sessions {
+			padding-left: 10px;
+			border-left: 2px solid var(--border);
+			margin-left: 4px;
+		}
+
 		/* Session list panel */
 		.sess-item {
 			display: flex;
@@ -1239,6 +1346,14 @@
 
 		.si-check.chk-fail {
 			color: var(--red)
+		}
+
+		.si-check.chk-warn .si-dot {
+			background: var(--orange)
+		}
+
+		.si-check.chk-warn {
+			color: var(--orange)
 		}
 
 		/* ══ Log Panel ══════════════════════════════════════════════════════ */
@@ -2921,9 +3036,9 @@
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:250px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Répertoire</label>
 								<span id="cfg-root-display"
-									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/mnt/storage/bronze
+									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Volumes/T9/data
 								</span>
-								<input type="hidden" id="cfg-root" value="/mnt/storage/bronze" />
+								<input type="hidden" id="cfg-root" value="/Volumes/T9/data" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3081,8 +3196,25 @@
 						</div>
 					</div>
 
+					<!-- Bouton Vérifier + Export auto -->
+					<div style="margin-top:16px">
+						<button class="btn-verify-export" id="btn-verify-export" onclick="verifyAndExportSelected()" disabled>
+							<span id="btn-verify-export-ico">✔</span> Vérifier et exporter automatiquement
+						</button>
+						<div id="verify-export-progress" style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
+							<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+								<span id="verify-export-status-ico">⏳</span>
+								<span id="verify-export-status-text">Vérification en cours…</span>
+							</div>
+							<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
+								<div id="verify-export-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+							</div>
+							<div id="verify-export-log" style="margin-top:6px;max-height:120px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
+						</div>
+					</div>
+
 					<!-- Boutons Export / Rejeter -->
-					<div style="margin-top:16px;display:flex;gap:10px">
+					<div style="margin-top:10px;display:flex;gap:10px">
 						<button class="btn-export-big" id="btn-export-big" onclick="openExportModal()" disabled
 							style="flex:1">
 							⬆ Exporter les sessions sélectionnées
@@ -3090,6 +3222,16 @@
 						<button class="btn-reject-big" id="btn-reject-big" onclick="openRejectModal()" disabled>
 							✕ Rejeter
 						</button>
+					</div>
+					<div id="sess-export-banner" style="display:none;margin-top:10px;padding:10px 14px;background:var(--green)15;border:1px solid var(--green)44;border-radius:var(--rs);font-size:.8rem;color:var(--green);align-items:center;gap:8px">
+						<span style="font-size:1rem">⬆</span>
+						<span id="sess-export-banner-text"></span>
+						<a href="#" onclick="nav('jobs',null);return false" style="margin-left:auto;color:var(--green);font-size:.75rem;text-decoration:underline">Voir les jobs →</a>
+					</div>
+					<div id="sess-reject-banner" style="display:none;margin-top:10px;padding:10px 14px;background:var(--red)15;border:1px solid var(--red)44;border-radius:var(--rs);font-size:.8rem;color:var(--red);align-items:center;gap:8px">
+						<span style="font-size:1rem">✕</span>
+						<span id="sess-reject-banner-text"></span>
+						<a href="#" onclick="nav('jobs',null);return false" style="margin-left:auto;color:var(--red);font-size:.75rem;text-decoration:underline">Voir les jobs →</a>
 					</div>
 				</div>
 
@@ -3500,12 +3642,38 @@
 												caméra</button>
 										</div>
 
+										<!-- Rôles trackers -->
+										<div class="tv-rp-section">
+											<div class="tv-rp-title">Rôles trackers</div>
+											<div id="tv-trk-swap-rows"
+												style="display:flex;flex-direction:column;gap:5px;margin-top:6px">
+												<div style="font-size:.7rem;color:var(--text3)">Sélectionnez une session
+												</div>
+											</div>
+											<div style="display:flex;gap:4px;margin-top:7px">
+												<button class="tv-rp-btn" id="tv-trk-swap-reset"
+													onclick="tvTrackerSwapReset()"
+													style="flex:1;font-size:.68rem;padding:3px 0"
+													disabled>Annuler</button>
+												<button class="tv-rp-btn" id="tv-trk-swap-apply"
+													onclick="tvTrackerSwapApply()"
+													style="flex:1;font-size:.68rem;padding:3px 0;background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent)"
+													disabled>Appliquer</button>
+											</div>
+										</div>
+
 										<!-- Export / Rejet session -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Session actuelle</div>
 											<button class="tv-rp-btn" id="tv-rp-btn-export" onclick="tvViewerExport()"
 												style="background:var(--green)1a;border-color:var(--green)55;color:var(--green);font-weight:600;margin-top:6px"
 												disabled>⬆ Exporter</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-check" onclick="tvViewerCheck()"
+												style="background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent);font-weight:600;margin-top:4px"
+												disabled>🔍 Vérifier</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-repair" onclick="tvViewerRepair()"
+												style="background:var(--accent3)1a;border-color:var(--accent3)55;color:var(--accent3);font-weight:600;margin-top:4px"
+												disabled>🔧 Réparer</button>
 											<button class="tv-rp-btn" id="tv-rp-btn-reject" onclick="tvViewerReject()"
 												style="background:var(--red)1a;border-color:var(--red)55;color:var(--red);font-weight:600;margin-top:4px"
 												disabled>✕ Rejeter</button>
@@ -3728,7 +3896,7 @@
 						<div class="card">
 							<div class="card-h">Chemins</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/mnt/storage/bronze" />
+								<input type="text" id="s-root" value="/Volumes/T9/data" />
 							</div>
 							<div class="fr"><label>Modèle IA</label>
 								<input type="text" id="s-model" value="_sync_ml_model" />
@@ -3790,7 +3958,8 @@
 						<div id="exp-dest-local">
 							<div class="fr">
 								<label>Dossier de sortie</label>
-								<input type="text" id="s-export-local-path" value="/mnt/storage/pool" placeholder="/mnt/storage/pool" />
+								<input type="text" id="s-export-local-path" value="/mnt/storage/pool"
+									placeholder="/mnt/storage/pool" />
 							</div>
 						</div>
 
@@ -3866,10 +4035,30 @@
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Rejet</div>
 						<div class="fr">
 							<label>Dossier de rejet</label>
-							<input type="text" id="s-reject-path" value="/mnt/storage/rejected" placeholder="/mnt/storage/rejected" />
+							<input type="text" id="s-reject-path" value="/mnt/storage/rejected"
+								placeholder="/mnt/storage/rejected" />
 						</div>
 						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
 							Les sessions rejetées y seront déplacées (move, pas copie).
+						</div>
+						<div class="fr" style="align-items:center">
+							<label>Rejet auto si fichiers manquants</label>
+							<input type="checkbox" id="s-auto-reject-missing" style="width:auto;margin:0" />
+						</div>
+						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
+							Si coché, toute session avec des fichiers manquants est automatiquement rejetée lors de la vérification.
+						</div>
+
+						<div class="div" style="margin:14px 0"></div>
+
+						<!-- Mode Dry-Run -->
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Mode test</div>
+						<div class="chk">
+							<input type="checkbox" id="s-dry-run" />
+							<label style="font-weight:600">Mode <span style="color:var(--orange)">Dry-Run</span></label>
+						</div>
+						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
+							Simule l'export sans écrire de fichiers. Les vérifications s'exécutent normalement, mais aucune donnée n'est copiée ni déplacée.
 						</div>
 
 						<div class="div" style="margin:14px 0"></div>
@@ -4020,7 +4209,7 @@
 			drawerSess: null,
 			watcher: { running: false },
 			cfg: {
-				root: '/mnt/storage/bronze', model: '_sync_ml_model', nas: '',
+				root: '/Volumes/T9/data', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200
 			}
 		};
@@ -4210,7 +4399,7 @@
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
-			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze			';
+			const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data			';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
 			try {
@@ -4329,6 +4518,7 @@
 			const params = getParams();
 			const forceFlux = ge('chk-force-flux').checked;
 
+			const exportCfg = getExportCfg();
 			for (const sess of sessions) {
 				try {
 					const body = {
@@ -4337,6 +4527,8 @@
 						model_dir: modelDir,
 						nas_root: nas,
 						force_flux: forceFlux,
+						auto_reject_missing: exportCfg.auto_reject_missing || false,
+						reject_path: exportCfg.reject_path || null,
 						...params,
 					};
 					if (steps && steps.length) body.steps = steps;
@@ -4615,12 +4807,25 @@
 			const verif = sess.meta?.verification;
 			const labelVerif = sess.meta?.camera_label_verification;
 			const metaFull = sess.meta || {};
-			const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated;
+			const checkScore = sess.meta?.check_score ?? null;
+			const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated || checkScore != null;
 			if (hasAnyVerif) {
 				html += `<div class="div" style="margin:8px 0"></div>
       <div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">⚙ Vérifications</div>`;
 
-				// — check_sync —
+				// — check.py score —
+				if (checkScore != null) {
+					const csColor = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
+					const csIcon  = checkScore >= 70 ? '✓' : '✗';
+					const csIa    = sess.meta?.check_ia_score != null ? `  ia=${sess.meta.check_ia_score.toFixed(3)}` : '';
+					const csBloc  = sess.meta?.check_blocking ? `  <span style="color:var(--red)">✗ ${esc(sess.meta.check_blocking)}</span>` : '';
+					html += `<div style="font-size:.75rem;margin-bottom:3px">
+        <span style="color:var(--text3)">check.py</span>
+        <span style="color:${csColor};margin-left:6px">${csIcon} ${Math.round(checkScore)}%${csIa}</span>${csBloc}
+      </div>`;
+				}
+
+				// — check_sync (legacy) —
 				const syncDelay = verif?.stats?.video_max_delay_ms;
 				if (syncDelay != null) {
 					const syncOk = syncDelay <= 500;
@@ -4898,51 +5103,73 @@
 			if (!S.drawerSess) return;
 			const btn = ge('btn-drawer-verify');
 			btn.disabled = true;
-			btn.textContent = '⏳…';
+			btn.textContent = '⏳ Check…';
 			if (!S.drawerSess.meta) S.drawerSess.meta = {};
-			let hasErrors = false;
 
-			// 1. check_sync
 			try {
-				btn.textContent = '⏳ Sync…';
-				const rs = await api('POST', '/api/pipeline/check_sync', { session_path: S.drawerSess.path });
-				const syncRes = rs.result || {};
-				if (!S.drawerSess.meta.verification) S.drawerSess.meta.verification = { stats: {} };
-				if (!S.drawerSess.meta.verification.stats) S.drawerSess.meta.verification.stats = {};
-				S.drawerSess.meta.verification.stats.video_max_delay_ms = syncRes.max_delay_ms ?? null;
-				S.drawerSess.meta.verification.stats.camera_delays_ms = syncRes.camera_delays_ms ?? null;
-				if (rs.status === 'decalage') {
-					hasErrors = true;
-					log(`✗ check_sync — ${rs.error || 'Décalage vidéo détecté'}`, 'ERROR');
-				} else {
-					log(`✓ check_sync OK — délai max=${syncRes.max_delay_ms ?? '?'}ms`, 'OK');
-				}
-			} catch (e) {
-				hasErrors = true;
-				log('check_sync: ' + e.message, 'ERROR');
-			}
+				const r = await api('POST', '/api/pipeline/check_score', { session_path: S.drawerSess.path });
+				const score = r.score ?? -1;
+				const iaScore = r.ia_score ?? 0;
+				const failed = r.failed_gates || [];
+				const blocking = r.blocking_reason || '';
 
-			// 2. verify (trackers + désync)
-			try {
-				btn.textContent = '⏳ Verify…';
-				const rv = await api('POST', '/api/pipeline/verify', { session_path: S.drawerSess.path });
-				const res = rv.result || {};
-				S.drawerSess.meta.verification = {
-					...S.drawerSess.meta.verification,
-					...res,
-					stats: { ...(S.drawerSess.meta.verification?.stats || {}), ...(res.stats || {}) },
-				};
-				if (rv.status !== 'ok') {
-					hasErrors = true;
-					const issues = res.issues || [];
-					log(`✗ verify — ${rv.error || issues.join(' | ') || 'Problèmes détectés'}`, 'ERROR');
-				} else {
-					const w = res.warnings?.length || 0;
-					log(`✓ verify OK${w ? ` — ${w} avertissement(s)` : ''}`, 'OK');
+				// Stocker dans meta pour l'affichage
+				S.drawerSess.meta.check_score    = score;
+				S.drawerSess.meta.check_ia_score = iaScore;
+				S.drawerSess.meta.check_blocking = blocking;
+
+				const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
+				const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
+				const iaStr = iaScore > 0 ? `  ia=${iaScore.toFixed(3)}` : '';
+				if (failed.length) {
+					failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
 				}
+				log(`Check score: ${scoreStr}${iaStr}${blocking ? '  bloc: ' + blocking : ''}`, logLvl);
+
+				// Rejet automatique si fichiers manquants
+				const missingFiles = failed.find(g => g.name === 'structure') || (blocking && blocking.startsWith('Fichiers manquants'));
+				if (missingFiles) {
+					const cfg = getExportCfg();
+					if (!cfg.auto_reject_missing) {
+						log(`Fichiers manquants — rejet automatique désactivé (Paramètres → Export)`, 'WARN');
+					} else if (!cfg.reject_path) {
+						log(`Rejet automatique impossible : dossier de rejet non configuré (Paramètres → Export)`, 'WARN');
+					} else {
+						log(`Fichiers manquants — rejet automatique vers ${cfg.reject_path}`, 'WARN');
+						try {
+							const res = await api('POST', '/api/reject', {
+								sessions: [S.drawerSess.path],
+								reject_path: cfg.reject_path,
+							});
+							log(`Session rejetée — job ${res.job_id}`, 'ERROR');
+							// Retirer la session de la liste
+							S.sessions = S.sessions.filter(s => s.path !== S.drawerSess.path);
+							S.selected.delete(S.drawerSess.path);
+							S.drawerSess = null;
+							ge('sess-drawer').classList.remove('open');
+							renderSessionsList();
+							renderPipelineBoard();
+							refreshExportBtn();
+						} catch (re) {
+							log(`Rejet automatique échoué : ${re.message}`, 'ERROR');
+						}
+					}
+					btn.disabled = false;
+					btn.textContent = '⚙ Vérification';
+					btn.style.color = '';
+					return;
+				}
+
+				btn.disabled = false;
+				btn.textContent = `⚙ ${scoreStr}`;
+				btn.style.color = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : 'var(--red)';
+				setTimeout(() => { btn.textContent = '⚙ Vérification'; btn.style.color = ''; }, 8000);
 			} catch (e) {
-				hasErrors = true;
-				log('verify: ' + e.message, 'ERROR');
+				log('Check score: ' + e.message, 'ERROR');
+				btn.disabled = false;
+				btn.textContent = '⚙ Vérification';
+				btn.style.color = '';
+				return;
 			}
 
 			// Propager à l'index global + rafraîchir
@@ -4952,11 +5179,6 @@
 			renderDrawerContent(S.drawerSess);
 			renderPipelineBoard();
 			renderSessionsList();
-
-			btn.disabled = false;
-			btn.textContent = hasErrors ? '✗ Issues' : '✓ OK';
-			btn.style.color = hasErrors ? 'var(--red)' : 'var(--green)';
-			setTimeout(() => { btn.textContent = '⚙ Vérification'; btn.style.color = ''; }, 5000);
 		}
 
 		async function unlockDrawer() {
@@ -4983,65 +5205,72 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Sessions page
 		// ══════════════════════════════════════════════════════════════════
-		function renderSessionsList() {
-			const list = ge('sess-list');
-			ge('sess-count').textContent = S.sessions.length;
-			list.innerHTML = '';
-			_updateSessActions();
-			S.sessions.forEach(s => {
-				const div = document.createElement('div');
-				const _si_hasIssues = _sessionHasIssues(s);
-				div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '') + (_si_hasIssues ? ' has-issues' : '');
-				div.onclick = () => { toggleSel(s.path, div); renderPipelineBoard(); };
+		function _sessPostKey(s) {
+			// Clé unique de poste = set trié des serials caméra
+			const cameras = s.meta?.cameras || {};
+			const serials = Object.values(cameras).map(c => c.serial).filter(Boolean).sort();
+			return serials.length ? serials.join(',') : '__no_serials__' + s.name;
+		}
 
-				const meta = s.meta || {};
-				const sc = syncScore(s.pipeline_state);
-				const _steps = s.pipeline_state?.steps || {};
-				const _stepCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
-				const _verif = s.meta?.verification;
-				const _labelVerif = s.meta?.camera_label_verification;
+		function _buildSessItem(s) {
+			const div = document.createElement('div');
+			const _si_hasIssues = _sessionHasIssues(s);
+			div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '') + (_si_hasIssues ? ' has-issues' : '');
+			div.onclick = () => { toggleSel(s.path, div); renderPipelineBoard(); };
 
-				// check_sync : délai vidéo/capteurs
-				const _videoDelay = _verif?.stats?.video_max_delay_ms;
-				const _syncSt = _steps['check_sync']?.status;
-				const _syncTitle = _videoDelay != null ? `Délai max ${_videoDelay}ms` : 'check_sync non exécuté';
-				const _syncCls = _videoDelay != null
+			const meta = s.meta || {};
+			const sc = syncScore(s.pipeline_state);
+			const _steps = s.pipeline_state?.steps || {};
+			const _stepCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
+			const _verif = s.meta?.verification;
+			const _labelVerif = s.meta?.camera_label_verification;
+
+			// check_sync : utilise check_score (check.py) si disponible
+			const _checkScore = meta?.check_score ?? null;
+			const _videoDelay = _verif?.stats?.video_max_delay_ms;
+			const _syncSt = _steps['check_sync']?.status;
+			const _syncTitle = _checkScore != null
+				? `check.py : ${Math.round(_checkScore)}%  ia=${(meta?.check_ia_score ?? 0).toFixed(3)}${meta?.check_blocking ? '  ✗ ' + meta.check_blocking : ''}`
+				: (_videoDelay != null ? `Délai max ${_videoDelay}ms` : 'check non exécuté');
+			const _syncCls = _checkScore != null
+				? (_checkScore >= 70 ? 'chk-ok' : _checkScore >= 40 ? 'chk-warn' : 'chk-fail')
+				: (_videoDelay != null
 					? (_videoDelay <= 500 ? 'chk-ok' : 'chk-fail')
-					: (_syncSt === 'done' ? 'chk-ok' : _syncSt === 'failed' ? 'chk-fail' : 'chk-pending');
+					: (_syncSt === 'done' ? 'chk-ok' : _syncSt === 'failed' ? 'chk-fail' : 'chk-pending'));
 
-				// verify trackers
-				const _verifSt = _steps['verify']?.status;
-				const _gripIssues = (_verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
-				const _gripTitle = _verif
-					? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0, 2).join('; ') : 'Trackers OK')
-					: 'verify non exécuté';
-				const _gripCls = _verif ? (_gripIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_verifSt);
+			// verify trackers
+			const _verifSt = _steps['verify']?.status;
+			const _gripIssues = (_verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
+			const _gripTitle = _verif
+				? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0, 2).join('; ') : 'Trackers OK')
+				: 'verify non exécuté';
+			const _gripCls = _verif ? (_gripIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_verifSt);
 
-				// verify vidéo/désync
-				const _videoIssues = (_verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
-				const _videoSt = _steps['video']?.status;
-				const _videoTitle = _verif ? (_videoIssues ? 'Problème désync vidéo' : 'Vidéo OK') : 'verify non exécuté';
-				const _videoCls = _verif ? (_videoIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_videoSt);
+			// verify vidéo/désync
+			const _videoIssues = (_verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
+			const _videoSt = _steps['video']?.status;
+			const _videoTitle = _verif ? (_videoIssues ? 'Problème désync vidéo' : 'Vidéo OK') : 'verify non exécuté';
+			const _videoCls = _verif ? (_videoIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_videoSt);
 
-				// verify_labels : labels caméras
-				const _labelSt = _steps['verify_labels']?.status;
-				const _labelConf = _labelVerif?.confidence != null ? ` (conf ${(_labelVerif.confidence * 100).toFixed(0)}%)` : '';
-				const _labelTitle = _labelVerif != null
-					? (_labelVerif.global_ok ? `Labels OK${_labelConf}` : `Labels incorrects${_labelConf}`)
-					: 'verify_labels non exécuté';
-				const _labelCls = _labelVerif != null
-					? (_labelVerif.global_ok ? 'chk-ok' : 'chk-fail')
-					: _stepCls(_labelSt);
+			// verify_labels : labels caméras
+			const _labelSt = _steps['verify_labels']?.status;
+			const _labelConf = _labelVerif?.confidence != null ? ` (conf ${(_labelVerif.confidence * 100).toFixed(0)}%)` : '';
+			const _labelTitle = _labelVerif != null
+				? (_labelVerif.global_ok ? `Labels OK${_labelConf}` : `Labels incorrects${_labelConf}`)
+				: 'verify_labels non exécuté';
+			const _labelCls = _labelVerif != null
+				? (_labelVerif.global_ok ? 'chk-ok' : 'chk-fail')
+				: _stepCls(_labelSt);
 
-				// validate (ia_sync)
-				const _validSt = _steps['validate']?.status;
-				const _iaScore = meta.ia_sync_avg_score;
-				const _iaTitle = meta.ia_sync_validated
-					? `IA sync validé — score ${_iaScore != null ? _iaScore : '?'}`
-					: 'validate non exécuté';
-				const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
+			// validate (ia_sync)
+			const _validSt = _steps['validate']?.status;
+			const _iaScore = meta.ia_sync_avg_score;
+			const _iaTitle = meta.ia_sync_validated
+				? `IA sync validé — score ${_iaScore != null ? _iaScore : '?'}`
+				: 'validate non exécuté';
+			const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
 
-				div.innerHTML = `
+			div.innerHTML = `
       <div class="si-name">${s.name}</div>
       <div class="si-chips">
         <span class="chip ${s.has_tracker ? 'ok' : 'miss'}">tracker</span>
@@ -5059,7 +5288,58 @@
       ${meta.scenario ? `<span class="b dim" style="margin-left:6px">${meta.scenario}</span>` : ''}
       ${sc ? `<span class="si-score"><span class="sb ${sc.grade}">${sc.grade}</span><span style="color:var(--text3)">${sc.score}/100</span></span>` : ''}
     `;
-				list.appendChild(div);
+			return div;
+		}
+
+		function renderSessionsList() {
+			const list = ge('sess-list');
+			ge('sess-count').textContent = S.sessions.length;
+			list.innerHTML = '';
+			_updateSessActions();
+
+			// Grouper par poste (même set de serials caméra)
+			const groups = new Map(); // key -> { serials, sessions[] }
+			S.sessions.forEach(s => {
+				const key = _sessPostKey(s);
+				if (!groups.has(key)) {
+					const cameras = s.meta?.cameras || {};
+					const serials = Object.values(cameras).map(c => c.serial).filter(Boolean).sort();
+					groups.set(key, { serials, sessions: [] });
+				}
+				groups.get(key).sessions.push(s);
+			});
+
+			let postIndex = 1;
+			groups.forEach(({ serials, sessions }) => {
+				const groupDiv = document.createElement('div');
+				groupDiv.className = 'post-group';
+
+				const header = document.createElement('div');
+				header.className = 'post-group-header';
+				const serialsText = serials.length ? serials.join(' · ') : '—';
+				header.innerHTML = `
+					<span class="post-group-label">Poste ${postIndex}</span>
+					<span class="post-group-serials" title="Numéros de série caméras">${serialsText}</span>
+					<span class="post-group-count">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>
+				`;
+
+				const sessionsDiv = document.createElement('div');
+				sessionsDiv.className = 'post-group-sessions';
+				sessions.forEach(s => sessionsDiv.appendChild(_buildSessItem(s)));
+
+				// Clic sur header : sélectionner/désélectionner tout le groupe
+				header.onclick = () => {
+					const allSel = sessions.every(s => S.selected.has(s.path));
+					sessions.forEach(s => allSel ? S.selected.delete(s.path) : S.selected.add(s.path));
+					renderSessionsList();
+					renderPipelineBoard();
+					refreshExportBtn();
+				};
+
+				groupDiv.appendChild(header);
+				groupDiv.appendChild(sessionsDiv);
+				list.appendChild(groupDiv);
+				postIndex++;
 			});
 		}
 
@@ -5590,7 +5870,10 @@
 			TV.sessPath = path;
 			TV.t_ms = 0;
 			ge('tv-rp-btn-export').disabled = false;
+			ge('tv-rp-btn-check').disabled = false;
+			ge('tv-rp-btn-repair').disabled = false;
 			ge('tv-rp-btn-reject').disabled = false;
+			tvTrackerSwapBuildPanel(path);
 			TV.vidInfo = {};
 			TV.vidReady = {};
 			TV3D.needsRebuild = true;
@@ -5679,6 +5962,74 @@
 			}
 		}
 
+
+		// ── Tracker Swap (panneau paramètres viewer) ─────────────────────
+
+		function tvTrackerSwapBuildPanel(sessPath) {
+			const container = ge('tv-trk-swap-rows');
+			const applyBtn = ge('tv-trk-swap-apply');
+			const resetBtn = ge('tv-trk-swap-reset');
+			if (!container) return;
+			const sess = S.sessions.find(s => s.path === sessPath);
+			const trackers = sess?.meta?.trackers;
+			const slots = ['head', 'left', 'right'];
+			const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+
+			// Construire map role → serial
+			const serialByRole = {};
+			if (trackers) {
+				Object.values(trackers).forEach(t => { if (t.role) serialByRole[t.role] = t.serial || '?'; });
+			}
+
+			container.innerHTML = '';
+			if (!trackers || !Object.keys(trackers).length) {
+				container.innerHTML = '<div style="font-size:.7rem;color:var(--text3)">Pas de données tracker</div>';
+				if (applyBtn) applyBtn.disabled = true;
+				if (resetBtn) resetBtn.disabled = true;
+				return;
+			}
+
+			slots.forEach(slot => {
+				const serial = serialByRole[slot] || '—';
+				const opts = slots.map(s =>
+					`<option value="${s}"${s === slot ? ' selected' : ''}>${s}</option>`
+				).join('');
+				const row = document.createElement('div');
+				row.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:.73rem';
+				row.innerHTML = `
+					<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${slotColors[slot]};flex-shrink:0"></span>
+					<span style="color:var(--text3);width:34px;flex-shrink:0">${slot}</span>
+					<span style="color:var(--text2);font-family:monospace;font-size:.68rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${serial}">${serial}</span>
+					<select data-tv-tracker-slot="${slot}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.68rem;padding:2px 4px;cursor:pointer">${opts}</select>`;
+				container.appendChild(row);
+			});
+
+			if (applyBtn) applyBtn.disabled = false;
+			if (resetBtn) resetBtn.disabled = false;
+		}
+
+		function tvTrackerSwapReset() {
+			document.querySelectorAll('[data-tv-tracker-slot]').forEach(sel => {
+				sel.value = sel.dataset.tvTrackerSlot;
+			});
+		}
+
+		function tvTrackerSwapApply() {
+			if (!TV.sessPath) return;
+			const selects = document.querySelectorAll('[data-tv-tracker-slot]');
+			let src = null, dst = null;
+			selects.forEach(sel => {
+				if (sel.dataset.tvTrackerSlot !== sel.value && !src) {
+					src = sel.dataset.tvTrackerSlot;
+					dst = sel.value;
+				}
+			});
+			if (!src || src === dst) return;
+			const mapping = { head: 'head', left: 'left', right: 'right' };
+			mapping[dst] = src;
+			mapping[src] = dst;
+			_promptTrackerSwap(TV.sessPath, mapping);
+		}
 
 		// ── Camera Swap ──────────────────────────────────────────────────
 		// Renomme physiquement les fichiers (.mp4, .jsonl, _flux.csv) et
@@ -6356,13 +6707,24 @@
 					const j = await api('GET', `/api/jobs/${job_id}`);
 					if (j.status === 'done') {
 						clearInterval(poll);
-						if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '✓ Sync OK'; }
-						log('Align Pro terminé avec succès', 'OK');
+						const r = j.result || {};
+						const score = r.score != null ? r.score : -1;
+						const fixed = r.fix_applied;
+						const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : 'var(--red)';
+						if (btn) {
+							btn.disabled = false;
+							btn.classList.remove('running');
+							btn.style.background = score >= 0 ? scoreColor : 'var(--accent3)';
+							btn.textContent = fixed ? `✓ Sync (corrigé)` : (score >= 0 ? `✓ ${Math.round(score)}%` : '✓ Sync');
+						}
+						const fixMsg = fixed ? ' — offset caméra corrigé' : '';
+						const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
+						log(`Sync terminé : ${scoreStr}${fixMsg}`, score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR');
 						if (TV.sessPath) tvSelectSession(TV.sessPath);
 					} else if (j.status === 'error') {
 						clearInterval(poll);
 						if (btn) { btn.disabled = false; btn.classList.remove('running'); btn.textContent = '⟳ Sync'; }
-						log('Align Pro erreur: ' + (j.error || '?'), 'ERROR');
+						log('Sync erreur: ' + (j.error || '?'), 'ERROR');
 					}
 				} catch (_) { }
 			}, 3000);
@@ -6877,7 +7239,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze				';
+				const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -6912,7 +7274,7 @@
 		// Settings save
 		// ══════════════════════════════════════════════════════════════════
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/storage/bronze			';
+			S.cfg.root = ge('s-root').value || '/Volumes/T9/data			';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -6929,7 +7291,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/storage/bronze				';
+				const root = c.root || '/Volumes/T9/data				';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -6973,6 +7335,7 @@
 				dest_type: ge('s-export-type').value,
 				local_path: ge('s-export-local-path').value || '/mnt/storage/pool',
 				reject_path: ge('s-reject-path').value || '/mnt/storage/rejected',
+				auto_reject_missing: ge('s-auto-reject-missing').checked,
 				s3_bucket: ge('s-export-s3-bucket').value,
 				s3_prefix: ge('s-export-s3-prefix').value,
 				s3_region: ge('s-export-s3-region').value,
@@ -6990,6 +7353,7 @@
 				lr_push: ge('s-lerobot-push-hub').checked,
 				lr_token: ge('s-lerobot-hf-token').value,
 				lr_repo: ge('s-lerobot-repo').value,
+				dry_run: ge('s-dry-run').checked,
 			};
 		}
 
@@ -6999,6 +7363,7 @@
 				if (c.dest_type) { ge('s-export-type').value = c.dest_type; onExportTypeChange(); }
 				if (c.local_path) ge('s-export-local-path').value = c.local_path;
 				if (c.reject_path) ge('s-reject-path').value = c.reject_path;
+				if (c.auto_reject_missing != null) ge('s-auto-reject-missing').checked = c.auto_reject_missing;
 				if (c.s3_bucket) ge('s-export-s3-bucket').value = c.s3_bucket;
 				if (c.s3_prefix) ge('s-export-s3-prefix').value = c.s3_prefix;
 				if (c.s3_region) ge('s-export-s3-region').value = c.s3_region;
@@ -7016,6 +7381,7 @@
 				if (c.lr_push) { ge('s-lerobot-push-hub').checked = c.lr_push; onHfPushChange(); }
 				if (c.lr_token) ge('s-lerobot-hf-token').value = c.lr_token;
 				if (c.lr_repo) ge('s-lerobot-repo').value = c.lr_repo;
+				if (c.dry_run != null) ge('s-dry-run').checked = c.dry_run;
 			} catch (e) { }
 		}
 
@@ -7026,6 +7392,168 @@
 			if (btn) btn.disabled = n === 0;
 			const rbtn = ge('btn-reject-big');
 			if (rbtn) rbtn.disabled = n === 0;
+			const vebtn = ge('btn-verify-export');
+			if (vebtn) vebtn.disabled = n === 0;
+		}
+
+		// ── Vérifier et exporter automatiquement ────────────────────────────
+		async function verifyAndExportSelected() {
+			const sessions = [...S.selected];
+			if (!sessions.length) return;
+
+			const btn = ge('btn-verify-export');
+			const progDiv = ge('verify-export-progress');
+			const statusIco = ge('verify-export-status-ico');
+			const statusTxt = ge('verify-export-status-text');
+			const bar = ge('verify-export-bar');
+			const logDiv = ge('verify-export-log');
+
+			btn.disabled = true;
+			ge('btn-verify-export-ico').textContent = '⏳';
+			progDiv.style.display = 'block';
+			logDiv.style.display = 'block';
+			logDiv.innerHTML = '';
+			bar.style.width = '0%';
+			statusIco.textContent = '⏳';
+			statusTxt.textContent = `Vérification de ${sessions.length} session(s)…`;
+
+			const addLog = (msg, color) => {
+				const line = document.createElement('div');
+				line.style.color = color || '';
+				line.textContent = msg;
+				logDiv.appendChild(line);
+				logDiv.scrollTop = logDiv.scrollHeight;
+			};
+
+			const failed = [];
+			const ok = [];
+
+			for (let i = 0; i < sessions.length; i++) {
+				const sessPath = sessions[i];
+				const sessName = sessPath.split('/').pop() || sessPath;
+				bar.style.width = `${Math.round((i / sessions.length) * 80)}%`;
+				statusTxt.textContent = `[${i+1}/${sessions.length}] Vérification : ${sessName}`;
+				addLog(`→ ${sessName}`, 'var(--text2)');
+
+				try {
+					// 1) check_sync (décalage vidéo/capteurs)
+					const syncR = await api('POST', '/api/pipeline/check_sync', { session_path: sessPath });
+					if (syncR.status === 'decalage') {
+						addLog(`  ✗ check_sync: ${syncR.error || 'décalage détecté'}`, 'var(--red)');
+						failed.push({ name: sessName, path: sessPath, reason: `Sync: ${syncR.error || 'décalage'}` });
+						continue;
+					}
+					addLog(`  ✓ sync OK`, 'var(--green)');
+
+					// 2) verify (trackers + désync)
+					const verR = await api('POST', '/api/pipeline/verify', { session_path: sessPath });
+					if (verR.status === 'issues' || verR.status === 'critical') {
+						const res = verR.result || {};
+						const issues = [];
+						if (res.tracker_issues) issues.push('trackers');
+						if (res.video_issues) issues.push('désync vidéo');
+						const reason = issues.length ? issues.join(', ') : (verR.error || 'problème détecté');
+						addLog(`  ✗ verify: ${reason}`, 'var(--red)');
+						failed.push({ name: sessName, path: sessPath, reason: `Verify: ${reason}` });
+						continue;
+					}
+					addLog(`  ✓ trackers OK`, 'var(--green)');
+
+					ok.push(sessPath);
+					addLog(`  ✓ session valide`, 'var(--green)');
+				} catch (e) {
+					addLog(`  ✗ erreur: ${e.message}`, 'var(--red)');
+					failed.push({ name: sessName, path: sessPath, reason: e.message });
+				}
+			}
+
+			bar.style.width = '90%';
+
+			if (!ok.length) {
+				statusIco.textContent = '✗';
+				statusTxt.textContent = `Aucune session valide — ${failed.length} problème(s) trouvé(s)`;
+				statusTxt.style.color = 'var(--red)';
+				bar.style.background = 'var(--red)';
+				bar.style.width = '100%';
+				addLog(`\nAucune session à exporter.`, 'var(--red)');
+				btn.disabled = false;
+				ge('btn-verify-export-ico').textContent = '✔';
+				return;
+			}
+
+			// Résumé avant export
+			if (failed.length) {
+				addLog(`\n⚠ ${failed.length} session(s) exclue(s) :`, 'var(--orange)');
+				failed.forEach(f => addLog(`  · ${f.name} — ${f.reason}`, 'var(--orange)'));
+			}
+			addLog(`\n⬆ Export de ${ok.length} session(s) valide(s)…`, 'var(--accent)');
+			statusTxt.textContent = `Export de ${ok.length} session(s)…`;
+
+			// 3) Export automatique des sessions valides
+			const cfg = getExportCfg();
+
+			// Mode dry-run : simuler seulement
+			if (cfg.dry_run) {
+				bar.style.width = '100%';
+				bar.style.background = 'var(--orange)';
+				statusIco.textContent = '🔍';
+				statusTxt.textContent = `[DRY-RUN] ${ok.length} session(s) seraient exportées — aucune écriture effectuée`;
+				statusTxt.style.color = 'var(--orange)';
+				addLog(`\n[DRY-RUN] Export simulé — ${ok.length} session(s) valide(s) :`, 'var(--orange)');
+				ok.forEach(p => addLog(`  · ${p.split('/').pop() || p}`, 'var(--orange)'));
+				log(`[DRY-RUN] Vérif OK — ${ok.length}/${sessions.length} session(s) valides, export non exécuté`, 'WARN');
+				ge('btn-verify-export-ico').textContent = '✔';
+				btn.disabled = false;
+				return;
+			}
+
+			if (!cfg.local_path && cfg.dest_type === 'local') {
+				addLog(`✗ Dossier de sortie non configuré (Paramètres → Export)`, 'var(--red)');
+				statusIco.textContent = '⚠';
+				statusTxt.textContent = `Export impossible : destination non configurée`;
+				statusTxt.style.color = 'var(--orange)';
+				btn.disabled = false;
+				ge('btn-verify-export-ico').textContent = '✔';
+				return;
+			}
+
+			const body = { sessions: ok, dest_type: cfg.dest_type };
+			if (cfg.dest_type === 'local') {
+				body.dest_local = { path: cfg.local_path };
+			} else if (cfg.dest_type === 's3') {
+				body.dest_s3 = { bucket: cfg.s3_bucket, prefix: cfg.s3_prefix, region: cfg.s3_region, access_key: cfg.s3_key, secret_key: cfg.s3_secret };
+			} else if (cfg.dest_type === 'sftp') {
+				body.dest_sftp = { host: cfg.sftp_host, port: cfg.sftp_port, user: cfg.sftp_user, password: cfg.sftp_pass, remote_path: cfg.sftp_path };
+			}
+			if (cfg.lerobot) {
+				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30, push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
+			}
+
+			try {
+				const res = await api('POST', '/api/export', body);
+				bar.style.width = '100%';
+				bar.style.background = 'var(--green)';
+				statusIco.textContent = '✓';
+				statusTxt.textContent = `Export lancé — ${ok.length} session(s) (job ${res.job_id.slice(0,8)}…)`;
+				statusTxt.style.color = 'var(--green)';
+				addLog(`✓ Export lancé — job ${res.job_id}`, 'var(--green)');
+				log(`Vérif+Export — ${ok.length}/${sessions.length} session(s) exportées — job ${res.job_id}`, 'OK');
+				const banner = ge('sess-export-banner');
+				if (banner) {
+					ge('sess-export-banner-text').textContent = `Export lancé — ${ok.length} session${ok.length > 1 ? 's' : ''} validée${ok.length > 1 ? 's' : ''} (job ${res.job_id.slice(0,8)}…)`;
+					banner.style.display = 'flex';
+					setTimeout(() => { banner.style.display = 'none'; }, 8000);
+				}
+			} catch (e) {
+				addLog(`✗ Export échoué : ${e.message}`, 'var(--red)');
+				statusIco.textContent = '✗';
+				statusTxt.textContent = `Export échoué : ${e.message}`;
+				statusTxt.style.color = 'var(--red)';
+				log('Export error: ' + e.message, 'ERROR');
+			}
+
+			ge('btn-verify-export-ico').textContent = '✔';
+			btn.disabled = false;
 		}
 
 		// ── Modal rejet ──────────────────────────────────────────────────────
@@ -7065,8 +7593,22 @@
 			ge('reject-modal-backdrop').classList.remove('open');
 			try {
 				const res = await api('POST', '/api/reject', { sessions, reject_path: cfg.reject_path });
+				const n = sessions.length;
 				log(`Rejet lancé — job ${res.job_id}`, 'WARN');
-				nav('jobs', null);
+				// Retirer immédiatement les sessions rejetées de la liste
+				const rejectedSet = new Set(sessions);
+				S.sessions = S.sessions.filter(s => !rejectedSet.has(s.path));
+				rejectedSet.forEach(p => S.selected.delete(p));
+				renderSessionsList();
+				renderPipelineBoard();
+				refreshExportBtn();
+				updateNavBadges();
+				const banner = ge('sess-reject-banner');
+				if (banner) {
+					ge('sess-reject-banner-text').textContent = `${n} session${n > 1 ? 's' : ''} rejetée${n > 1 ? 's' : ''} (job ${res.job_id.slice(0, 8)}…)`;
+					banner.style.display = 'flex';
+					setTimeout(() => { banner.style.display = 'none'; }, 6000);
+				}
 			} catch (e) {
 				log('Reject error: ' + e.message, 'ERROR');
 			}
@@ -7151,8 +7693,14 @@
 
 			try {
 				const res = await api('POST', '/api/export', body);
+				const n = sessions.length;
 				log(`Export lancé — job ${res.job_id}`, 'OK');
-				nav('jobs', null);
+				const banner = ge('sess-export-banner');
+				if (banner) {
+					ge('sess-export-banner-text').textContent = `Export lancé en arrière-plan — ${n} session${n > 1 ? 's' : ''} (job ${res.job_id.slice(0, 8)}…)`;
+					banner.style.display = 'flex';
+					setTimeout(() => { banner.style.display = 'none'; }, 8000);
+				}
 			} catch (e) {
 				log('Export error: ' + e.message, 'ERROR');
 			}
@@ -7191,6 +7739,107 @@
 					}
 				};
 			}
+		}
+
+
+		// \u2500\u2500 R�parer offset cam�ra depuis le viewer \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		async function tvViewerCheck() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-rp-btn-check');
+			btn.disabled = true;
+			btn.textContent = '⏳ Vérification…';
+			try {
+				const { job_id } = await api('POST', '/api/pipeline/check', { session_path: TV.sessPath });
+				log('Diagnostic lancé : ' + job_id, 'OK');
+				_tvCheckWatchJob(job_id, btn);
+			} catch (e) {
+				log('Vérification erreur : ' + e.message, 'ERROR');
+				btn.textContent = '🔍 Vérifier';
+				btn.disabled = false;
+			}
+		}
+
+		function _tvCheckWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const r = j.result || {};
+						const score = r.score != null ? r.score : -1;
+						const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : 'var(--red)';
+						btn.style.color = score >= 0 ? scoreColor : 'var(--text2)';
+						btn.style.borderColor = (score >= 0 ? scoreColor : 'var(--text2)').replace(')', '55)').replace('var(', 'var(');
+						btn.textContent = score >= 0 ? `🔍 ${Math.round(score)}%` : '🔍 Vérifier';
+						btn.disabled = false;
+						const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
+						const iaStr = r.ia_score != null ? `  ia=${r.ia_score.toFixed(3)}` : '';
+						const blockStr = r.blocking_reason ? `  bloc: ${r.blocking_reason}` : '';
+						log(`Diagnostic terminé : ${Math.round(score)}%${iaStr}${blockStr}`, logLvl);
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						log('Diagnostic échoué : ' + (j.error || '?'), 'ERROR');
+						btn.textContent = '🔍 Vérifier';
+						btn.disabled = false;
+					}
+				} catch (_) { }
+			}, 1500);
+		}
+
+		async function tvViewerRepair() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-rp-btn-repair');
+			btn.disabled = true;
+			btn.textContent = '\u23f3 R�paration\u2026';
+			try {
+				const res = await fetch('/api/session/fix_camera_offset', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ session: TV.sessPath })
+				});
+				if (!res.ok) {
+					const err = await res.json().catch(() => ({ detail: res.statusText }));
+					log('R�paration �chou�e\u00a0: ' + (err.detail || res.statusText), 'ERROR');
+					btn.textContent = '\U0001f527 R�parer';
+					btn.disabled = false;
+				} else {
+					const { job_id } = await res.json();
+					log('R�paration lanc�e\u00a0: ' + job_id, 'OK');
+					_tvRepairWatchJob(job_id, btn);
+				}
+			} catch (e) {
+				log('R�paration erreur\u00a0: ' + e.message, 'ERROR');
+				btn.textContent = '\U0001f527 R�parer';
+				btn.disabled = false;
+			}
+		}
+
+		function _tvRepairWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const rep = j.result || {};
+						const status = rep.status || '?';
+						if (status === 'corrected') {
+							log('\U0001f527 R�paration termin�e \u2014 rechargement de la session\u2026', 'OK');
+							await tvSelectSession(TV.sessPath);
+							btn.textContent = '\u2713 R�par�';
+						} else {
+							const reason = rep.reason || status;
+							log('\U0001f527 R�paration\u00a0: ' + reason, 'WARN');
+							btn.textContent = '\U0001f527 R�parer';
+						}
+						btn.disabled = false;
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						log('R�paration �chou�e\u00a0: ' + (j.error || '?'), 'ERROR');
+						btn.textContent = '\U0001f527 R�parer';
+						btn.disabled = false;
+					}
+				} catch (_) { }
+			}, 1500);
 		}
 
 		function tvViewerReject() {

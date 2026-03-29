@@ -23,9 +23,11 @@ if str(_ROOT) not in sys.path:
 
 def cmd_server(args: argparse.Namespace) -> None:
     import uvicorn
-    # cd dans server/ pour que les chemins relatifs (static/) résolvent correctement
-    import os
-    os.chdir(_ROOT / "server")
+    # Ajoute server/ dans sys.path pour que "server:app" soit résolvable par uvicorn
+    # (nécessaire en mode --reload où uvicorn réimporte le module par nom)
+    server_dir = str(_ROOT / "server")
+    if server_dir not in sys.path:
+        sys.path.insert(0, server_dir)
     uvicorn.run(
         "server:app",
         host=args.host,

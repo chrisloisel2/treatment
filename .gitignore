@@ -1,8 +1,36 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.venv/
-.vscode/
+*.pyd
 *.egg-info/
 dist/
 build/
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverrideDirectory
+
+# Datasets LeRobot générés (gros fichiers binaires)
+robot_dataset/
+_lerobot_work/
+
+# Fichiers vidéo et données brutes
+*.mp4
+*.parquet
+
+# Logs et états serveur
+server/static/logs/
+*.log

@@ -223,10 +223,18 @@ def _new_job(kind: str) -> Job:
     return j
 
 
+_LOG_MEM_LIMIT = 2000   # entrées max gardées en mémoire par job
+_LOG_PERSIST_EVERY = 20  # on persiste sur disque toutes les N entrées (anti-thrash)
+
 def _log_job(job: Job, msg: str, level: str = "INFO"):
     entry = {"ts": _now(), "msg": msg, "level": level}
     job.logs.append(entry)
-    _persist_job(job)
+    # Tronquer en mémoire pour éviter l'OOM sur les gros jobs
+    if len(job.logs) > _LOG_MEM_LIMIT:
+        job.logs = job.logs[-_LOG_MEM_LIMIT:]
+    # Persister seulement toutes les N entrées (ou sur les niveaux importants)
+    if level in ("ERROR", "WARN", "OK") or len(job.logs) % _LOG_PERSIST_EVERY == 0:
+        _persist_job(job)
     asyncio.run_coroutine_threadsafe(
         _broadcast({"type": "log", "job_id": job.id, "entry": entry}),
         _loop,
@@ -287,9 +295,12 @@ def _worker_scan(job: Job):
 
         import utils.sync as ia
         # Découverte dans /Volumes/T9/data/ (sessions déposées par l'opérateur)
+        # Exclus : dossiers cachés (.) et dossiers internes (_)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
-            if s.is_dir() and not s.name.startswith("_")
+            if s.is_dir()
+            and not s.name.startswith("_")
+            and not s.name.startswith(".")
         ]
         model_exists = (MODEL_DIR / "model.pt").exists()
         result = []
@@ -301,12 +312,21 @@ def _worker_scan(job: Job):
                     meta = json.loads(meta_path.read_text())
                 except Exception:
                     pass
-            has_tracker  = (s / "tracker_positions.csv").exists()
-            has_gripper  = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
-            has_ux       = (s / "ux_data.csv").exists()
-            has_flux_csv = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
-            has_jsonl    = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
-            has_subtitle = (s / "episode_subtitle.json").exists()
+            has_tracker   = (s / "tracker_positions.csv").exists()
+            has_gripper   = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
+            has_ux        = (s / "ux_data.csv").exists()
+            has_flux_csv  = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
+            has_jsonl     = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
+            has_subtitle  = (s / "episode_subtitle.json").exists()
+            # Rotation 180° — présence du marqueur .rotate_done dans videos/
+            rotate_marker = s / "videos" / ".rotate_done"
+            video_rotated = rotate_marker.exists()
+            rotate_info   = None
+            if video_rotated:
+                try:
+                    rotate_info = json.loads(rotate_marker.read_text(encoding="utf-8"))
+                except Exception:
+                    rotate_info = {}
             # Statut pipeline
             pipeline_steps = {}
             pipeline_done  = False
@@ -335,6 +355,8 @@ def _worker_scan(job: Job):
                 "has_flux_csv":   has_flux_csv,
                 "has_jsonl":      has_jsonl,
                 "has_subtitle":   has_subtitle,
+                "video_rotated":  video_rotated,
+                "rotate_info":    rotate_info,
                 "meta":           meta,
                 "last_result":    last_result,
                 "pipeline_done":  pipeline_done,
@@ -557,6 +579,7 @@ app = FastAPI(
     version     = "3.0.0",
 )
 
+
 # ── Watcher singleton ──
 _watcher: Optional["IngestionWatcher"] = None  # type: ignore[name-defined]
 
@@ -699,6 +722,17 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
                 f"Le dossier session n'est pas accessible en écriture : {source_path}\n"
                 "Vérifiez les permissions (chmod 777) ou le montage NFS."
             )
+
+        # Rotation automatique : si la session n'est pas encore rotée et que la
+        # whitelist ne contient pas déjà "rotate", l'injecter en premier.
+        rotate_marker = Path(source_path) / "videos" / ".rotate_done"
+        if not rotate_marker.exists():
+            if steps_whitelist is None:
+                pass  # pipeline complète → step_rotate sera exécuté normalement
+            elif "rotate" not in steps_whitelist:
+                steps_whitelist = ["rotate"] + list(steps_whitelist)
+                _log_job(job, "Rotation manquante — étape 'rotate' injectée automatiquement", "INFO")
+
         # Démarrer le polling WebSocket pendant que le process tourne
         stop_poll = threading.Event()
         threading.Thread(
@@ -2232,6 +2266,182 @@ async def session_tracker_swap(req: TrackerSwapRequest):
     return JSONResponse({"ok": True, "swapped": swapped})
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Bulk swap (camera + tracker) — traite N sessions en parallèle
+# ──────────────────────────────────────────────────────────────────────────────
+
+class BulkCameraSwapRequest(BaseModel):
+    sessions: List[str]
+    mapping: dict   # permutation complète head/left/right
+
+
+@app.post("/api/session/camera_swap_bulk")
+async def session_camera_swap_bulk(req: BulkCameraSwapRequest):
+    """
+    Applique le même camera_swap sur une liste de sessions en parallèle.
+    Retourne { ok, done, errors } sans crasher si certaines sessions échouent.
+    """
+    sides = ("head", "left", "right")
+    if set(req.mapping.keys()) != set(sides) or set(req.mapping.values()) != set(sides):
+        raise HTTPException(400, "Le mapping doit être une permutation complète de head/left/right")
+    if all(req.mapping[s] == s for s in sides):
+        return JSONResponse({"ok": True, "done": len(req.sessions), "errors": []})
+
+    def _do_one(sess_path: str):
+        sess = Path(sess_path)
+        if not sess.exists():
+            return {"path": sess_path, "error": "introuvable"}
+        vid_dir = sess / "videos"
+        extensions = [".mp4", ".jsonl", "_flux.csv"]
+        mapping = req.mapping
+        renames = []
+        for dst_side, src_side in mapping.items():
+            if src_side == dst_side:
+                continue
+            for ext in extensions:
+                src_path = vid_dir / f"{src_side}{ext}"
+                dst_path = vid_dir / f"{dst_side}{ext}"
+                if src_path.exists():
+                    renames.append((src_path, dst_path))
+        if not renames:
+            return {"path": sess_path, "error": None}
+        # Phase 1 : vers tmp
+        tmp_map = {}
+        try:
+            for src_path, _ in renames:
+                if src_path not in tmp_map:
+                    tmp = src_path.with_name(f"__bswap_{src_path.name}")
+                    src_path.rename(tmp)
+                    tmp_map[src_path] = tmp
+        except Exception as e:
+            for orig, tmp in tmp_map.items():
+                if tmp.exists():
+                    try: tmp.rename(orig)
+                    except Exception: pass
+            return {"path": sess_path, "error": f"tmp: {e}"}
+        # Phase 2 : tmp → dest
+        try:
+            for src_path, dst_path in renames:
+                tmp_map[src_path].rename(dst_path)
+        except Exception as e:
+            for orig, tmp in tmp_map.items():
+                if tmp.exists():
+                    try: tmp.rename(orig)
+                    except Exception: pass
+            return {"path": sess_path, "error": f"rename: {e}"}
+        # Phase 3 : metadata
+        try:
+            meta_path = sess / "metadata.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                if "cameras" in meta:
+                    new_cameras = {}
+                    for cam_id, cam_info in meta["cameras"].items():
+                        cam_pos = cam_info.get("position")
+                        new_pos = next(
+                            (dst for dst, src in mapping.items() if src == cam_pos),
+                            cam_pos
+                        )
+                        new_cameras[cam_id] = {**cam_info, "position": new_pos}
+                    meta["cameras"] = new_cameras
+                meta.pop("camera_remap", None)
+                meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        except Exception:
+            pass
+        return {"path": sess_path, "error": None}
+
+    loop = asyncio.get_event_loop()
+    max_workers = min(16, max(2, (os.cpu_count() or 4)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [loop.run_in_executor(pool, _do_one, sp) for sp in req.sessions]
+        results = await asyncio.gather(*futures)
+
+    errors = [r for r in results if r["error"]]
+    done   = len(results) - len(errors)
+    return JSONResponse({"ok": True, "done": done, "errors": errors})
+
+
+class BulkTrackerSwapRequest(BaseModel):
+    sessions: List[str]
+    mapping: dict
+
+
+@app.post("/api/session/tracker_swap_bulk")
+async def session_tracker_swap_bulk(req: BulkTrackerSwapRequest):
+    """
+    Applique le même tracker_swap sur une liste de sessions en parallèle.
+    """
+    import pandas as pd
+
+    sides = ("head", "left", "right")
+    if set(req.mapping.keys()) != set(sides) or set(req.mapping.values()) != set(sides):
+        raise HTTPException(400, "Le mapping doit être une permutation complète de head/left/right")
+    if all(req.mapping[s] == s for s in sides):
+        return JSONResponse({"ok": True, "done": len(req.sessions), "errors": []})
+
+    def _do_one(sess_path: str):
+        import pandas as _pd
+        sess = Path(sess_path)
+        if not sess.exists():
+            return {"path": sess_path, "error": "introuvable"}
+        trk_path = sess / "tracker_positions.csv"
+        if not trk_path.exists():
+            return {"path": sess_path, "error": "tracker_positions.csv introuvable"}
+        mapping = req.mapping
+        try:
+            df = _pd.read_csv(trk_path)
+            rename_map = {}
+            for dst, src in mapping.items():
+                if src == dst:
+                    continue
+                for col in df.columns:
+                    if col.startswith(f"tracker_{src}_"):
+                        suffix = col[len(f"tracker_{src}_"):]
+                        rename_map[col] = f"tracker_{dst}_{suffix}"
+            if rename_map:
+                df = df.rename(columns=rename_map)
+                tmp = trk_path.with_suffix(".tmp.csv")
+                df.to_csv(tmp, index=False)
+                tmp.replace(trk_path)
+        except Exception as e:
+            return {"path": sess_path, "error": str(e)}
+        # metadata
+        try:
+            meta_path = sess / "metadata.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                if "trackers" in meta:
+                    new_trackers = {}
+                    updated = False
+                    for tid, tinfo in meta["trackers"].items():
+                        role = tinfo.get("role")
+                        new_role = next(
+                            (dst for dst, src in mapping.items() if src == role),
+                            role
+                        )
+                        if new_role != role:
+                            new_trackers[tid] = {**tinfo, "role": new_role}
+                            updated = True
+                        else:
+                            new_trackers[tid] = tinfo
+                    if updated:
+                        meta["trackers"] = new_trackers
+                        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        except Exception:
+            pass
+        return {"path": sess_path, "error": None}
+
+    loop = asyncio.get_event_loop()
+    max_workers = min(16, max(2, (os.cpu_count() or 4)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [loop.run_in_executor(pool, _do_one, sp) for sp in req.sessions]
+        results = await asyncio.gather(*futures)
+
+    errors = [r for r in results if r["error"]]
+    done   = len(results) - len(errors)
+    return JSONResponse({"ok": True, "done": done, "errors": errors})
+
+
 @app.get("/api/session/frame")
 async def session_frame(session_path: str, side: str, t_ms: float):
     """
@@ -2729,7 +2939,7 @@ def _worker_export(job: Job, req: ExportRequest):
     En mode LeRobot, TOUTES les sessions sélectionnées forment un seul dataset
     (chaque session = un épisode), découpé en chunks de opts.chunks_size épisodes.
     """
-    import shutil, tempfile
+    import shutil
 
     sessions = req.sessions
     total = len(sessions)
@@ -2737,6 +2947,7 @@ def _worker_export(job: Job, req: ExportRequest):
     _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
 
     errors = []
+    exported_count = 0
 
     if req.lerobot and req.lerobot.enabled:
         # ── Mode LeRobot : un dataset multi-épisodes ─────────────────────────
@@ -2746,25 +2957,37 @@ def _worker_export(job: Job, req: ExportRequest):
             if not sess.exists():
                 errors.append(f"{sess_path}: introuvable")
                 _log_job(job, f"SKIP {sess.name} — dossier introuvable", "WARN")
-            else:
-                valid_sessions.append(sess)
+                continue
+            missing_grippers = [
+                f"gripper_{side}_data.csv"
+                for side in ("left", "right")
+                if not (sess / f"gripper_{side}_data.csv").exists()
+            ]
+            if missing_grippers:
+                _log_job(job, f"SKIP {sess.name} — fichiers manquants : {', '.join(missing_grippers)}", "WARN")
+                continue
+            valid_sessions.append(sess)
 
         if valid_sessions:
-            # Répertoire de travail stable pour permettre la reprise après crash.
-            # N'est supprimé qu'après un export réussi.
-            work_dir = Path(tempfile.gettempdir()) / f"lerobot_{job.id}"
+            # Répertoire de travail sur T9 (même disque que les données source) pour éviter
+            # de saturer /tmp du système. N'est supprimé qu'après un export réussi.
+            work_dir = INGEST_DIR.parent / "_lerobot_work" / f"lerobot_{job.id}"
             work_dir.mkdir(parents=True, exist_ok=True)
             try:
                 dataset_dir = _build_lerobot_dataset(job, valid_sessions, req.lerobot, work_dir)
                 dataset_name = req.lerobot.dataset_name
+                # Pour l'export local, on copie le contenu du dataset_dir directement dans
+                # dest/dataset_name/ (pas dest/dataset_name/dataset_name/).
+                # Le répertoire parent contient déjà la structure LeRobot complète (meta/, data/, videos/).
                 if req.dest_type == "local":
-                    _export_local(job, dataset_dir, req.dest_local, dataset_name)
+                    _export_local_lerobot(job, dataset_dir, req.dest_local, dataset_name)
                 elif req.dest_type == "s3":
                     _export_s3(job, dataset_dir, req.dest_s3, dataset_name)
                 elif req.dest_type == "sftp":
                     _export_sftp(job, dataset_dir, req.dest_sftp, dataset_name)
                 else:
                     raise ValueError(f"dest_type inconnu: {req.dest_type}")
+                exported_count = len(valid_sessions)
                 _log_job(job, f"✓ Dataset LeRobot exporté ({len(valid_sessions)} épisodes)", "OK")
                 # Nettoyage uniquement en cas de succès complet
                 shutil.rmtree(work_dir, ignore_errors=True)
@@ -2775,17 +2998,19 @@ def _worker_export(job: Job, req: ExportRequest):
         _update_job(job, progress=100.0)
     else:
         # ── Mode raw : une session = un export ───────────────────────────────
-        exported = []
+        exported_count = 0
         for i, sess_path in enumerate(sessions):
             sess = Path(sess_path)
             if not sess.exists():
-                errors.append(f"{sess_path}: introuvable")
+                errors.append(f"{sess.name}: introuvable")
                 _log_job(job, f"[{i+1}/{total}] SKIP {sess.name} — dossier introuvable", "WARN")
                 _update_job(job, progress=round((i + 1) / total * 100, 1))
                 continue
 
             sess_name = sess.name
-            _log_job(job, f"[{i+1}/{total}] Export {sess_name}…", "INFO")
+            # Log allégé : seulement tous les 50 pour les gros jobs
+            if total <= 200 or (i % 50 == 0):
+                _log_job(job, f"[{i+1}/{total}] Export {sess_name}…", "INFO")
             try:
                 if req.dest_type == "local":
                     _export_local(job, sess, req.dest_local, sess_name)
@@ -2795,16 +3020,24 @@ def _worker_export(job: Job, req: ExportRequest):
                     _export_sftp(job, sess, req.dest_sftp, sess_name)
                 else:
                     raise ValueError(f"dest_type inconnu: {req.dest_type}")
-                exported.append(sess_name)
-                _log_job(job, f"[{i+1}/{total}] ✓ {sess_name}", "OK")
+                exported_count += 1
             except Exception as e:
-                errors.append(f"{sess_name}: {e}")
+                # Limiter la taille de la liste d'erreurs pour éviter l'OOM
+                if len(errors) < 500:
+                    errors.append(f"{sess_name}: {e}")
+                elif len(errors) == 500:
+                    errors.append("... (trop d'erreurs, liste tronquée)")
                 _log_job(job, f"[{i+1}/{total}] ✗ {sess_name}: {e}", "ERROR")
             _update_job(job, progress=round((i + 1) / total * 100, 1))
 
-    result = {"errors": errors, "total": total}
+    result = {"errors": errors, "error_count": len(errors), "total": total, "exported": exported_count}
     status = JobStatus.DONE if not errors else JobStatus.ERROR
-    err_msg = "; ".join(errors) if errors else None
+    # Tronquer le message d'erreur global pour éviter les champs JSON géants
+    if errors:
+        err_sample = errors[:5]
+        err_msg = "; ".join(err_sample) + (f" ... (+{len(errors)-5} autres)" if len(errors) > 5 else "")
+    else:
+        err_msg = None
     _update_job(job, status=status, ended_at=_now(), progress=100.0, result=result, error=err_msg)
     _log_job(job, f"Export terminé — {len(errors)} erreur(s)", "OK" if not errors else "WARN")
 
@@ -2861,13 +3094,14 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
     chunks_size = max(1, opts.chunks_size)
     total_episodes = len(sessions)
 
-    # ── Détecter les caméras depuis la première session disponible ────────────
+    # ── Détecter les caméras depuis toutes les sessions ───────────────────────
     camera_keys: list[str] = []
     for sess in sessions:
         vid_dir = sess / "videos"
         if vid_dir.is_dir():
-            camera_keys = [f"observation.images.{v.stem}" for v in sorted(vid_dir.glob("*.mp4"))]
-            if camera_keys:
+            keys = [f"observation.images.{v.stem}" for v in sorted(vid_dir.glob("*.mp4"))]
+            if keys:
+                camera_keys = keys
                 break
     if not camera_keys:
         for sess in sessions:
@@ -2877,10 +3111,8 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
                 break
 
     # ── Lire les vraies métadonnées vidéo (codec, résolution, fps réels) ─────
-    # LeRobot v3 stocke ces infos dans features[key]["info"], lues par get_video_info()
-    # On lit la première vidéo disponible pour chaque caméra.
     def _read_video_info(mp4_path: Path) -> dict:
-        """Lit les métadonnées réelles d'une vidéo via ffprobe/subprocess."""
+        """Lit les métadonnées réelles d'une vidéo via ffprobe."""
         try:
             import subprocess
             r = subprocess.run(
@@ -2891,15 +3123,12 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
             vs = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
             if vs is None:
                 raise ValueError("no video stream")
-            # fps : r_frame_rate = "30/1"
             num, den = vs.get("r_frame_rate", "30/1").split("/")
             fps = int(round(int(num) / max(1, int(den))))
             pix_fmt = vs.get("pix_fmt", "yuv420p")
-            # yuvj420p → yuv420p pour compatibilité
             if pix_fmt == "yuvj420p":
                 pix_fmt = "yuv420p"
             channels = 1 if "gray" in pix_fmt else (4 if "rgba" in pix_fmt or "yuva" in pix_fmt else 3)
-            # audio
             has_audio = any(s.get("codec_type") == "audio" for s in data["streams"])
             return {
                 "video.fps": fps,
@@ -2934,28 +3163,185 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
                 video_infos[cam_key] = _read_video_info(src)
                 break
         if cam_key not in video_infos:
-            video_infos[cam_key] = _read_video_info(Path("/dev/null"))  # fallback
+            video_infos[cam_key] = _read_video_info(Path("/dev/null"))
 
-    # ── Détecter les colonnes depuis la première session avec CSV ─────────────
-    feature_columns: dict[str, dict] = {}
-    for sess in sessions:
+    # ── Lire le JSONL caméra d'une session ────────────────────────────────────
+    def _read_jsonl(path: Path) -> list[dict]:
+        """Lit un fichier JSONL caméra (format {index, capture_time})."""
+        frames = []
+        try:
+            raw = path.read_bytes()
+            for part in raw.split(b"\r\n"):
+                part = part.strip()
+                if len(part) > 5:
+                    try:
+                        frames.append(json.loads(part))
+                    except json.JSONDecodeError:
+                        pass
+        except Exception:
+            pass
+        return frames
+
+    def _build_camera_timeline(sess: Path, camera_keys: list[str]) -> "pd.DataFrame | None":
+        """
+        Construit la timeline de référence à partir du JSONL de la première caméra disponible.
+        Retourne un DataFrame avec colonnes : capture_time_ms (epoch ms), timestamp (relatif s).
+        La timeline est la horloge de référence : 1 ligne = 1 frame vidéo.
+        """
+        for cam_key in camera_keys:
+            cam_name = cam_key.replace("observation.images.", "")
+            jsonl_path = sess / "videos" / f"{cam_name}.jsonl"
+            if not jsonl_path.exists():
+                continue
+            frames = _read_jsonl(jsonl_path)
+            if not frames:
+                continue
+            capture_times = [float(f["capture_time"]) for f in frames]
+            t0 = capture_times[0]
+            timestamps = [(t - t0) / 1000.0 for t in capture_times]
+            return pd.DataFrame({
+                "capture_time_ms": capture_times,
+                "timestamp":       timestamps,
+            })
+        return None
+
+    # ── Merger tous les CSV d'une session en un seul DataFrame ───────────────
+    # Colonnes structurelles qui ne doivent pas être préfixées ni exportées en tant que features :
+    # uniquement les identifiants internes LeRobot et les clés d'alignement temporel brutes.
+    # t_ms / t_ms_corrected_ns sont des données utiles → elles doivent être préfixées et incluses.
+    _NO_PREFIX = {"time_seconds", "timestamp", "timestamp_ns",
+                  "frame_index", "episode_index", "index", "task_index", "_ts_ms_key"}
+
+    def _prefixed_df(df: pd.DataFrame, stem: str) -> pd.DataFrame:
+        """Préfixe les colonnes de données avec le stem du fichier CSV.
+
+        Ex : gripper_right_data  →  gripper_right_opening_mm, gripper_right_angle_deg
+             tracker_positions   →  tracker_head_x (inchangé, commence déjà par 'tracker')
+        Règle : si la colonne commence déjà par le premier mot du stem, pas de préfixe.
+        Les colonnes dans _NO_PREFIX ne sont jamais modifiées.
+        """
+        first_word = stem.split("_")[0]  # ex: 'gripper' ou 'tracker'
+        rename = {}
+        for col in df.columns:
+            if col in _NO_PREFIX:
+                continue
+            safe = col.replace("-", "_").replace(" ", "_")
+            if safe.startswith(first_word):
+                rename[col] = safe  # déjà qualifié
+            else:
+                rename[col] = f"{stem}_{safe}"
+        return df.rename(columns=rename)
+
+    def _merge_session_csvs(sess: Path, cam_timeline: "pd.DataFrame | None") -> "pd.DataFrame | None":
+        """
+        Lit tous les CSV de la session, préfixe leurs colonnes avec le nom de fichier,
+        puis les fusionne sur la timeline caméra (1 ligne = 1 frame vidéo, via merge_asof
+        sur capture_time_ms / timestamp_ns).
+
+        Si aucune timeline caméra n'est disponible, fallback sur le CSV le plus long.
+        Les colonnes non-numériques (texte, bool) sont exclues du parquet.
+        """
+        import numpy as np
+
         csv_files = sorted(sess.glob("*.csv"))
         if not csv_files:
-            continue
+            return cam_timeline  # retourner au moins la timeline si pas de CSV
+
+        dfs: list[tuple[str, pd.DataFrame]] = []  # (stem, df)
         for csv_f in csv_files:
             try:
-                df_sample = pd.read_csv(csv_f, nrows=1)
+                df_tmp = pd.read_csv(csv_f)
+                if df_tmp.empty:
+                    continue
+                # Convertir timestamp_ns en ms pour l'alignement sur capture_time_ms
+                if "timestamp_ns" in df_tmp.columns:
+                    df_tmp["_ts_ms_key"] = pd.to_numeric(df_tmp["timestamp_ns"], errors="coerce") / 1_000_000
+                elif "time_seconds" in df_tmp.columns:
+                    # Convertir time_seconds epoch en ms approximatif (fallback)
+                    df_tmp["_ts_ms_key"] = pd.to_numeric(df_tmp["time_seconds"], errors="coerce") * 1000
+                if "_ts_ms_key" in df_tmp.columns:
+                    df_tmp = df_tmp.sort_values("_ts_ms_key").reset_index(drop=True)
+                stem = csv_f.stem
+                if stem.endswith("_data"):
+                    stem = stem[:-5]
+                df_tmp = _prefixed_df(df_tmp, stem)
+                dfs.append((stem, df_tmp))
+            except Exception as e:
+                _log_job(job, f"    CSV ignoré ({csv_f.name}): {e}", "WARN")
+
+        if not dfs:
+            return cam_timeline
+
+        # ── Cas 1 : timeline caméra disponible → aligner chaque CSV dessus ─────
+        if cam_timeline is not None:
+            base = cam_timeline.copy()
+            for stem, other in dfs:
+                if "_ts_ms_key" not in other.columns:
+                    continue
+                new_cols = [c for c in other.columns
+                            if c not in base.columns and c != "_ts_ms_key"
+                            and pd.api.types.is_numeric_dtype(other[c])]
+                if not new_cols:
+                    continue
+                other_sub = other[["_ts_ms_key"] + new_cols].copy()
+                base = pd.merge_asof(
+                    base.sort_values("capture_time_ms"),
+                    other_sub.sort_values("_ts_ms_key"),
+                    left_on="capture_time_ms",
+                    right_on="_ts_ms_key",
+                    direction="nearest",
+                    tolerance=500.0,  # tolérance 500 ms
+                )
+                # merge_asof conserve les deux clés quand elles diffèrent
+                base = base.drop(columns=[c for c in base.columns if c.startswith("_ts_ms_key")], errors="ignore")
+            base = base.drop(columns=["capture_time_ms"], errors="ignore")
+            return base
+
+        # ── Cas 2 : pas de JSONL → fallback CSV le plus long (comportement original) ──
+        dfs.sort(key=lambda t: len(t[1]), reverse=True)
+        base = dfs[0][1].copy()
+        for _, other in dfs[1:]:
+            new_cols = [c for c in other.columns if c != "time_seconds" and c not in base.columns]
+            if not new_cols:
+                continue
+            other_sub = other[["time_seconds"] + new_cols].copy() if "time_seconds" in other.columns else other[new_cols].copy()
+            if "time_seconds" in base.columns and "time_seconds" in other.columns:
+                base = pd.merge_asof(
+                    base,
+                    other_sub,
+                    on="time_seconds",
+                    direction="nearest",
+                    tolerance=0.5,
+                )
+            else:
+                for col in new_cols:
+                    base[col] = other[col].reindex(base.index)
+        base = base.drop(columns=["_ts_ms_key"], errors="ignore")
+        return base
+
+    # ── Détecter les colonnes numériques depuis toutes les sessions ───────────
+    # Scan complet avec préfixage identique à _merge_session_csvs
+    feature_columns: dict[str, dict] = {}
+    STANDARD_COLS = {"timestamp", "frame_index", "episode_index", "index", "task_index",
+                     "time_seconds", "capture_time_ms", "_ts_ms_key"}
+    for sess in sessions:
+        csv_files = sorted(sess.glob("*.csv"))
+        for csv_f in csv_files:
+            try:
+                df_sample = pd.read_csv(csv_f, nrows=2)
+                stem = csv_f.stem
+                if stem.endswith("_data"):
+                    stem = stem[:-5]
+                df_sample = _prefixed_df(df_sample, stem)
                 for col in df_sample.columns:
-                    safe = col.replace("-", "_").replace(" ", "_")
-                    if safe not in ("timestamp", "frame_index", "episode_index", "index", "task_index"):
-                        feature_columns[safe] = {"dtype": "float64", "shape": (1,), "names": None}
+                    if col in STANDARD_COLS:
+                        continue
+                    if pd.api.types.is_numeric_dtype(df_sample[col]):
+                        feature_columns[col] = {"dtype": "float64", "shape": (1,), "names": None}
             except Exception:
                 pass
-        if feature_columns:
-            break
 
     # ── Construire le dict features complet (format LeRobot v3) ───────────────
-    # Les colonnes standard ont shape=(1,) — tuple, pas liste
     features: dict = {
         "timestamp":     {"dtype": "float32", "shape": (1,), "names": None},
         "frame_index":   {"dtype": "int64",   "shape": (1,), "names": None},
@@ -2970,13 +3356,15 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
             "dtype": "video",
             "shape": (vi["video.height"], vi["video.width"], vi["video.channels"]),
             "names": ["height", "width", "channel"],
-            "info": vi,  # clé "info", pas "video_info" — c'est ce que lerobot lit
+            "info": vi,
         }
 
-    # ── Itérer les sessions → épisodes (par batches pour limiter la RAM) ─────
-    batch_size   = max(1, opts.batch_size)   # épisodes traités à la fois
+    _log_job(job, f"  Schema : {len(feature_columns)} colonnes de données + {len(camera_keys)} caméras", "INFO")
+
+    # ── Itérer les sessions → épisodes ────────────────────────────────────────
+    batch_size   = max(1, opts.batch_size)
     total_frames = 0
-    episode_rows: list[dict] = []            # pour meta/episodes parquet
+    episode_rows: list[dict] = []
     dataset_from = 0
     ep_errors:   list[str]  = []
 
@@ -2984,24 +3372,20 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
         chunk_idx = ep_idx // chunks_size
         file_idx  = ep_idx % chunks_size
 
-        # Vérifier si déjà traité (reprise après crash)
         data_path = dataset_dir / "data" / f"chunk-{chunk_idx:03d}" / f"file-{file_idx:03d}.parquet"
+
+        # ── Reprise après crash : épisode déjà traité ─────────────────────────
         if data_path.exists():
-            # Recharger le nombre de frames depuis le fichier existant
             try:
                 n_frames = len(pd.read_parquet(data_path, columns=["frame_index"]))
             except Exception:
                 n_frames = 0
-            dataset_from += n_frames
-            total_frames += n_frames
-            _log_job(job, f"  épisode {ep_idx:04d} ({sess.name}) — déjà traité, skip", "INFO")
-            # Reconstruire la ligne d'épisode pour le parquet final
             ep_row: dict = {
                 "episode_index":             ep_idx,
                 "tasks":                     [0],
                 "length":                    n_frames,
-                "dataset_from_index":        dataset_from - n_frames,
-                "dataset_to_index":          dataset_from,
+                "dataset_from_index":        dataset_from,
+                "dataset_to_index":          dataset_from + n_frames,
                 "data/chunk_index":          chunk_idx,
                 "data/file_index":           file_idx,
                 "meta/episodes/chunk_index": 0,
@@ -3011,21 +3395,20 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
                 ep_row[f"videos/{cam_key}/chunk_index"] = chunk_idx
                 ep_row[f"videos/{cam_key}/file_index"]  = file_idx
             episode_rows.append(ep_row)
+            dataset_from += n_frames
+            total_frames += n_frames
+            _log_job(job, f"  épisode {ep_idx:04d} ({sess.name}) — déjà traité, skip", "INFO")
+            _update_job(job, progress=round((ep_idx + 1) / total_episodes * 90, 1))
             continue
 
+        # ── Traitement d'un épisode ───────────────────────────────────────────
         try:
-            # ── Parquet de données de l'épisode ──────────────────────────────
-            csv_files = sorted(sess.glob("*.csv"))
-            ref_df: pd.DataFrame | None = None
-            if csv_files:
-                for csv_f in csv_files:
-                    try:
-                        df_tmp = pd.read_csv(csv_f)
-                        if ref_df is None or len(df_tmp) > len(ref_df):
-                            ref_df = df_tmp
-                    except Exception:
-                        pass
+            import subprocess as _sp
+            import numpy as _np
 
+            # Construire la timeline caméra (1 ligne = 1 frame vidéo @ fps réel)
+            cam_timeline = _build_camera_timeline(sess, camera_keys)
+            ref_df = _merge_session_csvs(sess, cam_timeline)
             n_frames = len(ref_df) if ref_df is not None else 0
 
             rows: dict = {
@@ -3034,39 +3417,88 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
                 "index":         [total_frames + i for i in range(n_frames)],
                 "task_index":    [0] * n_frames,
             }
-            if ref_df is not None and "time_seconds" in ref_df.columns:
+
+            # timestamp : priorité au JSONL caméra (relatif en s), sinon time_seconds
+            if ref_df is not None and "timestamp" in ref_df.columns:
+                rows["timestamp"] = [float(v) for v in ref_df["timestamp"]]
+            elif ref_df is not None and "time_seconds" in ref_df.columns:
                 t0 = float(ref_df["time_seconds"].iloc[0])
                 rows["timestamp"] = [float(v) - t0 for v in ref_df["time_seconds"]]
             else:
                 rows["timestamp"] = [i / opts.fps for i in range(n_frames)]
 
+            # Inclure toutes les colonnes numériques (trackers, gripper, etc.)
+            _SKIP_COLS = STANDARD_COLS | {"capture_time_ms", "_ts_ms_key"}
             if ref_df is not None:
                 for col in ref_df.columns:
                     safe = col.replace("-", "_").replace(" ", "_")
-                    if safe in rows:
+                    if safe in rows or safe in _SKIP_COLS:
+                        continue
+                    col_data = ref_df[col]
+                    if not pd.api.types.is_numeric_dtype(col_data):
                         continue
                     try:
-                        rows[safe] = [float(v) if v == v else 0.0 for v in ref_df[col]]
+                        rows[safe] = [float(v) if pd.notna(v) else 0.0 for v in col_data]
                     except (ValueError, TypeError):
                         pass
 
             ep_df = pd.DataFrame(rows)
             data_path.parent.mkdir(parents=True, exist_ok=True)
             ep_df.to_parquet(data_path, index=False)
-            del ep_df, rows, ref_df   # libérer la RAM immédiatement
 
-            # ── Copier les vidéos au bon emplacement ──────────────────────────
+            # Durée parquet = timestamp de la dernière frame
+            parquet_duration_s = float(ep_df["timestamp"].iloc[-1]) if n_frames > 0 else 0.0
+            del ep_df, rows, ref_df
+
+            # ── Copier + trimmer les vidéos pour aligner avec le parquet ─────
             for cam_key in camera_keys:
                 cam_name = cam_key.replace("observation.images.", "")
                 src_mp4 = sess / "videos" / f"{cam_name}.mp4"
                 if not src_mp4.exists():
                     src_mp4 = sess / f"{cam_name}.mp4"
-                if src_mp4.exists():
-                    vid_out = dataset_dir / "videos" / cam_key / f"chunk-{chunk_idx:03d}"
-                    vid_out.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_mp4, vid_out / f"file-{file_idx:03d}.mp4")
+                if not src_mp4.exists():
+                    _log_job(job, f"    vidéo manquante : {cam_name}.mp4 dans {sess.name}", "WARN")
+                    continue
 
-            # ── Ligne d'épisode (pour meta/episodes parquet) ──────────────────
+                vid_out = dataset_dir / "videos" / cam_key / f"chunk-{chunk_idx:03d}"
+                vid_out.mkdir(parents=True, exist_ok=True)
+                dst_mp4 = vid_out / f"file-{file_idx:03d}.mp4"
+
+                # Vérifier la durée source
+                try:
+                    r_probe = _sp.run(
+                        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(src_mp4)],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    probe_d = json.loads(r_probe.stdout)
+                    probe_vs = next((s for s in probe_d["streams"] if s["codec_type"] == "video"), None)
+                    src_duration = float(probe_vs["duration"]) if probe_vs else 0.0
+                except Exception:
+                    src_duration = 0.0
+
+                # Trimmer si la source dépasse la durée parquet de plus de 200ms
+                needs_trim = src_duration > parquet_duration_s + 0.2 and parquet_duration_s > 0
+                if needs_trim:
+                    tmp_mp4 = tmp_dir / f"_trim_ep{ep_idx}_{cam_name}.mp4"
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-i", str(src_mp4),
+                        "-t", f"{parquet_duration_s:.6f}",
+                        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+                        "-pix_fmt", "yuv420p",
+                        str(tmp_mp4)
+                    ]
+                    r_ffmpeg = _sp.run(cmd, capture_output=True, text=True, timeout=300)
+                    if r_ffmpeg.returncode == 0:
+                        shutil.move(str(tmp_mp4), str(dst_mp4))
+                        _log_job(job, f"    {cam_name}: trimmed {src_duration:.2f}s → {parquet_duration_s:.2f}s", "INFO")
+                    else:
+                        # Fallback : copie directe si ffmpeg échoue
+                        shutil.copy2(src_mp4, dst_mp4)
+                        _log_job(job, f"    {cam_name}: trim échoué, copie directe ({r_ffmpeg.stderr[-100:]})", "WARN")
+                else:
+                    shutil.copy2(src_mp4, dst_mp4)
+
             ep_row = {
                 "episode_index":             ep_idx,
                 "tasks":                     [0],
@@ -3088,55 +3520,60 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
             _log_job(job, f"  épisode {ep_idx:04d} ({sess.name}) — {n_frames} frames → chunk-{chunk_idx:03d}/file-{file_idx:03d}", "INFO")
 
         except Exception as exc:
+            import traceback
+            detail = traceback.format_exc()
             ep_errors.append(f"ep {ep_idx:04d} ({sess.name}): {exc}")
-            _log_job(job, f"  ✗ épisode {ep_idx:04d} ({sess.name}): {exc}", "ERROR")
+            _log_job(job, f"  ✗ épisode {ep_idx:04d} ({sess.name}): {exc}\n{detail}", "ERROR")
+            # Supprimer le parquet partiel pour permettre une reprise propre
+            if data_path.exists():
+                try:
+                    data_path.unlink()
+                except Exception:
+                    pass
 
-        # ── Écriture intermédiaire du parquet episodes tous les N épisodes ────
-        # Permet de récupérer l'état si le process est tué
+        # Flush intermédiaire + progression
         if len(episode_rows) % batch_size == 0 and episode_rows:
             _flush_episode_parquet(meta_dir, episode_rows)
-
-        # Mise à jour de la progression dans le job
         _update_job(job, progress=round((ep_idx + 1) / total_episodes * 90, 1))
 
-    if ep_errors:
-        raise RuntimeError(f"{len(ep_errors)} épisode(s) en erreur:\n" + "\n".join(ep_errors))
-
-    # ── meta/tasks.parquet ────────────────────────────────────────────────────
+    # ── Écrire les métadonnées finales (même si des épisodes ont échoué) ─────
+    # meta/tasks.parquet
     tasks_df = pd.DataFrame([{"task_index": 0, "task": "robot episode"}])
-    (meta_dir / "tasks.parquet").write_bytes(
-        tasks_df.to_parquet(index=False)
-    )
+    (meta_dir / "tasks.parquet").write_bytes(tasks_df.to_parquet(index=False))
 
-    # ── meta/stats.json (requis par LeRobot pour la normalisation) ────────────
-    # Stats vides mais structurellement valides — suffisant pour charger le dataset
+    # meta/stats.json
     (meta_dir / "stats.json").write_text("{}", encoding="utf-8")
 
-    # ── meta/episodes/chunk-000/file-000.parquet (écriture finale) ───────────
+    # meta/episodes/chunk-000/file-000.parquet
     _flush_episode_parquet(meta_dir, episode_rows)
 
-    # ── meta/info.json ────────────────────────────────────────────────────────
+    # meta/info.json
     total_chunks = max(1, (total_episodes + chunks_size - 1) // chunks_size)
+    # Compter les épisodes réellement écrits (sans les erreurs)
+    successful_episodes = len(episode_rows)
     info = {
         "codebase_version": "v3.0",
         "robot_type": opts.robot_type,
-        "total_episodes": total_episodes,
+        "total_episodes": successful_episodes,
         "total_frames": total_frames,
         "total_tasks": 1,
-        "total_videos": total_episodes * len(camera_keys),
+        "total_videos": successful_episodes * len(camera_keys),
         "total_chunks": total_chunks,
         "chunks_size": chunks_size,
         "data_files_size_in_mb": 100,
         "video_files_size_in_mb": 200,
         "fps": opts.fps,
-        "splits": {"train": f"0:{total_episodes}"},
+        "splits": {"train": f"0:{successful_episodes}"},
         "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
         "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
         "features": features,
     }
     (meta_dir / "info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    _log_job(job, f"  Dataset LeRobot v3.0 : {total_episodes} épisodes, {total_frames} frames, {total_chunks} chunk(s)", "OK")
+    _log_job(job, f"  Dataset LeRobot v3.0 : {successful_episodes} épisodes, {total_frames} frames, {total_chunks} chunk(s)", "OK")
+
+    if ep_errors:
+        _log_job(job, f"  ⚠ {len(ep_errors)} épisode(s) ignoré(s) :\n" + "\n".join(ep_errors), "WARN")
 
     # ── Push HuggingFace Hub ──────────────────────────────────────────────────
     if opts.push_to_hub and opts.hf_token and opts.repo_id:
@@ -3152,34 +3589,88 @@ def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_d
     return dataset_dir
 
 
+def _export_local_lerobot(job: Job, src: Path, dest: ExportDestLocal, dataset_name: str):
+    """Export d'un dataset LeRobot complet.
+
+    src est déjà le répertoire dataset (contient meta/, data/, videos/).
+    On copie son contenu dans dest.path/dataset_name/ en écrasant les fichiers existants
+    (comportement de mise à jour — permet la reprise après un export partiel).
+    """
+    import shutil
+    out = Path(dest.path) / dataset_name
+    out.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in src.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(src)
+            dst = out / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, dst)
+            n += 1
+    _log_job(job, f"    → local: {out} ({n} fichiers)", "INFO")
+
+
 def _export_local(job: Job, src: Path, dest: ExportDestLocal, sess_name: str):
     import shutil
     out = Path(dest.path) / sess_name
-    if out.exists():
-        shutil.rmtree(out)
-    shutil.copytree(str(src), str(out))
-    _log_job(job, f"    → local: {out}", "INFO")
+    out.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in src.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(src)
+            dst = out / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, dst)
+            n += 1
+    _log_job(job, f"    → local: {out} ({n} fichiers)", "INFO")
 
 
 def _export_s3(job: Job, src: Path, dest: ExportDestS3, sess_name: str):
     try:
         import boto3
+        from botocore.exceptions import ClientError
     except ImportError:
         raise RuntimeError("boto3 non installé — pip install boto3")
-    session = boto3.Session(
+    boto_session = boto3.Session(
         aws_access_key_id=dest.access_key,
         aws_secret_access_key=dest.secret_key,
         region_name=dest.region,
     )
-    s3 = session.client("s3")
+    s3 = boto_session.client("s3")
     prefix = (dest.prefix.rstrip("/") + "/" + sess_name + "/").lstrip("/")
-    n = 0
-    for f in src.rglob("*"):
-        if f.is_file():
-            key = prefix + str(f.relative_to(src)).replace("\\", "/")
-            s3.upload_file(str(f), dest.bucket, key)
-            n += 1
-    _log_job(job, f"    → S3 s3://{dest.bucket}/{prefix} ({n} fichiers)", "INFO")
+    files = [f for f in src.rglob("*") if f.is_file()]
+    n_ok = 0
+    n_err = 0
+    file_errors = []
+    for f in files:
+        key = prefix + str(f.relative_to(src)).replace("\\", "/")
+        # Retry 3x sur les erreurs réseau/throttling transitoires
+        last_exc = None
+        for attempt in range(3):
+            try:
+                s3.upload_file(str(f), dest.bucket, key)
+                last_exc = None
+                break
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                # Ne pas retry sur les erreurs d'auth / bucket inexistant
+                if code in ("AccessDenied", "NoSuchBucket", "InvalidAccessKeyId", "SignatureDoesNotMatch"):
+                    last_exc = e
+                    break
+                last_exc = e
+                time.sleep(1.5 * (attempt + 1))
+            except Exception as e:
+                last_exc = e
+                time.sleep(1.5 * (attempt + 1))
+        if last_exc is not None:
+            n_err += 1
+            file_errors.append(f"{f.name}: {last_exc}")
+        else:
+            n_ok += 1
+    if file_errors:
+        sample = "; ".join(file_errors[:3]) + (f" ... (+{len(file_errors)-3} autres)" if len(file_errors) > 3 else "")
+        raise RuntimeError(f"{n_err} fichier(s) non uploadé(s) sur {len(files)}: {sample}")
+    _log_job(job, f"    → S3 s3://{dest.bucket}/{prefix} ({n_ok} fichiers)", "INFO")
 
 
 def _export_sftp(job: Job, src: Path, dest: ExportDestSftp, sess_name: str):

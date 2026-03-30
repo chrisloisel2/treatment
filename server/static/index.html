@@ -800,6 +800,60 @@
 			height: 340px
 		}
 
+		/* ══ PIPELINE CONFIG ════════════════════════════════════════════════ */
+
+		.pc-toggle {
+			width: 36px; height: 20px; border-radius: 10px;
+			background: var(--accent); border: 1px solid var(--border2);
+			cursor: pointer; position: relative; transition: background .2s; flex-shrink: 0
+		}
+		.pc-toggle .pc-knob {
+			position: absolute; top: 2px; left: 16px; width: 14px; height: 14px;
+			border-radius: 50%; background: #fff; transition: left .2s
+		}
+		.pc-toggle[data-val="0"] { background: var(--bg4) }
+		.pc-toggle[data-val="0"] .pc-knob { left: 2px }
+		.pc-toggle-label { font-size: .78rem; font-weight: 600; min-width: 50px }
+
+		.pc-step {
+			display: flex; align-items: center; gap: 10px;
+			background: var(--bg3); border: 1px solid var(--border);
+			border-radius: var(--rs); padding: 9px 12px;
+			cursor: default; user-select: none; transition: border-color .15s
+		}
+		.pc-step:hover { border-color: var(--border2) }
+		.pc-step.disabled { opacity: .45 }
+		.pc-step.dragging { opacity: .3; border-style: dashed }
+		.pc-step.drag-over { border-color: var(--accent); background: var(--bg4) }
+
+		.pc-step-drag { cursor: grab; color: var(--text3); font-size: .85rem; padding: 0 4px }
+		.pc-step-drag:active { cursor: grabbing }
+		.pc-step-num { font-size: .7rem; color: var(--text3); min-width: 18px; text-align: center }
+		.pc-step-ico { font-size: 1rem; min-width: 22px; text-align: center }
+		.pc-step-name { font-weight: 600; font-size: .85rem; flex: 1 }
+		.pc-step-desc { font-size: .72rem; color: var(--text2); flex: 2 }
+		.pc-step-tag {
+			font-size: .65rem; padding: 1px 7px; border-radius: 99px;
+			background: var(--bg5); color: var(--text2); white-space: nowrap
+		}
+		.pc-step-tag.critical { background: #f0444420; color: var(--red); border: 1px solid var(--red)44 }
+		.pc-step-tag.optional { background: #06b6d420; color: var(--accent3); border: 1px solid var(--accent3)44 }
+
+		.pc-move-btn {
+			background: none; border: 1px solid var(--border); border-radius: var(--rs);
+			color: var(--text2); font-size: .75rem; padding: 2px 6px; cursor: pointer;
+			transition: all .12s
+		}
+		.pc-move-btn:hover { background: var(--bg4); color: var(--text) }
+		.pc-move-btn:disabled { opacity: .25; cursor: default }
+
+		.pc-cfg-btn {
+			background: none; border: 1px solid var(--border); border-radius: var(--rs);
+			color: var(--text2); font-size: .75rem; padding: 3px 9px; cursor: pointer;
+			transition: all .12s
+		}
+		.pc-cfg-btn:hover { background: var(--accent)22; border-color: var(--accent); color: var(--accent) }
+
 		/* ══ PIPELINE BOARD ══════════════════════════════════════════════════ */
 
 		/* Kanban-style pipeline board */
@@ -1269,6 +1323,24 @@
 		.sess-item.selected {
 			background: var(--accent)1a;
 			border-color: var(--accent)66
+		}
+
+		.sess-item.is-rotated {
+			border-left: 3px solid var(--accent);
+		}
+
+		.si-rotate-badge {
+			font-size: .8rem;
+			font-weight: 700;
+			flex-shrink: 0;
+			width: 20px;
+			text-align: center;
+			opacity: .25;
+			cursor: default;
+		}
+		.si-rotate-badge.rotated {
+			color: var(--accent);
+			opacity: 1;
 		}
 
 		.sess-item .si-name {
@@ -1918,14 +1990,24 @@
 			overflow-y: auto;
 			padding: 4px 0
 		}
+		#tv-sess-list .post-group-header {
+			cursor: default;
+			pointer-events: none;
+		}
+		#tv-sess-list .post-group-header:hover {
+			background: var(--bg3);
+		}
 
 		.tv-sess-item {
-			padding: 8px 12px;
+			padding: 6px 12px 6px 8px;
 			cursor: pointer;
 			margin: 2px 6px;
 			border-radius: var(--rs);
 			border-left: 2px solid transparent;
 			transition: background .1s, border-color .1s;
+			display: flex;
+			align-items: flex-start;
+			gap: 6px;
 		}
 
 		.tv-sess-item:hover {
@@ -1937,12 +2019,35 @@
 			border-left-color: var(--accent)
 		}
 
+		.tv-sess-item.selected {
+			background: var(--accent)1a;
+			outline: 1px solid var(--accent)55;
+		}
+
+		.tv-sess-item.selected.active {
+			background: var(--accent)28;
+		}
+
 		.tv-sess-item.verif-issues {
 			border-left-color: var(--red)
 		}
 
 		.tv-sess-item.verif-issues.active {
 			border-left-color: var(--red)
+		}
+
+		.tv-sess-cb {
+			flex-shrink: 0;
+			width: 14px;
+			height: 14px;
+			margin-top: 3px;
+			accent-color: var(--accent);
+			cursor: pointer;
+		}
+
+		.tv-sess-item-body {
+			flex: 1;
+			min-width: 0;
 		}
 
 		.tv-sess-item-name {
@@ -2990,6 +3095,9 @@
 					<span class="ico">◎</span>Sessions
 					<span class="nav-badge" id="nb-sessions">0</span>
 				</button>
+				<button class="nav-btn" onclick="nav('pipelineconfig',this)">
+					<span class="ico">⚙</span>Config Pipeline
+				</button>
 
 				<div class="nav-sep"></div>
 				<div class="nav-group">Entraînement</div>
@@ -3183,6 +3291,12 @@
 								style="background:var(--red)1a;border-color:var(--red)44;color:var(--red)"
 								onclick="selIssues()" title="Sélectionner uniquement les sessions avec problèmes">⚠
 								Problèmes</button>
+							<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
+							<button class="btn sm"
+								style="background:var(--accent)1a;border-color:var(--accent)44;color:var(--accent)"
+								onclick="selRotated()" title="Sélectionner uniquement les sessions avec vidéo rotée 180°">↻ Rotées</button>
+							<button class="btn sm"
+								onclick="selNotRotated()" title="Sélectionner uniquement les sessions sans rotation vidéo">○ Non-rotées</button>
 						</div>
 						<div id="sess-list"></div>
 						<div class="div" style="margin:10px 0 8px"></div>
@@ -3212,7 +3326,7 @@
 							<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
 								<div id="verify-export-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
 							</div>
-							<div id="verify-export-log" style="margin-top:6px;max-height:120px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
+							<div id="verify-export-log" style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
 						</div>
 					</div>
 
@@ -3855,6 +3969,236 @@
 				</div>
 
 				<!-- ══════════════════════════════════════════════════════
+  PAGE : PIPELINE CONFIG
+══════════════════════════════════════════════════════ -->
+				<div class="page" id="page-pipelineconfig">
+					<div class="ph">Configuration Pipeline</div>
+					<div class="ps">Définissez les actions automatiques exécutées à chaque réception de session.</div>
+
+					<div class="g2" style="align-items:start">
+
+						<!-- ── Colonne gauche : étapes ── -->
+						<div style="display:flex;flex-direction:column;gap:14px">
+
+							<!-- Triggers -->
+							<div class="card">
+								<div class="card-h">Déclencheurs</div>
+								<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Watcher automatique</label>
+										<div class="pc-toggle" id="trig-watcher" onclick="pcToggle(this)" data-key="trig_watcher" data-val="1">
+											<div class="pc-knob"></div>
+										</div>
+										<span class="pc-toggle-label" id="trig-watcher-lbl">Activé</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Lance la pipeline dès qu'un nouveau dossier apparaît dans le répertoire de travail</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Scan au démarrage</label>
+										<div class="pc-toggle" id="trig-startup" onclick="pcToggle(this)" data-key="trig_startup" data-val="1">
+											<div class="pc-knob"></div>
+										</div>
+										<span class="pc-toggle-label" id="trig-startup-lbl">Activé</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Scanne et traite les sessions non traitées au lancement du serveur</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Intervalle de poll (s)</label>
+										<input type="number" id="trig-interval" value="5" min="1" max="300"
+											oninput="pcSave()"
+											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
+										<span style="color:var(--text3);font-size:.73rem">Fréquence de vérification du dossier de travail</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Délai de grâce (s)</label>
+										<input type="number" id="trig-grace" value="3" min="0" max="60"
+											oninput="pcSave()"
+											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
+										<span style="color:var(--text3);font-size:.73rem">Attente avant de considérer une session comme stable (écriture terminée)</span>
+									</div>
+								</div>
+							</div>
+
+							<!-- Comportement global -->
+							<div class="card">
+								<div class="card-h">Comportement global</div>
+								<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Traitement parallèle</label>
+										<div class="pc-toggle" id="global-parallel" onclick="pcToggle(this)" data-key="global_parallel" data-val="0" style="background:var(--bg4)">
+											<div class="pc-knob"></div>
+										</div>
+										<span class="pc-toggle-label" id="global-parallel-lbl" style="color:var(--text3)">Désactivé</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Traite plusieurs sessions simultanément (attention aux ressources)</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Workers max</label>
+										<input type="number" id="global-workers" value="2" min="1" max="16"
+											oninput="pcSave()"
+											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
+										<span style="color:var(--text3);font-size:.73rem">Nombre de sessions traitées en parallèle</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Retry en cas d'erreur</label>
+										<input type="number" id="global-retry" value="1" min="0" max="5"
+											oninput="pcSave()"
+											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
+										<span style="color:var(--text3);font-size:.73rem">0 = pas de retry</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Arrêt sur erreur</label>
+										<div class="pc-toggle" id="global-stoponerr" onclick="pcToggle(this)" data-key="global_stoponerr" data-val="1">
+											<div class="pc-knob"></div>
+										</div>
+										<span class="pc-toggle-label" id="global-stoponerr-lbl">Activé</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Stoppe la pipeline si une étape critique échoue</span>
+									</div>
+									<div class="fr" style="align-items:center;gap:10px">
+										<label style="min-width:160px">Notifications logs</label>
+										<select id="global-loglevel" onchange="pcSave()"
+											style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px;font-size:.82rem">
+											<option value="DEBUG">DEBUG</option>
+											<option value="INFO" selected>INFO</option>
+											<option value="WARNING">WARNING</option>
+											<option value="ERROR">ERROR</option>
+										</select>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Niveau de verbosité des logs pipeline</span>
+									</div>
+								</div>
+							</div>
+
+						</div>
+
+						<!-- ── Colonne droite : étapes ── -->
+						<div class="card" style="min-width:0">
+							<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+								<div class="card-h" style="margin:0">Étapes de traitement</div>
+								<span style="font-size:.73rem;color:var(--text3);flex:1">Glissez ↕ pour réordonner</span>
+								<button class="btn sm" onclick="pcResetOrder()">↺ Réinitialiser l'ordre</button>
+							</div>
+
+							<div id="pc-steps-list" style="display:flex;flex-direction:column;gap:6px">
+								<!-- steps are rendered by pcRenderSteps() -->
+							</div>
+
+							<div style="margin-top:14px;display:flex;gap:8px">
+								<button class="btn p" onclick="pcApply()">✓ Appliquer</button>
+								<button class="btn" onclick="pcLoad()">↺ Recharger</button>
+							</div>
+						</div>
+
+					</div>
+
+					<!-- ══ Vérifier et exporter par lots ══ -->
+					<div class="card" style="margin-top:16px">
+						<div class="card-h">Vérifier et exporter par lots</div>
+						<div class="ps" style="margin:0 0 12px">Vérifie les sessions sélectionnées par groupes de 10, puis exporte chaque groupe validé.</div>
+
+						<!-- Destination -->
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Destination</div>
+						<div class="fr">
+							<label>Type</label>
+							<select id="pc-export-type" onchange="pcOnExportTypeChange()"
+								style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
+								<option value="local">Dossier local</option>
+								<option value="s3">AWS S3</option>
+								<option value="sftp">SFTP</option>
+							</select>
+						</div>
+						<div id="pc-exp-dest-local">
+							<div class="fr"><label>Dossier de sortie</label>
+								<input type="text" id="pc-export-local-path" value="/mnt/storage/pool" placeholder="/mnt/storage/pool" />
+							</div>
+						</div>
+						<div id="pc-exp-dest-s3" style="display:none">
+							<div style="font-size:.73rem;color:var(--text3);padding:6px 0 4px 158px">
+								Credentials S3 : bucket <b id="pc-exp-s3-bucket-label" style="color:var(--accent)">—</b> · région <b id="pc-exp-s3-region-label" style="color:var(--accent)">—</b>
+								— <a href="#" onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]\'));return false" style="color:var(--accent);text-decoration:underline">modifier dans Paramètres → Connexion AWS S3</a>
+							</div>
+							<div class="fr"><label>Préfixe export</label><input type="text" id="pc-export-s3-prefix" placeholder="export/" /></div>
+						</div>
+						<div id="pc-exp-dest-sftp" style="display:none">
+							<div class="fr"><label>Hôte</label><input type="text" id="pc-export-sftp-host" placeholder="storage.example.com" /></div>
+							<div class="fr"><label>Port</label><input type="number" id="pc-export-sftp-port" value="22" /></div>
+							<div class="fr"><label>Utilisateur</label><input type="text" id="pc-export-sftp-user" placeholder="robot" /></div>
+							<div class="fr"><label>Mot de passe</label><input type="password" id="pc-export-sftp-pass" placeholder="••••••••" autocomplete="off" /></div>
+							<div class="fr"><label>Chemin distant</label><input type="text" id="pc-export-sftp-path" placeholder="/data/sessions" /></div>
+						</div>
+
+						<div class="div" style="margin:12px 0"></div>
+
+						<!-- Format LeRobot -->
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Format de sortie</div>
+						<div class="chk">
+							<input type="checkbox" id="pc-export-lerobot" onchange="pcOnLerobotChange()" />
+							<label style="font-weight:600">Convertir au format <span style="color:#a78bfa">LeRobot v3</span></label>
+						</div>
+						<div id="pc-exp-lerobot-opts" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:1px solid #a78bfa44">
+							<div style="font-size:.78rem;color:#a78bfa;margin-bottom:8px;font-weight:600">Options LeRobot v3</div>
+							<div class="fr"><label>Nom du dataset</label><input type="text" id="pc-lerobot-name" placeholder="my_robot_dataset" /></div>
+							<div class="fr"><label>Robot type</label>
+								<select id="pc-lerobot-robot" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
+									<option value="so100">SO-100</option>
+									<option value="so101">SO-101</option>
+									<option value="moss">Moss</option>
+									<option value="custom">Custom</option>
+								</select>
+							</div>
+							<div class="fr"><label>FPS vidéo</label><input type="number" id="pc-lerobot-fps" value="30" min="1" max="120" /></div>
+							<div class="fr"><label>Sessions par chunk</label><input type="number" id="pc-lerobot-chunks-size" value="1000" min="1" max="100000" /></div>
+							<div class="fr"><label>Batch mémoire</label><input type="number" id="pc-lerobot-batch-size" value="5" min="1" max="100" /></div>
+							<div class="chk" style="margin-top:4px"><input type="checkbox" id="pc-lerobot-push-hub" onchange="pcOnHfPushChange()" />
+								<label>Pousser sur HuggingFace Hub</label>
+							</div>
+							<div id="pc-exp-hf-token-row" style="display:none;margin-top:6px">
+								<div class="fr"><label>HF Token</label><input type="password" id="pc-lerobot-hf-token" placeholder="hf_••••••••" autocomplete="off" /></div>
+								<div class="fr"><label>Repo ID</label><input type="text" id="pc-lerobot-repo" placeholder="username/dataset_name" /></div>
+							</div>
+						</div>
+
+						<div class="div" style="margin:12px 0"></div>
+
+						<!-- Dry-run + bouton -->
+						<div class="chk" style="margin-bottom:10px">
+							<input type="checkbox" id="pc-dry-run" />
+							<label style="font-weight:600">Mode <span style="color:var(--orange)">Dry-Run</span> — simuler sans écrire</label>
+						</div>
+
+						<button class="btn-verify-export" id="pc-btn-verify-export" onclick="verifyAndExportSelected('pc')" disabled>
+							<span id="pc-btn-verify-export-ico">✔</span> Vérifier et exporter automatiquement
+						</button>
+
+						<div id="pc-verify-export-progress" style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
+							<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+								<span id="pc-verify-export-status-ico">⏳</span>
+								<span id="pc-verify-export-status-text">Vérification en cours…</span>
+							</div>
+							<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
+								<div id="pc-verify-export-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+							</div>
+							<div id="pc-verify-export-log" style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
+						</div>
+					</div>
+
+					<!-- Step detail modal -->
+					<div id="pc-step-modal" style="display:none;position:fixed;inset:0;background:#000a;z-index:200;align-items:center;justify-content:center">
+						<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:24px;min-width:420px;max-width:600px;width:90vw;position:relative">
+							<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+								<span id="pc-modal-ico" style="font-size:1.5rem"></span>
+								<div>
+									<div id="pc-modal-title" style="font-weight:700;font-size:1rem"></div>
+									<div id="pc-modal-desc" style="font-size:.78rem;color:var(--text2)"></div>
+								</div>
+								<button onclick="pcCloseModal()" style="margin-left:auto;background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer">✕</button>
+							</div>
+							<div id="pc-modal-body" style="display:flex;flex-direction:column;gap:10px"></div>
+							<div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
+								<button class="btn sm" onclick="pcCloseModal()">Fermer</button>
+								<button class="btn sm p" onclick="pcSaveModalStep()">Sauvegarder</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- ══════════════════════════════════════════════════════
   PAGE : JOBS
 ══════════════════════════════════════════════════════ -->
 				<div class="page" id="page-jobs">
@@ -3961,19 +4305,23 @@
 						</div>
 					</div>
 
-					<!-- ══ Section Source S3 ══ -->
+					<!-- ══ Section S3 centralisée ══ -->
 					<div class="card" style="margin-top:16px">
-						<div class="card-h">Source S3 (dossier d'input)</div>
-						<div class="ps" style="margin:0 0 12px">Configurez un bucket S3 comme source de données. Vous pourrez parcourir et streamer les sessions directement depuis S3.</div>
-						<div class="fr"><label>Bucket S3</label><input type="text" id="s-src-s3-bucket" placeholder="my-robot-data" /></div>
-						<div class="fr"><label>Préfixe racine</label><input type="text" id="s-src-s3-prefix" placeholder="sessions/" /></div>
-						<div class="fr"><label>Région AWS</label><input type="text" id="s-src-s3-region" placeholder="eu-west-1" /></div>
-						<div class="fr"><label>Access Key ID</label><input type="text" id="s-src-s3-key" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
-						<div class="fr"><label>Secret Key</label><input type="password" id="s-src-s3-secret" placeholder="••••••••" autocomplete="off" /></div>
-						<div class="fr"><label>Dossier local temp</label><input type="text" id="s-src-s3-localdir" placeholder="/tmp/s3_stream" /></div>
-						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">Dossier local où seront streamés les fichiers S3 pour vérification.</div>
-						<div class="row">
-							<button class="btn p" onclick="saveSrcS3Settings()">Sauvegarder</button>
+						<div class="card-h">Connexion AWS S3</div>
+						<div class="ps" style="margin:0 0 12px">Credentials partagés par le S3 Browser, l'ingestion et l'export.</div>
+						<div class="fr"><label>Bucket S3</label><input type="text" id="s3-bucket" placeholder="my-robot-data" /></div>
+						<div class="fr"><label>Région AWS</label><input type="text" id="s3-region" placeholder="eu-west-1" /></div>
+						<div class="fr"><label>Access Key ID</label><input type="text" id="s3-key" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
+						<div class="fr"><label>Secret Key</label><input type="password" id="s3-secret" placeholder="••••••••" autocomplete="off" /></div>
+						<div class="div" style="margin:10px 0 8px"></div>
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Source (ingestion / S3 Browser)</div>
+						<div class="fr"><label>Préfixe source</label><input type="text" id="s3-src-prefix" placeholder="sessions/" /></div>
+						<div class="fr"><label>Dossier local temp</label><input type="text" id="s3-localdir" placeholder="/tmp/s3_stream" /></div>
+						<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px;padding-left:158px">Dossier local où seront streamés les fichiers S3 pour vérification.</div>
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Export</div>
+						<div class="fr"><label>Préfixe export</label><input type="text" id="s3-export-prefix" placeholder="export/" /></div>
+						<div class="row" style="margin-top:10px">
+							<button class="btn p" onclick="saveS3Settings()">Sauvegarder</button>
 							<button class="btn c" onclick="nav('s3browser', document.querySelector('.nav-btn[onclick*=s3browser]'))">☁ Ouvrir S3 Browser</button>
 						</div>
 					</div>
@@ -4005,18 +4353,13 @@
 							</div>
 						</div>
 
-						<!-- AWS S3 -->
+						<!-- AWS S3 — credentials lus depuis la section S3 centralisée -->
 						<div id="exp-dest-s3" style="display:none">
-							<div class="fr"><label>Bucket S3</label><input type="text" id="s-export-s3-bucket"
-									placeholder="my-robot-data" /></div>
-							<div class="fr"><label>Préfixe (clé)</label><input type="text" id="s-export-s3-prefix"
-									placeholder="sessions/" /></div>
-							<div class="fr"><label>Région AWS</label><input type="text" id="s-export-s3-region"
-									placeholder="eu-west-1" /></div>
-							<div class="fr"><label>Access Key ID</label><input type="text" id="s-export-s3-key"
-									placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
-							<div class="fr"><label>Secret Key</label><input type="password" id="s-export-s3-secret"
-									placeholder="••••••••" autocomplete="off" /></div>
+							<div style="font-size:.73rem;color:var(--text3);padding:6px 0 4px 158px">
+								Credentials S3 : bucket <b id="exp-s3-bucket-label" style="color:var(--accent)">—</b> · région <b id="exp-s3-region-label" style="color:var(--accent)">—</b>
+								— <a href="#" onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]'));return false" style="color:var(--accent);text-decoration:underline">modifier dans Paramètres → Connexion AWS S3</a>
+							</div>
+							<div class="fr"><label>Préfixe export</label><input type="text" id="s-export-s3-prefix" placeholder="export/" /></div>
 						</div>
 
 						<!-- SFTP -->
@@ -4538,7 +4881,10 @@
 							: sessions.map(loadSessionPipelineState);
 						Promise.all(loaders).then(() => {
 							S.sessions = sessions;
-							S.selected = new Set(sessions.map(s => s.path));
+							const allPaths = new Set(sessions.map(s => s.path));
+							if (!_restoreSelection(allPaths)) {
+								S.selected = new Set(allPaths);
+							}
 							renderAll();
 							const label = fmt === 'lerobot' ? 'épisodes LeRobot' : 'sessions';
 							log(`${sessions.length} ${label} détecté(e)s`, 'OK');
@@ -5393,7 +5739,10 @@
 		function _buildSessItem(s) {
 			const div = document.createElement('div');
 			const _si_hasIssues = _sessionHasIssues(s);
-			div.className = 'sess-item' + (S.selected.has(s.path) ? ' selected' : '') + (_si_hasIssues ? ' has-issues' : '');
+			div.className = 'sess-item'
+				+ (S.selected.has(s.path) ? ' selected' : '')
+				+ (_si_hasIssues ? ' has-issues' : '')
+				+ (s.video_rotated ? ' is-rotated' : '');
 			div.onclick = () => { toggleSel(s.path, div); renderPipelineBoard(); };
 
 			const meta = s.meta || {};
@@ -5448,6 +5797,10 @@
 				: 'validate non exécuté';
 			const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
 
+			const _rotateTitle = s.video_rotated
+				? `Vidéo rotée 180°${s.rotate_info?.rotated_at ? ' — ' + s.rotate_info.rotated_at.slice(0,10) : ''}${s.rotate_info?.sides?.length ? ' (' + s.rotate_info.sides.join(', ') + ')' : ''}`
+				: 'Vidéo non rotée';
+
 			div.innerHTML = `
       <div class="si-name">${s.name}</div>
       <div class="si-chips">
@@ -5465,6 +5818,7 @@
       </div>
       ${meta.scenario ? `<span class="b dim" style="margin-left:6px">${meta.scenario}</span>` : ''}
       ${sc ? `<span class="si-score"><span class="sb ${sc.grade}">${sc.grade}</span><span style="color:var(--text3)">${sc.score}/100</span></span>` : ''}
+      <span class="si-rotate-badge ${s.video_rotated ? 'rotated' : 'not-rotated'}" title="${_rotateTitle}">↻</span>
     `;
 			return div;
 		}
@@ -5509,6 +5863,7 @@
 				header.onclick = () => {
 					const allSel = sessions.every(s => S.selected.has(s.path));
 					sessions.forEach(s => allSel ? S.selected.delete(s.path) : S.selected.add(s.path));
+					_saveSelection();
 					renderSessionsList();
 					renderPipelineBoard();
 					refreshExportBtn();
@@ -5519,17 +5874,36 @@
 				list.appendChild(groupDiv);
 				postIndex++;
 			});
+			tvRefreshSessions();
+		}
+
+		function _saveSelection() {
+			try { localStorage.setItem('syncml-selected', JSON.stringify([...S.selected])); } catch (e) {}
+		}
+		function _restoreSelection(availablePaths) {
+			try {
+				const saved = JSON.parse(localStorage.getItem('syncml-selected') || 'null');
+				if (!saved) return false;
+				const valid = saved.filter(p => availablePaths.has(p));
+				if (!valid.length) return false;
+				S.selected = new Set(valid);
+				return true;
+			} catch (e) { return false; }
 		}
 
 		function toggleSel(path, el) {
 			if (S.selected.has(path)) { S.selected.delete(path); el.classList.remove('selected'); }
 			else { S.selected.add(path); el.classList.add('selected'); }
+			_saveSelection();
 			_updateSessActions();
+			tvRefreshSessions();
 		}
-		function selAll() { S.sessions.forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function deselAll() { S.selected.clear(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selValid() { S.selected.clear(); S.sessions.filter(s => !_sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selIssues() { S.selected.clear(); S.sessions.filter(s => _sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selAll() { S.sessions.forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function deselAll() { S.selected.clear(); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selValid() { S.selected.clear(); S.sessions.filter(s => !_sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selIssues() { S.selected.clear(); S.sessions.filter(s => _sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selRotated() { S.selected.clear(); S.sessions.filter(s => s.video_rotated).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selNotRotated() { S.selected.clear(); S.sessions.filter(s => !s.video_rotated).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;
@@ -5893,37 +6267,92 @@
 			const empty = ge('tv-sess-empty');
 			if (!S.sessions.length) {
 				empty.style.display = '';
-				// Effacer les anciens items sauf le message vide
-				list.querySelectorAll('.tv-sess-item').forEach(el => el.remove());
+				list.innerHTML = '';
+				list.appendChild(empty);
 				return;
 			}
 			empty.style.display = 'none';
-			list.querySelectorAll('.tv-sess-item').forEach(el => el.remove());
+			list.innerHTML = '';
+			list.appendChild(empty);
 
+			// Grouper par poste (même set de serials caméra)
+			const groups = new Map();
 			S.sessions.forEach(s => {
-				const ps = s.pipeline_state;
-				const step = ps?.current_step || '—';
-				const ok = ps?.success === true;
-				const fail = ps?.success === false && ps?.finished;
-				const run = ps?.finished === false && ps?.current_step;
-				const dotColor = ok ? 'var(--green)' : fail ? 'var(--red)' : run ? 'var(--orange)' : 'var(--text3)';
-				const scenario = s.meta?.scenario ? s.meta.scenario : '';
+				const key = _sessPostKey(s);
+				if (!groups.has(key)) {
+					const cameras = s.meta?.cameras || {};
+					const serials = Object.values(cameras).map(c => c.serial).filter(Boolean).sort();
+					groups.set(key, { serials, sessions: [] });
+				}
+				groups.get(key).sessions.push(s);
+			});
 
-				const hasVerifIssues = !!(s.meta?.verification?.has_issues);
+			let postIndex = 1;
+			groups.forEach(({ serials, sessions }) => {
+				const groupDiv = document.createElement('div');
+				groupDiv.className = 'post-group';
 
-				const div = document.createElement('div');
-				div.className = 'tv-sess-item' + (TV.sessPath === s.path ? ' active' : '') + (hasVerifIssues ? ' verif-issues' : '');
-				div.title = s.path;
-				div.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px">
-        <div class="tv-sess-dot" style="background:${dotColor}"></div>
-        <div class="tv-sess-item-name">${esc(s.name)}</div>
-      </div>
-      ${scenario ? `<div class="tv-sess-item-meta">${esc(scenario)}</div>` : ''}
-      <div class="tv-sess-item-meta" style="color:var(--text3)">${step}</div>
-    `;
-				div.onclick = () => tvSelectSession(s.path);
-				list.appendChild(div);
+				const header = document.createElement('div');
+				header.className = 'post-group-header';
+				const serialsText = serials.length ? serials.join(' · ') : '—';
+				header.innerHTML = `
+					<span class="post-group-label">Poste ${postIndex}</span>
+					<span class="post-group-serials" title="Numéros de série caméras">${serialsText}</span>
+					<span class="post-group-count">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>
+				`;
+
+				const sessionsDiv = document.createElement('div');
+				sessionsDiv.className = 'post-group-sessions';
+
+				sessions.forEach(s => {
+					const ps = s.pipeline_state;
+					const step = ps?.current_step || '—';
+					const ok = ps?.success === true;
+					const fail = ps?.success === false && ps?.finished;
+					const run = ps?.finished === false && ps?.current_step;
+					const dotColor = ok ? 'var(--green)' : fail ? 'var(--red)' : run ? 'var(--orange)' : 'var(--text3)';
+					const scenario = s.meta?.scenario ? s.meta.scenario : '';
+					const hasVerifIssues = !!(s.meta?.verification?.has_issues);
+					const isSel = S.selected.has(s.path);
+
+					const div = document.createElement('div');
+					div.className = 'tv-sess-item'
+						+ (TV.sessPath === s.path ? ' active' : '')
+						+ (hasVerifIssues ? ' verif-issues' : '')
+						+ (isSel ? ' selected' : '');
+					div.title = s.path;
+					div.innerHTML = `
+						<input type="checkbox" class="tv-sess-cb" ${isSel ? 'checked' : ''} title="Sélectionner" />
+						<div class="tv-sess-item-body">
+							<div style="display:flex;align-items:center;gap:6px">
+								<div class="tv-sess-dot" style="background:${dotColor}"></div>
+								<div class="tv-sess-item-name">${esc(s.name)}</div>
+							</div>
+							${scenario ? `<div class="tv-sess-item-meta">${esc(scenario)}</div>` : ''}
+							<div class="tv-sess-item-meta" style="color:var(--text3)">${step}</div>
+						</div>
+					`;
+					const cb = div.querySelector('.tv-sess-cb');
+					cb.onchange = (e) => {
+						e.stopPropagation();
+						if (cb.checked) S.selected.add(s.path); else S.selected.delete(s.path);
+						div.classList.toggle('selected', cb.checked);
+						_saveSelection();
+						renderSessionsList();
+						refreshExportBtn();
+						renderPipelineBoard();
+					};
+					div.onclick = (e) => {
+						if (e.target === cb) return;
+						tvSelectSession(s.path);
+					};
+					sessionsDiv.appendChild(div);
+				});
+
+				groupDiv.appendChild(header);
+				groupDiv.appendChild(sessionsDiv);
+				list.appendChild(groupDiv);
+				postIndex++;
 			});
 		}
 
@@ -6318,8 +6747,17 @@
 					const compatible = S.sessions.filter(s =>
 						s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
 					);
-					for (const sess of compatible) {
-						await _doTrackerSwap(sess.path, mapping, false);
+					if (compatible.length > 0) {
+						try {
+							const res = await api('POST', '/api/session/tracker_swap_bulk', {
+								sessions: compatible.map(s => s.path),
+								mapping
+							});
+							const errCount = res.errors?.length || 0;
+							if (errCount) log(`Renommage trackers bulk: ${errCount} erreur(s)`, 'WARN');
+						} catch(e) {
+							log('Tracker swap bulk: ' + e.message, 'ERROR');
+						}
 					}
 					log(`Renommage trackers appliqué à ${compatible.length + 1} sessions`, 'OK');
 				}
@@ -6338,8 +6776,22 @@
 				const compatible = S.sessions.filter(s =>
 					s.path !== sessPath && _getCameraSerials(s.meta) === currentSerials
 				);
-				for (const sess of compatible) {
-					await _doSwap(sess.path, mapping, false);
+				if (compatible.length > 0) {
+					try {
+						const res = await api('POST', '/api/session/camera_swap_bulk', {
+							sessions: compatible.map(s => s.path),
+							mapping
+						});
+						const errCount = res.errors?.length || 0;
+						if (errCount) log(`Renommage caméras bulk: ${errCount} erreur(s)`, 'WARN');
+						// Rafraîchir le state en mémoire pour les sessions modifiées
+						for (const sess of compatible) {
+							const s = S.sessions.find(x => x.path === sess.path);
+							if (s) await loadSessionPipelineState(s);
+						}
+					} catch(e) {
+						log('Camera swap bulk: ' + e.message, 'ERROR');
+					}
 				}
 				log(`Renommage caméras appliqué à ${compatible.length + 1} sessions`, 'OK');
 			}
@@ -7530,16 +7982,17 @@
 		}
 
 		function getExportCfg() {
+			const s3 = getS3Cfg();
 			return {
 				dest_type: ge('s-export-type').value,
 				local_path: ge('s-export-local-path').value || '/mnt/storage/pool',
 				reject_path: ge('s-reject-path').value || '/mnt/storage/rejected',
 				auto_reject_missing: ge('s-auto-reject-missing').checked,
-				s3_bucket: ge('s-export-s3-bucket').value,
-				s3_prefix: ge('s-export-s3-prefix').value,
-				s3_region: ge('s-export-s3-region').value,
-				s3_key: ge('s-export-s3-key').value,
-				s3_secret: ge('s-export-s3-secret').value,
+				s3_bucket: s3.bucket,
+				s3_prefix: ge('s-export-s3-prefix').value || s3.export_prefix,
+				s3_region: s3.region,
+				s3_key: s3.key,
+				s3_secret: s3.secret,
 				sftp_host: ge('s-export-sftp-host').value,
 				sftp_port: +ge('s-export-sftp-port').value || 22,
 				sftp_user: ge('s-export-sftp-user').value,
@@ -7565,11 +8018,7 @@
 				if (c.local_path) ge('s-export-local-path').value = c.local_path;
 				if (c.reject_path) ge('s-reject-path').value = c.reject_path;
 				if (c.auto_reject_missing != null) ge('s-auto-reject-missing').checked = c.auto_reject_missing;
-				if (c.s3_bucket) ge('s-export-s3-bucket').value = c.s3_bucket;
 				if (c.s3_prefix) ge('s-export-s3-prefix').value = c.s3_prefix;
-				if (c.s3_region) ge('s-export-s3-region').value = c.s3_region;
-				if (c.s3_key) ge('s-export-s3-key').value = c.s3_key;
-				if (c.s3_secret) ge('s-export-s3-secret').value = c.s3_secret;
 				if (c.sftp_host) ge('s-export-sftp-host').value = c.sftp_host;
 				if (c.sftp_port) ge('s-export-sftp-port').value = c.sftp_port;
 				if (c.sftp_user) ge('s-export-sftp-user').value = c.sftp_user;
@@ -7597,28 +8046,88 @@
 			if (rbtn) rbtn.disabled = n === 0;
 			const vebtn = ge('btn-verify-export');
 			if (vebtn) vebtn.disabled = n === 0;
+			refreshPcExportBtn();
 		}
 
-		// ── Vérifier et exporter automatiquement ────────────────────────────
-		async function verifyAndExportSelected() {
+		// ── Helpers config export page Config Pipeline ──────────────────────
+		function pcOnExportTypeChange() {
+			const v = ge('pc-export-type').value;
+			ge('pc-exp-dest-local').style.display = v === 'local' ? '' : 'none';
+			ge('pc-exp-dest-s3').style.display    = v === 's3'    ? '' : 'none';
+			ge('pc-exp-dest-sftp').style.display  = v === 'sftp'  ? '' : 'none';
+		}
+		function pcOnLerobotChange() {
+			ge('pc-exp-lerobot-opts').style.display = ge('pc-export-lerobot').checked ? '' : 'none';
+		}
+		function pcOnHfPushChange() {
+			ge('pc-exp-hf-token-row').style.display = ge('pc-lerobot-push-hub').checked ? '' : 'none';
+		}
+		function pcGetExportCfg() {
+			const s3 = getS3Cfg();
+			return {
+				dest_type:          ge('pc-export-type').value,
+				local_path:         ge('pc-export-local-path').value || '/mnt/storage/pool',
+				s3_bucket:          s3.bucket,
+				s3_prefix:          ge('pc-export-s3-prefix').value || s3.export_prefix,
+				s3_region:          s3.region,
+				s3_key:             s3.key,
+				s3_secret:          s3.secret,
+				sftp_host:          ge('pc-export-sftp-host').value,
+				sftp_port:          +ge('pc-export-sftp-port').value || 22,
+				sftp_user:          ge('pc-export-sftp-user').value,
+				sftp_pass:          ge('pc-export-sftp-pass').value,
+				sftp_path:          ge('pc-export-sftp-path').value,
+				lerobot:            ge('pc-export-lerobot').checked,
+				lr_name:            ge('pc-lerobot-name').value,
+				lr_robot:           ge('pc-lerobot-robot').value,
+				lr_fps:             +ge('pc-lerobot-fps').value || 30,
+				lr_chunks_size:     +ge('pc-lerobot-chunks-size').value || 1000,
+				lr_batch_size:      +ge('pc-lerobot-batch-size').value || 5,
+				lr_push:            ge('pc-lerobot-push-hub').checked,
+				lr_token:           ge('pc-lerobot-hf-token').value,
+				lr_repo:            ge('pc-lerobot-repo').value,
+				dry_run:            ge('pc-dry-run').checked,
+			};
+		}
+		// Active/désactive le bouton de la page Config Pipeline selon la sélection
+		function refreshPcExportBtn() {
+			const btn = ge('pc-btn-verify-export');
+			if (btn) btn.disabled = S.selected.size === 0;
+		}
+
+		// ── Vérifier et exporter automatiquement (par groupes de 10) ────────
+		// prefix : '' (page Sessions) ou 'pc' (page Config Pipeline)
+		//
+		// IMPORTANT — mode LeRobot vs raw :
+		//   • Mode LeRobot (cfg.lerobot = true) : toutes les sessions forment UN seul
+		//     dataset multi-épisodes. La vérification se fait par batches de 10 pour
+		//     afficher l'avancement, mais l'export est lancé en UN seul appel groupé
+		//     à la fin. Lancer un export par batch écraserait le dataset précédent.
+		//   • Mode raw (cfg.lerobot = false) : chaque session est copiée indépen-
+		//     damment → l'export peut être batchisé normalement par groupes de 10.
+		async function verifyAndExportSelected(prefix) {
+			prefix = prefix || '';
+			const pfx = prefix ? prefix + '-' : '';
 			const sessions = [...S.selected];
 			if (!sessions.length) return;
 
-			const btn = ge('btn-verify-export');
-			const progDiv = ge('verify-export-progress');
-			const statusIco = ge('verify-export-status-ico');
-			const statusTxt = ge('verify-export-status-text');
-			const bar = ge('verify-export-bar');
-			const logDiv = ge('verify-export-log');
+			const BATCH_SIZE = 10;
+			const btn = ge(pfx + 'btn-verify-export');
+			const progDiv = ge(pfx + 'verify-export-progress');
+			const statusIco = ge(pfx + 'verify-export-status-ico');
+			const statusTxt = ge(pfx + 'verify-export-status-text');
+			const bar = ge(pfx + 'verify-export-bar');
+			const logDiv = ge(pfx + 'verify-export-log');
 
 			btn.disabled = true;
-			ge('btn-verify-export-ico').textContent = '⏳';
+			ge(pfx + 'btn-verify-export-ico').textContent = '⏳';
 			progDiv.style.display = 'block';
 			logDiv.style.display = 'block';
 			logDiv.innerHTML = '';
 			bar.style.width = '0%';
+			bar.style.background = 'var(--accent)';
 			statusIco.textContent = '⏳';
-			statusTxt.textContent = `Vérification de ${sessions.length} session(s)…`;
+			statusTxt.style.color = '';
 
 			const addLog = (msg, color) => {
 				const line = document.createElement('div');
@@ -7628,99 +8137,222 @@
 				logDiv.scrollTop = logDiv.scrollHeight;
 			};
 
-			const failed = [];
-			const ok = [];
+			const cfg = prefix === 'pc' ? pcGetExportCfg() : getExportCfg();
+			const isLerobot = !!(cfg.lerobot);
 
-			for (let i = 0; i < sessions.length; i++) {
-				const sessPath = sessions[i];
-				const sessName = sessPath.split('/').pop() || sessPath;
-				bar.style.width = `${Math.round((i / sessions.length) * 80)}%`;
-				statusTxt.textContent = `[${i+1}/${sessions.length}] Vérification : ${sessName}`;
-				addLog(`→ ${sessName}`, 'var(--text2)');
-
-				try {
-					// 1) check_sync (décalage vidéo/capteurs)
-					const syncR = await api('POST', '/api/pipeline/check_sync', { session_path: sessPath });
-					if (syncR.status === 'decalage') {
-						addLog(`  ✗ check_sync: ${syncR.error || 'décalage détecté'}`, 'var(--red)');
-						failed.push({ name: sessName, path: sessPath, reason: `Sync: ${syncR.error || 'décalage'}` });
-						continue;
-					}
-					addLog(`  ✓ sync OK`, 'var(--green)');
-
-					// 2) verify (trackers + désync)
-					const verR = await api('POST', '/api/pipeline/verify', { session_path: sessPath });
-					if (verR.status === 'issues' || verR.status === 'critical') {
-						const res = verR.result || {};
-						const issues = [];
-						if (res.tracker_issues) issues.push('trackers');
-						if (res.video_issues) issues.push('désync vidéo');
-						const reason = issues.length ? issues.join(', ') : (verR.error || 'problème détecté');
-						addLog(`  ✗ verify: ${reason}`, 'var(--red)');
-						failed.push({ name: sessName, path: sessPath, reason: `Verify: ${reason}` });
-						continue;
-					}
-					addLog(`  ✓ trackers OK`, 'var(--green)');
-
-					ok.push(sessPath);
-					addLog(`  ✓ session valide`, 'var(--green)');
-				} catch (e) {
-					addLog(`  ✗ erreur: ${e.message}`, 'var(--red)');
-					failed.push({ name: sessName, path: sessPath, reason: e.message });
-				}
-			}
-
-			bar.style.width = '90%';
-
-			if (!ok.length) {
-				statusIco.textContent = '✗';
-				statusTxt.textContent = `Aucune session valide — ${failed.length} problème(s) trouvé(s)`;
-				statusTxt.style.color = 'var(--red)';
-				bar.style.background = 'var(--red)';
-				bar.style.width = '100%';
-				addLog(`\nAucune session à exporter.`, 'var(--red)');
-				btn.disabled = false;
-				ge('btn-verify-export-ico').textContent = '✔';
-				return;
-			}
-
-			// Résumé avant export
-			if (failed.length) {
-				addLog(`\n⚠ ${failed.length} session(s) exclue(s) :`, 'var(--orange)');
-				failed.forEach(f => addLog(`  · ${f.name} — ${f.reason}`, 'var(--orange)'));
-			}
-			addLog(`\n⬆ Export de ${ok.length} session(s) valide(s)…`, 'var(--accent)');
-			statusTxt.textContent = `Export de ${ok.length} session(s)…`;
-
-			// 3) Export automatique des sessions valides
-			const cfg = getExportCfg();
-
-			// Mode dry-run : simuler seulement
-			if (cfg.dry_run) {
-				bar.style.width = '100%';
-				bar.style.background = 'var(--orange)';
-				statusIco.textContent = '🔍';
-				statusTxt.textContent = `[DRY-RUN] ${ok.length} session(s) seraient exportées — aucune écriture effectuée`;
-				statusTxt.style.color = 'var(--orange)';
-				addLog(`\n[DRY-RUN] Export simulé — ${ok.length} session(s) valide(s) :`, 'var(--orange)');
-				ok.forEach(p => addLog(`  · ${p.split('/').pop() || p}`, 'var(--orange)'));
-				log(`[DRY-RUN] Vérif OK — ${ok.length}/${sessions.length} session(s) valides, export non exécuté`, 'WARN');
-				ge('btn-verify-export-ico').textContent = '✔';
-				btn.disabled = false;
-				return;
-			}
-
-			if (!cfg.local_path && cfg.dest_type === 'local') {
+			// Vérification config avant de démarrer
+			if (!cfg.dry_run && !cfg.local_path && cfg.dest_type === 'local') {
 				addLog(`✗ Dossier de sortie non configuré (Paramètres → Export)`, 'var(--red)');
 				statusIco.textContent = '⚠';
 				statusTxt.textContent = `Export impossible : destination non configurée`;
 				statusTxt.style.color = 'var(--orange)';
 				btn.disabled = false;
-				ge('btn-verify-export-ico').textContent = '✔';
+				ge(pfx + 'btn-verify-export-ico').textContent = '✔';
 				return;
 			}
 
-			const body = { sessions: ok, dest_type: cfg.dest_type };
+			// Map path → video_rotated pour savoir si une session est rotée
+			const _rotatedMap = {};
+			S.sessions.forEach(s => { _rotatedMap[s.path] = !!s.video_rotated; });
+
+			const totalBatches = Math.ceil(sessions.length / BATCH_SIZE);
+			if (isLerobot) {
+				addLog(`⚠ Mode LeRobot actif : rotées → rotated/ (LeRobot), non-rotées → raw/ (copie brute)`, 'var(--orange)');
+			}
+			statusTxt.textContent = `${sessions.length} session(s) → ${totalBatches} batch(s) de ${BATCH_SIZE}`;
+
+			let totalOk = 0;
+			let totalFailed = 0;
+			let totalExported = 0;
+			const allValidRotated = [];  // sessions rotées → export LeRobot global
+			const allValidRaw     = [];  // sessions non-rotées → export raw par batch
+
+			// ── Phase 1 : vérification par batches de 10 ─────────────────────
+			for (let bIdx = 0; bIdx < totalBatches; bIdx++) {
+				const batchSessions = sessions.slice(bIdx * BATCH_SIZE, (bIdx + 1) * BATCH_SIZE);
+				const batchNum = bIdx + 1;
+				const sessionsProcessed = bIdx * BATCH_SIZE;
+
+				addLog(``, '');
+				addLog(`━━ Batch ${batchNum}/${totalBatches} — vérification (${batchSessions.length} session(s)) ━━`, 'var(--accent)');
+
+				const batchOkRotated = [];
+				const batchOkRaw     = [];
+				const batchFailed    = [];
+
+				for (let i = 0; i < batchSessions.length; i++) {
+					const sessPath = batchSessions[i];
+					const sessName = sessPath.split('/').pop() || sessPath;
+					const globalIdx = sessionsProcessed + i;
+					const isRotated = !!_rotatedMap[sessPath];
+
+					// Progression : vérif occupe 0→70% de la barre
+					const pct = Math.round(((globalIdx + 0.5) / sessions.length) * 70);
+					bar.style.width = `${pct}%`;
+					statusTxt.textContent = `[${globalIdx + 1}/${sessions.length}] Batch ${batchNum}/${totalBatches} — vérif : ${sessName}`;
+
+					addLog(`  → [${globalIdx + 1}/${sessions.length}] ${sessName} ${isRotated ? '↻' : '⬜'}`, 'var(--text2)');
+
+					try {
+						const syncR = await api('POST', '/api/pipeline/check_sync', { session_path: sessPath });
+						if (syncR.status === 'decalage') {
+							addLog(`    ✗ sync: ${syncR.error || 'décalage détecté'}`, 'var(--red)');
+							batchFailed.push({ name: sessName, reason: `Sync: ${syncR.error || 'décalage'}` });
+							continue;
+						}
+						addLog(`    ✓ sync OK`, 'var(--green)');
+
+						const verR = await api('POST', '/api/pipeline/verify', { session_path: sessPath });
+						if (verR.status === 'issues' || verR.status === 'critical') {
+							const res = verR.result || {};
+							const issues = [];
+							if (res.tracker_issues) issues.push('trackers');
+							if (res.video_issues) issues.push('désync vidéo');
+							const reason = issues.length ? issues.join(', ') : (verR.error || 'problème détecté');
+							addLog(`    ✗ verify: ${reason}`, 'var(--red)');
+							batchFailed.push({ name: sessName, reason: `Verify: ${reason}` });
+							continue;
+						}
+						addLog(`    ✓ trackers OK`, 'var(--green)');
+
+						if (isRotated) {
+							batchOkRotated.push(sessPath);
+							addLog(`    ✓ valide — rotée → LeRobot`, 'var(--green)');
+						} else {
+							batchOkRaw.push(sessPath);
+							addLog(`    ✓ valide — non rotée → raw`, 'var(--accent)');
+						}
+					} catch (e) {
+						addLog(`    ✗ erreur: ${e.message}`, 'var(--red)');
+						batchFailed.push({ name: sessName, reason: e.message });
+					}
+				}
+
+				const batchOkTotal = batchOkRotated.length + batchOkRaw.length;
+				totalOk += batchOkTotal;
+				totalFailed += batchFailed.length;
+				batchOkRotated.forEach(p => allValidRotated.push(p));
+				batchOkRaw.forEach(p => allValidRaw.push(p));
+
+				addLog(`  ✔ Batch ${batchNum} : ${batchOkRotated.length} rotées + ${batchOkRaw.length} raw, ${batchFailed.length} rejeté(s)`, batchFailed.length ? 'var(--orange)' : 'var(--green)');
+				if (batchFailed.length) {
+					batchFailed.forEach(f => addLog(`    · ${f.name} — ${f.reason}`, 'var(--orange)'));
+				}
+
+				// Mode non-LeRobot : export immédiat de tout le batch
+				if (!isLerobot) {
+					// Mode non-LeRobot : export immédiat de tout le batch
+					const batchOkAll = [...batchOkRotated, ...batchOkRaw];
+					if (!batchOkAll.length) {
+						addLog(`  ⚠ Aucune session valide dans ce batch — export ignoré`, 'var(--orange)');
+					} else if (cfg.dry_run) {
+						addLog(`  [DRY-RUN] ${batchOkAll.length} session(s) seraient copiées`, 'var(--orange)');
+						totalExported += batchOkAll.length;
+					} else {
+						addLog(`  ⬆ Export de ${batchOkAll.length} session(s)…`, 'var(--accent)');
+						statusTxt.textContent = `[Batch ${batchNum}/${totalBatches}] Export de ${batchOkAll.length} session(s)…`;
+						const body = _buildExportBody(batchOkAll, cfg);
+						try {
+							const res = await api('POST', '/api/export', body);
+							addLog(`  ✓ Export lancé — job ${res.job_id}`, 'var(--green)');
+							log(`Batch ${batchNum}/${totalBatches} — export — ${batchOkAll.length} session(s) — job ${res.job_id}`, 'OK');
+							totalExported += batchOkAll.length;
+						} catch (e) {
+							addLog(`  ✗ Export échoué : ${e.message}`, 'var(--red)');
+							log(`Batch ${batchNum}/${totalBatches} — export échoué : ${e.message}`, 'ERROR');
+						}
+					}
+				} else {
+					addLog(`  ↷ ${batchOkRotated.length} rotée(s) + ${batchOkRaw.length} non-rotée(s) — en attente export LeRobot global`, 'var(--text3)');
+				}
+
+				// Progression post-batch
+				const verPct = Math.round(70 + (batchNum / totalBatches) * 20);
+				bar.style.width = `${verPct}%`;
+				statusTxt.textContent = `Batch ${batchNum}/${totalBatches} vérifié (${Math.round(batchNum / totalBatches * 100)}%)`;
+			}
+
+			// ── Phase 2 (LeRobot) : 2 jobs globaux — rotated/ et non_rotated/ ──
+			if (isLerobot) {
+				// Helper pour lancer un job LeRobot dans un sous-dossier donné
+				const _launchLerobot = async (sessList, subdir) => {
+					if (!sessList.length) return;
+					addLog(``, '');
+					addLog(`━━ Export LeRobot — ${sessList.length} session(s) → ${subdir}/ ━━`, 'var(--accent)');
+					if (cfg.dry_run) {
+						addLog(`[DRY-RUN] ${sessList.length} session(s) → ${subdir}/`, 'var(--orange)');
+						totalExported += sessList.length;
+						return;
+					}
+					statusTxt.textContent = `Export LeRobot ${subdir}/ — ${sessList.length} session(s)…`;
+					const body = _buildExportBody(sessList, cfg);
+					if (body.dest_local) body.dest_local.path = (body.dest_local.path || '').replace(/\/?$/, '/' + subdir);
+					if (body.dest_s3)    body.dest_s3.prefix  = ((body.dest_s3.prefix || '').replace(/\/?$/, '/') + subdir + '/').replace('//', '/');
+					try {
+						const res = await api('POST', '/api/export', body);
+						addLog(`✓ Job lancé — ${sessList.length} sessions → ${subdir}/ — job ${res.job_id}`, 'var(--green)');
+						log(`Export LeRobot ${subdir} — ${sessList.length} session(s) — job ${res.job_id}`, 'OK');
+						totalExported += sessList.length;
+					} catch (e) {
+						addLog(`✗ Export ${subdir} échoué : ${e.message}`, 'var(--red)');
+						log(`Export LeRobot ${subdir} échoué : ${e.message}`, 'ERROR');
+					}
+				};
+
+				bar.style.width = '92%';
+				await _launchLerobot(allValidRotated, 'rotated');
+				bar.style.width = '96%';
+				await _launchLerobot(allValidRaw, 'non_rotated');
+			}
+
+			// ── Résumé final ──────────────────────────────────────────────────
+			addLog(``, '');
+			addLog(`━━ Résumé final ━━`, 'var(--accent)');
+			addLog(`  Sessions totales    : ${sessions.length}`, '');
+			addLog(`  Valides             : ${totalOk} (${allValidRotated.length} rotées + ${allValidRaw.length} non-rotées)`, 'var(--green)');
+			addLog(`  Rejetées            : ${totalFailed}`, totalFailed ? 'var(--orange)' : '');
+			if (isLerobot) {
+				if (allValidRotated.length) addLog(`  LeRobot rotated/    : ${allValidRotated.length} épisodes`, 'var(--accent)');
+				if (allValidRaw.length)     addLog(`  LeRobot non_rotated/: ${allValidRaw.length} épisodes`, 'var(--accent)');
+			} else {
+				addLog(`  Exportées           : ${totalExported}`, totalExported ? 'var(--green)' : 'var(--red)');
+			}
+
+			bar.style.width = '100%';
+			if (totalExported === 0 && !cfg.dry_run) {
+				bar.style.background = 'var(--red)';
+				statusIco.textContent = '✗';
+				statusTxt.textContent = `Aucune session exportée — ${totalFailed} problème(s)`;
+				statusTxt.style.color = 'var(--red)';
+			} else if (cfg.dry_run) {
+				bar.style.background = 'var(--orange)';
+				statusIco.textContent = '🔍';
+				statusTxt.textContent = `[DRY-RUN] ${totalExported}/${sessions.length} session(s) seraient exportées`;
+				statusTxt.style.color = 'var(--orange)';
+				log(`[DRY-RUN] ${totalExported}/${sessions.length} valide(s)`, 'WARN');
+			} else {
+				bar.style.background = totalFailed ? 'var(--orange)' : 'var(--green)';
+				statusIco.textContent = '✓';
+				const exportLabel = isLerobot
+					? `1 dataset LeRobot — ${totalExported} épisode(s)`
+					: `${totalExported}/${sessions.length} session(s) exportée(s) en ${totalBatches} batch(s)`;
+				statusTxt.textContent = `Terminé — ${exportLabel}`;
+				statusTxt.style.color = totalFailed ? 'var(--orange)' : 'var(--green)';
+				log(`Vérif+Export — ${exportLabel}`, 'OK');
+				const banner = ge('sess-export-banner');
+				if (banner && totalExported > 0) {
+					ge('sess-export-banner-text').textContent = `Export lancé — ${exportLabel}`;
+					banner.style.display = 'flex';
+					setTimeout(() => { banner.style.display = 'none'; }, 8000);
+				}
+			}
+
+			ge(pfx + 'btn-verify-export-ico').textContent = '✔';
+			btn.disabled = false;
+		}
+
+		function _buildExportBody(sessionList, cfg) {
+			const body = { sessions: sessionList, dest_type: cfg.dest_type };
 			if (cfg.dest_type === 'local') {
 				body.dest_local = { path: cfg.local_path };
 			} else if (cfg.dest_type === 's3') {
@@ -7729,35 +8361,11 @@
 				body.dest_sftp = { host: cfg.sftp_host, port: cfg.sftp_port, user: cfg.sftp_user, password: cfg.sftp_pass, remote_path: cfg.sftp_path };
 			}
 			if (cfg.lerobot) {
-				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30, chunks_size: cfg.lr_chunks_size || 1000,
-						batch_size: cfg.lr_batch_size || 5, push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
+				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30,
+					chunks_size: cfg.lr_chunks_size || 1000, batch_size: cfg.lr_batch_size || 5,
+					push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
 			}
-
-			try {
-				const res = await api('POST', '/api/export', body);
-				bar.style.width = '100%';
-				bar.style.background = 'var(--green)';
-				statusIco.textContent = '✓';
-				statusTxt.textContent = `Export lancé — ${ok.length} session(s) (job ${res.job_id.slice(0,8)}…)`;
-				statusTxt.style.color = 'var(--green)';
-				addLog(`✓ Export lancé — job ${res.job_id}`, 'var(--green)');
-				log(`Vérif+Export — ${ok.length}/${sessions.length} session(s) exportées — job ${res.job_id}`, 'OK');
-				const banner = ge('sess-export-banner');
-				if (banner) {
-					ge('sess-export-banner-text').textContent = `Export lancé — ${ok.length} session${ok.length > 1 ? 's' : ''} validée${ok.length > 1 ? 's' : ''} (job ${res.job_id.slice(0,8)}…)`;
-					banner.style.display = 'flex';
-					setTimeout(() => { banner.style.display = 'none'; }, 8000);
-				}
-			} catch (e) {
-				addLog(`✗ Export échoué : ${e.message}`, 'var(--red)');
-				statusIco.textContent = '✗';
-				statusTxt.textContent = `Export échoué : ${e.message}`;
-				statusTxt.style.color = 'var(--red)';
-				log('Export error: ' + e.message, 'ERROR');
-			}
-
-			ge('btn-verify-export-ico').textContent = '✔';
-			btn.disabled = false;
+			return body;
 		}
 
 		// ── Modal rejet ──────────────────────────────────────────────────────
@@ -7803,6 +8411,7 @@
 				const rejectedSet = new Set(sessions);
 				S.sessions = S.sessions.filter(s => !rejectedSet.has(s.path));
 				rejectedSet.forEach(p => S.selected.delete(p));
+				_saveSelection();
 				renderSessionsList();
 				renderPipelineBoard();
 				refreshExportBtn();
@@ -8108,6 +8717,274 @@
 		}
 
 		// ══════════════════════════════════════════════════════════════════
+		// Pipeline Config
+		// ══════════════════════════════════════════════════════════════════
+
+		const PC_STEPS_DEFAULT = [
+			{ key: 'detect',     label: 'Détection',    ico: '①',  desc: 'Détecte les nouveaux dossiers de session dans le répertoire de travail', critical: true,  opts: {} },
+			{ key: 'check_sync', label: 'Sync Check',   ico: '⏱',  desc: 'Vérifie la synchronisation temporelle caméra/capteurs', critical: true,  opts: { max_lag_ms: 400 } },
+			{ key: 'verify',     label: 'Vérification', ico: '⚠',  desc: 'Contrôle l\'intégrité des fichiers et la complétude de la session', critical: true,  opts: {} },
+			{ key: 'tracker',    label: 'Tracker',      ico: '②',  desc: 'Extraction des données de tracking (position, orientation)', critical: false, opts: {} },
+			{ key: 'video',      label: 'Vidéo',        ico: '③',  desc: 'Traitement et encodage des flux vidéo', critical: false, opts: { codec: 'h264', crf: 23 } },
+			{ key: 'flux_csv',   label: 'Flux CSV',     ico: '④',  desc: 'Export des flux de données en format CSV', critical: false, opts: { delimiter: ',', encoding: 'utf-8' } },
+			{ key: 'ia_sync',    label: 'IA Sync',      ico: '⑤',  desc: 'Correction de synchronisation par modèle IA', critical: false, opts: { resample_ms: 5, max_lag_ms: 400, confidence: 0.7 } },
+			{ key: 'validate',   label: 'Validation',   ico: '⑥',  desc: 'Validation finale avant archivage', critical: true,  opts: {} },
+			{ key: 'store',      label: 'Archivage NAS', ico: '⑦', desc: 'Copie vers le NAS de stockage', critical: false, opts: { verify_checksum: true } },
+		];
+
+		// Champs de configuration affichés dans le modal par étape
+		const PC_STEP_OPTS_SCHEMA = {
+			check_sync: [
+				{ key: 'max_lag_ms', label: 'Max lag (ms)', type: 'number', min: 0, max: 5000 },
+			],
+			video: [
+				{ key: 'codec',   label: 'Codec',  type: 'select', options: ['h264','h265','vp9','av1'] },
+				{ key: 'crf',     label: 'CRF',    type: 'number', min: 0, max: 51 },
+			],
+			flux_csv: [
+				{ key: 'delimiter', label: 'Délimiteur', type: 'select', options: [',', ';', '\t'] },
+				{ key: 'encoding',  label: 'Encodage',   type: 'select', options: ['utf-8','latin-1','ascii'] },
+			],
+			ia_sync: [
+				{ key: 'resample_ms', label: 'Resample (ms)',  type: 'number', min: 1, max: 1000 },
+				{ key: 'max_lag_ms',  label: 'Max lag (ms)',   type: 'number', min: 0, max: 5000 },
+				{ key: 'confidence',  label: 'Confiance min',  type: 'number', min: 0, max: 1, step: 0.05 },
+			],
+			store: [
+				{ key: 'verify_checksum', label: 'Vérif. checksum', type: 'toggle' },
+			],
+		};
+
+		// État courant
+		let pcConfig = {
+			steps: PC_STEPS_DEFAULT.map((s, i) => ({ ...s, enabled: true, order: i })),
+			triggers: { watcher: true, startup: true, interval_s: 5, grace_s: 3 },
+			global: { parallel: false, workers: 2, retry: 1, stop_on_error: true, log_level: 'INFO' },
+		};
+		let pcDragSrc = null;
+
+		function pcLoad() {
+			try {
+				const saved = localStorage.getItem('pc_config');
+				if (saved) pcConfig = JSON.parse(saved);
+			} catch(e) {}
+			pcRenderSteps();
+			pcRenderGlobal();
+		}
+
+		function pcSave() {
+			// Persist triggers from DOM
+			pcConfig.triggers.interval_s = parseInt(ge('trig-interval')?.value ?? 5);
+			pcConfig.triggers.grace_s    = parseInt(ge('trig-grace')?.value ?? 3);
+			pcConfig.global.workers      = parseInt(ge('global-workers')?.value ?? 2);
+			pcConfig.global.retry        = parseInt(ge('global-retry')?.value ?? 1);
+			pcConfig.global.log_level    = ge('global-loglevel')?.value ?? 'INFO';
+			localStorage.setItem('pc_config', JSON.stringify(pcConfig));
+		}
+
+		function pcToggle(el) {
+			const wasOn = el.dataset.val === '1';
+			el.dataset.val = wasOn ? '0' : '1';
+			const key = el.dataset.key;
+			const lbl = ge(el.id + '-lbl');
+			if (lbl) {
+				lbl.textContent = wasOn ? 'Désactivé' : 'Activé';
+				lbl.style.color = wasOn ? 'var(--text3)' : '';
+			}
+			// Map key to config
+			if (key === 'trig_watcher')    pcConfig.triggers.watcher      = !wasOn;
+			if (key === 'trig_startup')    pcConfig.triggers.startup       = !wasOn;
+			if (key === 'global_parallel') pcConfig.global.parallel        = !wasOn;
+			if (key === 'global_stoponerr') pcConfig.global.stop_on_error  = !wasOn;
+			pcSave();
+		}
+
+		function pcRenderGlobal() {
+			const t = pcConfig.triggers, g = pcConfig.global;
+			// Triggers
+			const tw = ge('trig-watcher'); if (tw) { tw.dataset.val = t.watcher ? '1' : '0'; ge('trig-watcher-lbl').textContent = t.watcher ? 'Activé' : 'Désactivé'; ge('trig-watcher-lbl').style.color = t.watcher ? '' : 'var(--text3)'; }
+			const ts = ge('trig-startup'); if (ts) { ts.dataset.val = t.startup ? '1' : '0'; ge('trig-startup-lbl').textContent = t.startup ? 'Activé' : 'Désactivé'; ge('trig-startup-lbl').style.color = t.startup ? '' : 'var(--text3)'; }
+			if (ge('trig-interval')) ge('trig-interval').value = t.interval_s;
+			if (ge('trig-grace'))    ge('trig-grace').value    = t.grace_s;
+			// Global
+			const gp = ge('global-parallel'); if (gp) { gp.dataset.val = g.parallel ? '1' : '0'; ge('global-parallel-lbl').textContent = g.parallel ? 'Activé' : 'Désactivé'; ge('global-parallel-lbl').style.color = g.parallel ? '' : 'var(--text3)'; }
+			const gs = ge('global-stoponerr'); if (gs) { gs.dataset.val = g.stop_on_error ? '1' : '0'; ge('global-stoponerr-lbl').textContent = g.stop_on_error ? 'Activé' : 'Désactivé'; ge('global-stoponerr-lbl').style.color = g.stop_on_error ? '' : 'var(--text3)'; }
+			if (ge('global-workers'))  ge('global-workers').value  = g.workers;
+			if (ge('global-retry'))    ge('global-retry').value    = g.retry;
+			if (ge('global-loglevel')) ge('global-loglevel').value = g.log_level;
+		}
+
+		function pcRenderSteps() {
+			const list = ge('pc-steps-list');
+			if (!list) return;
+			list.innerHTML = '';
+			const sorted = [...pcConfig.steps].sort((a, b) => a.order - b.order);
+			sorted.forEach((step, idx) => {
+				const row = document.createElement('div');
+				row.className = 'pc-step' + (step.enabled ? '' : ' disabled');
+				row.draggable = true;
+				row.dataset.key = step.key;
+
+				const hasOpts = PC_STEP_OPTS_SCHEMA[step.key]?.length > 0;
+				const tagClass = step.critical ? 'critical' : 'optional';
+				const tagLabel = step.critical ? 'critique' : 'optionnel';
+
+				row.innerHTML = `
+					<span class="pc-step-drag" title="Glisser pour réordonner">⠿</span>
+					<span class="pc-step-num">${idx + 1}</span>
+					<span class="pc-step-ico">${step.ico}</span>
+					<span class="pc-step-name">${step.label}</span>
+					<span class="pc-step-desc">${step.desc}</span>
+					<span class="pc-step-tag ${tagClass}">${tagLabel}</span>
+					${hasOpts ? `<button class="pc-cfg-btn" onclick="pcOpenModal('${step.key}')">⚙ Config</button>` : '<span style="width:62px"></span>'}
+					<div class="pc-toggle" style="flex-shrink:0" data-key="step_${step.key}" data-val="${step.enabled ? '1' : '0'}" onclick="pcToggleStep('${step.key}',this)">
+						<div class="pc-knob"></div>
+					</div>
+					<div style="display:flex;flex-direction:column;gap:2px">
+						<button class="pc-move-btn" onclick="pcMoveStep('${step.key}',-1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+						<button class="pc-move-btn" onclick="pcMoveStep('${step.key}',1)" ${idx === sorted.length - 1 ? 'disabled' : ''}>▼</button>
+					</div>`;
+
+				// Drag & drop
+				row.addEventListener('dragstart', e => {
+					pcDragSrc = step.key;
+					row.classList.add('dragging');
+					e.dataTransfer.effectAllowed = 'move';
+				});
+				row.addEventListener('dragend', () => {
+					row.classList.remove('dragging');
+					list.querySelectorAll('.pc-step').forEach(r => r.classList.remove('drag-over'));
+				});
+				row.addEventListener('dragover', e => {
+					e.preventDefault();
+					e.dataTransfer.dropEffect = 'move';
+					list.querySelectorAll('.pc-step').forEach(r => r.classList.remove('drag-over'));
+					row.classList.add('drag-over');
+				});
+				row.addEventListener('drop', e => {
+					e.preventDefault();
+					if (pcDragSrc && pcDragSrc !== step.key) {
+						pcSwapSteps(pcDragSrc, step.key);
+					}
+				});
+
+				list.appendChild(row);
+			});
+		}
+
+		function pcToggleStep(key, el) {
+			const wasOn = el.dataset.val === '1';
+			el.dataset.val = wasOn ? '0' : '1';
+			const s = pcConfig.steps.find(s => s.key === key);
+			if (s) s.enabled = !wasOn;
+			el.closest('.pc-step').classList.toggle('disabled', wasOn);
+			pcSave();
+		}
+
+		function pcMoveStep(key, dir) {
+			const sorted = [...pcConfig.steps].sort((a, b) => a.order - b.order);
+			const idx = sorted.findIndex(s => s.key === key);
+			const swapIdx = idx + dir;
+			if (swapIdx < 0 || swapIdx >= sorted.length) return;
+			const a = sorted[idx], b = sorted[swapIdx];
+			[a.order, b.order] = [b.order, a.order];
+			pcSave();
+			pcRenderSteps();
+		}
+
+		function pcSwapSteps(keyA, keyB) {
+			const a = pcConfig.steps.find(s => s.key === keyA);
+			const b = pcConfig.steps.find(s => s.key === keyB);
+			if (!a || !b) return;
+			[a.order, b.order] = [b.order, a.order];
+			pcSave();
+			pcRenderSteps();
+		}
+
+		function pcResetOrder() {
+			PC_STEPS_DEFAULT.forEach((s, i) => {
+				const step = pcConfig.steps.find(x => x.key === s.key);
+				if (step) step.order = i;
+			});
+			pcSave();
+			pcRenderSteps();
+		}
+
+		function pcApply() {
+			pcSave();
+			log('Configuration pipeline sauvegardée', 'INFO');
+			// Optionnel : POST vers l'API si elle existe
+			fetch('/api/pipeline/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(pcConfig)
+			}).then(r => {
+				if (r.ok) log('Config pipeline synchronisée avec le serveur', 'INFO');
+				else log('Config sauvegardée localement (endpoint non disponible)', 'WARN');
+			}).catch(() => log('Config sauvegardée localement (serveur non connecté)', 'WARN'));
+		}
+
+		// ── Modal de configuration d'une étape
+		let pcModalKey = null;
+
+		function pcOpenModal(key) {
+			const step = pcConfig.steps.find(s => s.key === key);
+			const def  = PC_STEPS_DEFAULT.find(s => s.key === key);
+			const schema = PC_STEP_OPTS_SCHEMA[key] || [];
+			if (!step || !schema.length) return;
+			pcModalKey = key;
+			ge('pc-modal-ico').textContent   = step.ico;
+			ge('pc-modal-title').textContent  = step.label;
+			ge('pc-modal-desc').textContent   = step.desc;
+			const body = ge('pc-modal-body');
+			body.innerHTML = '';
+			schema.forEach(field => {
+				const val = step.opts?.[field.key] ?? def?.opts?.[field.key] ?? '';
+				const row = document.createElement('div');
+				row.style.cssText = 'display:flex;align-items:center;gap:12px';
+				let input = '';
+				if (field.type === 'number') {
+					input = `<input type="number" id="pcopt-${field.key}" value="${val}"
+						min="${field.min ?? ''}" max="${field.max ?? ''}" step="${field.step ?? 1}"
+						style="width:90px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />`;
+				} else if (field.type === 'select') {
+					const opts = field.options.map(o => `<option value="${o}" ${o == val ? 'selected' : ''}>${o}</option>`).join('');
+					input = `<select id="pcopt-${field.key}" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px">${opts}</select>`;
+				} else if (field.type === 'toggle') {
+					const on = val === true || val === 'true' || val === 1;
+					input = `<div class="pc-toggle" id="pcopt-${field.key}" data-val="${on ? '1' : '0'}"
+						onclick="this.dataset.val=this.dataset.val==='1'?'0':'1';this.querySelector('.pc-knob').style.left=this.dataset.val==='1'?'20px':'2px'">
+						<div class="pc-knob" style="position:absolute;top:2px;left:${on ? '20' : '2'}px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s"></div></div>`;
+				}
+				row.innerHTML = `<label style="min-width:150px;font-size:.82rem">${field.label}</label>${input}`;
+				body.appendChild(row);
+			});
+			const modal = ge('pc-step-modal');
+			modal.style.display = 'flex';
+		}
+
+		function pcCloseModal() {
+			ge('pc-step-modal').style.display = 'none';
+			pcModalKey = null;
+		}
+
+		function pcSaveModalStep() {
+			if (!pcModalKey) return;
+			const step   = pcConfig.steps.find(s => s.key === pcModalKey);
+			const schema = PC_STEP_OPTS_SCHEMA[pcModalKey] || [];
+			schema.forEach(field => {
+				const el = ge('pcopt-' + field.key);
+				if (!el) return;
+				if (field.type === 'number')  step.opts[field.key] = parseFloat(el.value);
+				else if (field.type === 'toggle') step.opts[field.key] = el.dataset.val === '1';
+				else step.opts[field.key] = el.value;
+			});
+			pcSave();
+			pcCloseModal();
+			log(`Config étape "${step.label}" sauvegardée`, 'INFO');
+		}
+
+		// ══════════════════════════════════════════════════════════════════
 		// Navigation
 		// ══════════════════════════════════════════════════════════════════
 		function nav(name, btn) {
@@ -8124,6 +9001,7 @@
 			}
 			if (name === 'jobs') refreshPoolStatus();
 			if (name === 's3browser') s3bInit();
+			if (name === 'pipelineconfig') { pcLoad(); pcRenderGlobal(); }
 		}
 
 		function vtab(name, el) {
@@ -8213,7 +9091,8 @@
 		document.addEventListener('DOMContentLoaded', () => {
 			loadSettings();
 			loadExportSettings();
-			loadSrcS3Settings();
+			loadS3Settings();
+			pcLoad();
 			ge('s-lerobot-push-hub')?.addEventListener('change', onHfPushChange);
 			connectWS();
 			loadHealth();
@@ -8225,33 +9104,64 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Source S3 — settings save/load
 		// ══════════════════════════════════════════════════════════════════
-		function saveSrcS3Settings() {
-			const cfg = getSrcS3Cfg();
-			localStorage.setItem('syncml-src-s3-cfg', JSON.stringify(cfg));
-			log('Configuration source S3 sauvegardée', 'OK');
+		function saveS3Settings() {
+			const cfg = getS3Cfg();
+			localStorage.setItem('syncml-s3-cfg', JSON.stringify(cfg));
+			log('Configuration S3 sauvegardée', 'OK');
+			_refreshS3Labels();
 		}
 
-		function loadSrcS3Settings() {
+		function loadS3Settings() {
 			try {
-				const c = JSON.parse(localStorage.getItem('syncml-src-s3-cfg') || '{}');
-				if (c.bucket)   ge('s-src-s3-bucket').value   = c.bucket;
-				if (c.prefix)   ge('s-src-s3-prefix').value   = c.prefix;
-				if (c.region)   ge('s-src-s3-region').value   = c.region;
-				if (c.key)      ge('s-src-s3-key').value      = c.key;
-				if (c.secret)   ge('s-src-s3-secret').value   = c.secret;
-				if (c.localdir) ge('s-src-s3-localdir').value = c.localdir;
+				const old_src = JSON.parse(localStorage.getItem('syncml-src-s3-cfg') || '{}');
+				const old_exp = JSON.parse(localStorage.getItem('syncml-export-cfg')  || '{}');
+				const cur     = JSON.parse(localStorage.getItem('syncml-s3-cfg')      || '{}');
+				const c = Object.assign({}, {
+					bucket:        old_exp.s3_bucket  || old_src.bucket  || '',
+					region:        old_exp.s3_region  || old_src.region  || 'eu-west-1',
+					key:           old_exp.s3_key     || old_src.key     || '',
+					secret:        old_exp.s3_secret  || old_src.secret  || '',
+					src_prefix:    old_src.prefix || '',
+					export_prefix: old_exp.s3_prefix  || 'export/',
+					localdir:      old_src.localdir   || '/tmp/s3_stream',
+				}, cur);
+				if (c.bucket)        ge('s3-bucket').value        = c.bucket;
+				if (c.region)        ge('s3-region').value        = c.region;
+				if (c.key)           ge('s3-key').value           = c.key;
+				if (c.secret)        ge('s3-secret').value        = c.secret;
+				if (c.src_prefix)    ge('s3-src-prefix').value    = c.src_prefix;
+				if (c.export_prefix) ge('s3-export-prefix').value = c.export_prefix;
+				if (c.localdir)      ge('s3-localdir').value      = c.localdir;
+				if (c.export_prefix && !ge('s-export-s3-prefix').value)  ge('s-export-s3-prefix').value  = c.export_prefix;
+				if (c.export_prefix && !ge('pc-export-s3-prefix').value) ge('pc-export-s3-prefix').value = c.export_prefix;
+				_refreshS3Labels();
 			} catch (e) { }
 		}
 
-		function getSrcS3Cfg() {
+		function getS3Cfg() {
 			return {
-				bucket:   ge('s-src-s3-bucket').value.trim(),
-				prefix:   ge('s-src-s3-prefix').value.trim(),
-				region:   ge('s-src-s3-region').value.trim() || 'us-east-1',
-				key:      ge('s-src-s3-key').value.trim(),
-				secret:   ge('s-src-s3-secret').value,
-				localdir: ge('s-src-s3-localdir').value.trim() || '/tmp/s3_stream',
+				bucket:        ge('s3-bucket').value.trim(),
+				region:        ge('s3-region').value.trim() || 'eu-west-1',
+				key:           ge('s3-key').value.trim(),
+				secret:        ge('s3-secret').value.trim(),
+				src_prefix:    ge('s3-src-prefix').value.trim(),
+				export_prefix: ge('s3-export-prefix').value.trim() || 'export/',
+				localdir:      ge('s3-localdir').value.trim() || '/tmp/s3_stream',
 			};
+		}
+
+		// Compat : getSrcS3Cfg() utilisé par le S3 Browser
+		function getSrcS3Cfg() {
+			const s3 = getS3Cfg();
+			return { bucket: s3.bucket, prefix: s3.src_prefix, region: s3.region, key: s3.key, secret: s3.secret, localdir: s3.localdir };
+		}
+
+		function _refreshS3Labels() {
+			const s3 = getS3Cfg();
+			const b = s3.bucket || '—';
+			const r = s3.region || '—';
+			['exp-s3-bucket-label','pc-exp-s3-bucket-label'].forEach(id => { const el = ge(id); if (el) el.textContent = b; });
+			['exp-s3-region-label','pc-exp-s3-region-label'].forEach(id => { const el = ge(id); if (el) el.textContent = r; });
 		}
 
 		// ══════════════════════════════════════════════════════════════════

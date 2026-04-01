@@ -3734,72 +3734,81 @@ async def inbox_config_set(req: dict):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Service systemd --user (Debian Linux) — daemon inbox → bronze 24/7
-# Pas besoin de sudo : le fichier unit est dans ~/.config/systemd/user/
+# Service systemd (Debian Linux) — daemon inbox → bronze 24/7
+# Le serveur tourne sans privilèges (NoNewPrivileges) → il ne peut pas écrire
+# dans /etc/systemd/system/ ni appeler sudo/systemctl --user.
+# Ces endpoints génèrent le fichier unit + les commandes shell à coller dans
+# un terminal root. Rien n'est exécuté côté serveur.
 # ──────────────────────────────────────────────────────────────────────────────
 
 _SERVICE_NAME = "syncml-inbox-bronze"
-_SERVICE_FILE = Path.home() / ".config" / "systemd" / "user" / f"{_SERVICE_NAME}.service"
+_SERVICE_FILE = Path(f"/etc/systemd/system/{_SERVICE_NAME}.service")
 
 
 def _unit_content(python_bin: str, server_script: str, inbox_dir: str,
                   bronze_dir: str, host: str, port: int) -> str:
+    import getpass as _gp
+    user = _gp.getuser()
     return f"""[Unit]
 Description=SyncML Inbox → Bronze daemon
 After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
+User={user}
+WorkingDirectory={Path(server_script).parent}
 ExecStart={python_bin} {server_script} --host {host} --port {port} --root {bronze_dir} --inbox {inbox_dir}
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 """
-
-
-def _run_systemctl(*args, timeout: int = 10):
-    import subprocess as _sp
-    return _sp.run(
-        ["systemctl", "--user", *args],
-        capture_output=True, text=True, timeout=timeout,
-    )
 
 
 @app.get("/api/inbox/service/status")
 async def inbox_service_status():
-    """Retourne l'état du service systemd --user inbox → bronze."""
+    """
+    Vérifie l'état du service via systemctl (lecture seule, pas de D-Bus requis).
+    """
+    import subprocess as _sp
+
     unit_exists   = _SERVICE_FILE.exists()
     active        = False
     enabled       = False
     pid           = None
     status_output = ""
 
-    if unit_exists:
-        try:
-            r = _run_systemctl("is-active", _SERVICE_NAME)
-            active = r.stdout.strip() == "active"
-        except Exception:
-            pass
-        try:
-            r = _run_systemctl("is-enabled", _SERVICE_NAME)
-            enabled = r.stdout.strip() == "enabled"
-        except Exception:
-            pass
-        try:
-            r = _run_systemctl("show", _SERVICE_NAME, "--property=MainPID", "--value")
-            v = r.stdout.strip()
-            if v and v != "0":
-                pid = int(v)
-        except Exception:
-            pass
-        try:
-            r = _run_systemctl("status", "--no-pager", "--lines=8", _SERVICE_NAME, timeout=5)
-            status_output = r.stdout[:800]
-        except Exception:
-            pass
+    # systemctl status/is-active est lisible sans privilèges
+    try:
+        r = _sp.run(["systemctl", "is-active", _SERVICE_NAME],
+                    capture_output=True, text=True, timeout=5)
+        active = r.stdout.strip() == "active"
+    except Exception:
+        pass
+    try:
+        r = _sp.run(["systemctl", "is-enabled", _SERVICE_NAME],
+                    capture_output=True, text=True, timeout=5)
+        enabled = r.stdout.strip() == "enabled"
+    except Exception:
+        pass
+    try:
+        r = _sp.run(["systemctl", "show", _SERVICE_NAME,
+                     "--property=MainPID", "--value"],
+                    capture_output=True, text=True, timeout=5)
+        v = r.stdout.strip()
+        if v and v != "0":
+            pid = int(v)
+    except Exception:
+        pass
+    try:
+        r = _sp.run(["systemctl", "status", "--no-pager", "--lines=8", _SERVICE_NAME],
+                    capture_output=True, text=True, timeout=5)
+        status_output = r.stdout[:800]
+    except Exception:
+        pass
 
     return {
         "service_name":  _SERVICE_NAME,
@@ -3815,7 +3824,8 @@ async def inbox_service_status():
 @app.post("/api/inbox/service/install")
 async def inbox_service_install(req: dict):
     """
-    Génère ~/.config/systemd/user/<name>.service et démarre le service.
+    Génère le contenu du fichier unit systemd et les commandes shell à exécuter
+    en root pour installer le service. Ne touche pas au système.
     body: { inbox_dir, bronze_dir, host, port, python_bin (opt), server_script (opt) }
     """
     import shutil as _sh
@@ -3827,40 +3837,39 @@ async def inbox_service_install(req: dict):
     python_bin    = req.get("python_bin")    or _sh.which("python3") or sys.executable
     server_script = req.get("server_script") or str(Path(__file__).resolve())
 
-    _SERVICE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SERVICE_FILE.write_text(_unit_content(
-        python_bin, server_script, inbox_dir, bronze_dir, host, port
-    ))
+    unit = _unit_content(python_bin, server_script, inbox_dir, bronze_dir, host, port)
 
-    _run_systemctl("daemon-reload")
-    _run_systemctl("enable", _SERVICE_NAME)
-    restart = _run_systemctl("restart", _SERVICE_NAME, timeout=15)
-
-    if restart.returncode != 0:
-        raise HTTPException(
-            status_code=500,
-            detail=f"systemctl --user restart échoué : {restart.stderr or restart.stdout}",
-        )
+    shell_cmd = (
+        f"cat > {_SERVICE_FILE} << 'UNIT'\n{unit}UNIT\n"
+        f"systemctl daemon-reload\n"
+        f"systemctl enable {_SERVICE_NAME}\n"
+        f"systemctl restart {_SERVICE_NAME}\n"
+        f"systemctl --no-pager status {_SERVICE_NAME}"
+    )
 
     return {
-        "ok": True,
+        "ok":           True,
         "service_file": str(_SERVICE_FILE),
-        "message": f"Service {_SERVICE_NAME} installé et démarré.",
+        "unit_content": unit,
+        "shell_cmd":    shell_cmd,
+        "message":      "Copiez et exécutez les commandes ci-dessous en root pour installer le service.",
     }
 
 
 @app.post("/api/inbox/service/uninstall")
 async def inbox_service_uninstall():
-    """Stoppe, désactive et supprime le fichier unit utilisateur."""
-    if not _SERVICE_FILE.exists():
-        return {"ok": True, "message": "Service non installé."}
-
-    _run_systemctl("stop",    _SERVICE_NAME)
-    _run_systemctl("disable", _SERVICE_NAME)
-    _SERVICE_FILE.unlink(missing_ok=True)
-    _run_systemctl("daemon-reload")
-
-    return {"ok": True, "message": f"Service {_SERVICE_NAME} désinstallé."}
+    """Génère les commandes shell à exécuter en root pour désinstaller le service."""
+    shell_cmd = (
+        f"systemctl stop {_SERVICE_NAME}\n"
+        f"systemctl disable {_SERVICE_NAME}\n"
+        f"rm -f {_SERVICE_FILE}\n"
+        f"systemctl daemon-reload"
+    )
+    return {
+        "ok":        True,
+        "shell_cmd": shell_cmd,
+        "message":   "Exécutez ces commandes en root pour désinstaller le service.",
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────

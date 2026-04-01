@@ -3391,16 +3391,28 @@
 						</div>
 
 						<!-- Actions -->
-						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
 							<button class="btn p sm" onclick="svcInstall()" style="font-size:.76rem">
-								⬆ Installer / Redémarrer
+								⬆ Générer commandes install
 							</button>
 							<button class="btn sm" onclick="svcUninstall()"
 								style="font-size:.76rem;background:var(--red)18;border-color:var(--red)44;color:var(--red)">
-								✕ Désinstaller
+								✕ Générer commandes désinstall
 							</button>
+						</div>
+
+						<!-- Statut systemctl -->
+						<pre id="svc-status-live"
+							style="margin:0 0 6px;font-size:.7rem;color:var(--text3);background:none;border:none;padding:0;white-space:pre-wrap;max-height:60px;overflow:hidden"></pre>
+
+						<!-- Zone commandes shell (root) -->
+						<div id="svc-cmd-box" style="display:none">
+							<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+								<span style="font-size:.7rem;color:var(--orange)">⚠ Exécutez ces commandes en root sur le serveur :</span>
+								<button class="btn sm" onclick="svcCopyCmd()" style="font-size:.7rem">⎘ Copier</button>
+							</div>
 							<pre id="svc-status-out"
-								style="flex:1;min-width:200px;margin:0;font-size:.7rem;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:6px 8px;white-space:pre-wrap;max-height:80px;overflow:auto"></pre>
+								style="margin:0;font-size:.72rem;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:8px 10px;white-space:pre;overflow-x:auto;max-height:140px"></pre>
 						</div>
 					</div>
 
@@ -9746,7 +9758,7 @@
 			try {
 				const s = await api('GET', '/api/inbox/service/status');
 				const badge = ge('svc-badge');
-				const out   = ge('svc-status-out');
+				const live  = ge('svc-status-live');
 				if (s.active) {
 					badge.textContent = `● actif  PID ${s.pid || '?'}`;
 					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--green)18;color:var(--green);border:1px solid var(--green)44';
@@ -9757,9 +9769,9 @@
 					badge.textContent = '— non installé';
 					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)';
 				}
-				out.textContent = s.status_output || (s.unit_exists ? `${s.service_file}\nenabled: ${s.enabled}` : 'Aucun service installé.');
+				live.textContent = s.status_output || (s.unit_exists ? `${s.service_file}  enabled: ${s.enabled}` : '');
 			} catch(e) {
-				ge('svc-status-out').textContent = `Erreur : ${e.message}`;
+				ge('svc-status-live').textContent = `Erreur statut : ${e.message}`;
 			}
 		}
 
@@ -9770,20 +9782,22 @@
 			btn.disabled = true;
 			try {
 				const body = {
-					inbox_dir:     ge('svc-inbox').value.trim()  || '/mnt/inbox',
-					bronze_dir:    ge('svc-bronze').value.trim() || '/mnt/storage/bronze',
-					host:          ge('svc-host').value.trim()   || '0.0.0.0',
-					port:          parseInt(ge('svc-port').value) || 8000,
+					inbox_dir:  ge('svc-inbox').value.trim()  || '/mnt/inbox',
+					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/storage/bronze',
+					host:       ge('svc-host').value.trim()   || '0.0.0.0',
+					port:       parseInt(ge('svc-port').value) || 8000,
 				};
-				const py  = ge('svc-python').value.trim();
-				const sc  = ge('svc-script').value.trim();
+				const py = ge('svc-python').value.trim();
+				const sc = ge('svc-script').value.trim();
 				if (py) body.python_bin    = py;
 				if (sc) body.server_script = sc;
 				const r = await api('POST', '/api/inbox/service/install', body);
-				log(r.message || 'Service installé.', 'OK');
+				ge('svc-status-out').textContent = r.shell_cmd || '';
+				ge('svc-cmd-box').style.display = 'block';
+				log(r.message, 'WARN');
 				await svcRefresh();
 			} catch(e) {
-				log(`Erreur installation service : ${e.message}`, 'ERROR');
+				log(`Erreur génération service : ${e.message}`, 'ERROR');
 				ge('svc-status-out').textContent = e.message;
 			} finally {
 				btn.textContent = prev;
@@ -9792,14 +9806,25 @@
 		}
 
 		async function svcUninstall() {
-			if (!confirm('Désinstaller le service systemd ?')) return;
 			try {
 				const r = await api('POST', '/api/inbox/service/uninstall');
-				log(r.message || 'Service désinstallé.', 'WARN');
+				ge('svc-status-out').textContent = r.shell_cmd || '';
+				ge('svc-cmd-box').style.display = 'block';
+				log(r.message, 'WARN');
 				await svcRefresh();
 			} catch(e) {
-				log(`Erreur désinstallation : ${e.message}`, 'ERROR');
+				log(`Erreur génération désinstall : ${e.message}`, 'ERROR');
 			}
+		}
+
+		function svcCopyCmd() {
+			const txt = ge('svc-status-out').textContent;
+			navigator.clipboard.writeText(txt).then(() => {
+				const btn = document.querySelector('[onclick="svcCopyCmd()"]');
+				const prev = btn.textContent;
+				btn.textContent = '✓ Copié';
+				setTimeout(() => btn.textContent = prev, 1500);
+			});
 		}
 
 		// ══════════════════════════════════════════════════════════════════

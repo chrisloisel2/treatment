@@ -6,7 +6,7 @@ USER_NAME="exoria"
 GROUP_NAME="exoria"
 
 APP_DIR="/home/exoria/treatment"
-WORK_DIR="/Volumes/T9/data"
+WORK_DIR="/Users/christopher/Downloads/Video ok 2"
 PYTHON_BIN="/usr/bin/python3"
 PORT="8000"
 HOST="0.0.0.0"

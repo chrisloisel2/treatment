@@ -803,56 +803,167 @@
 		/* ══ PIPELINE CONFIG ════════════════════════════════════════════════ */
 
 		.pc-toggle {
-			width: 36px; height: 20px; border-radius: 10px;
-			background: var(--accent); border: 1px solid var(--border2);
-			cursor: pointer; position: relative; transition: background .2s; flex-shrink: 0
+			width: 36px;
+			height: 20px;
+			border-radius: 10px;
+			background: var(--accent);
+			border: 1px solid var(--border2);
+			cursor: pointer;
+			position: relative;
+			transition: background .2s;
+			flex-shrink: 0
 		}
+
 		.pc-toggle .pc-knob {
-			position: absolute; top: 2px; left: 16px; width: 14px; height: 14px;
-			border-radius: 50%; background: #fff; transition: left .2s
+			position: absolute;
+			top: 2px;
+			left: 16px;
+			width: 14px;
+			height: 14px;
+			border-radius: 50%;
+			background: #fff;
+			transition: left .2s
 		}
-		.pc-toggle[data-val="0"] { background: var(--bg4) }
-		.pc-toggle[data-val="0"] .pc-knob { left: 2px }
-		.pc-toggle-label { font-size: .78rem; font-weight: 600; min-width: 50px }
+
+		.pc-toggle[data-val="0"] {
+			background: var(--bg4)
+		}
+
+		.pc-toggle[data-val="0"] .pc-knob {
+			left: 2px
+		}
+
+		.pc-toggle-label {
+			font-size: .78rem;
+			font-weight: 600;
+			min-width: 50px
+		}
 
 		.pc-step {
-			display: flex; align-items: center; gap: 10px;
-			background: var(--bg3); border: 1px solid var(--border);
-			border-radius: var(--rs); padding: 9px 12px;
-			cursor: default; user-select: none; transition: border-color .15s
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: var(--rs);
+			padding: 9px 12px;
+			cursor: default;
+			user-select: none;
+			transition: border-color .15s
 		}
-		.pc-step:hover { border-color: var(--border2) }
-		.pc-step.disabled { opacity: .45 }
-		.pc-step.dragging { opacity: .3; border-style: dashed }
-		.pc-step.drag-over { border-color: var(--accent); background: var(--bg4) }
 
-		.pc-step-drag { cursor: grab; color: var(--text3); font-size: .85rem; padding: 0 4px }
-		.pc-step-drag:active { cursor: grabbing }
-		.pc-step-num { font-size: .7rem; color: var(--text3); min-width: 18px; text-align: center }
-		.pc-step-ico { font-size: 1rem; min-width: 22px; text-align: center }
-		.pc-step-name { font-weight: 600; font-size: .85rem; flex: 1 }
-		.pc-step-desc { font-size: .72rem; color: var(--text2); flex: 2 }
-		.pc-step-tag {
-			font-size: .65rem; padding: 1px 7px; border-radius: 99px;
-			background: var(--bg5); color: var(--text2); white-space: nowrap
+		.pc-step:hover {
+			border-color: var(--border2)
 		}
-		.pc-step-tag.critical { background: #f0444420; color: var(--red); border: 1px solid var(--red)44 }
-		.pc-step-tag.optional { background: #06b6d420; color: var(--accent3); border: 1px solid var(--accent3)44 }
+
+		.pc-step.disabled {
+			opacity: .45
+		}
+
+		.pc-step.dragging {
+			opacity: .3;
+			border-style: dashed
+		}
+
+		.pc-step.drag-over {
+			border-color: var(--accent);
+			background: var(--bg4)
+		}
+
+		.pc-step-drag {
+			cursor: grab;
+			color: var(--text3);
+			font-size: .85rem;
+			padding: 0 4px
+		}
+
+		.pc-step-drag:active {
+			cursor: grabbing
+		}
+
+		.pc-step-num {
+			font-size: .7rem;
+			color: var(--text3);
+			min-width: 18px;
+			text-align: center
+		}
+
+		.pc-step-ico {
+			font-size: 1rem;
+			min-width: 22px;
+			text-align: center
+		}
+
+		.pc-step-name {
+			font-weight: 600;
+			font-size: .85rem;
+			flex: 1
+		}
+
+		.pc-step-desc {
+			font-size: .72rem;
+			color: var(--text2);
+			flex: 2
+		}
+
+		.pc-step-tag {
+			font-size: .65rem;
+			padding: 1px 7px;
+			border-radius: 99px;
+			background: var(--bg5);
+			color: var(--text2);
+			white-space: nowrap
+		}
+
+		.pc-step-tag.critical {
+			background: #f0444420;
+			color: var(--red);
+			border: 1px solid var(--red)44
+		}
+
+		.pc-step-tag.optional {
+			background: #06b6d420;
+			color: var(--accent3);
+			border: 1px solid var(--accent3)44
+		}
 
 		.pc-move-btn {
-			background: none; border: 1px solid var(--border); border-radius: var(--rs);
-			color: var(--text2); font-size: .75rem; padding: 2px 6px; cursor: pointer;
+			background: none;
+			border: 1px solid var(--border);
+			border-radius: var(--rs);
+			color: var(--text2);
+			font-size: .75rem;
+			padding: 2px 6px;
+			cursor: pointer;
 			transition: all .12s
 		}
-		.pc-move-btn:hover { background: var(--bg4); color: var(--text) }
-		.pc-move-btn:disabled { opacity: .25; cursor: default }
+
+		.pc-move-btn:hover {
+			background: var(--bg4);
+			color: var(--text)
+		}
+
+		.pc-move-btn:disabled {
+			opacity: .25;
+			cursor: default
+		}
 
 		.pc-cfg-btn {
-			background: none; border: 1px solid var(--border); border-radius: var(--rs);
-			color: var(--text2); font-size: .75rem; padding: 3px 9px; cursor: pointer;
+			background: none;
+			border: 1px solid var(--border);
+			border-radius: var(--rs);
+			color: var(--text2);
+			font-size: .75rem;
+			padding: 3px 9px;
+			cursor: pointer;
 			transition: all .12s
 		}
-		.pc-cfg-btn:hover { background: var(--accent)22; border-color: var(--accent); color: var(--accent) }
+
+		.pc-cfg-btn:hover {
+			background: var(--accent)22;
+			border-color: var(--accent);
+			color: var(--accent)
+		}
 
 		/* ══ PIPELINE BOARD ══════════════════════════════════════════════════ */
 
@@ -1248,6 +1359,7 @@
 		.post-group {
 			margin-bottom: 6px;
 		}
+
 		.post-group-header {
 			display: flex;
 			align-items: center;
@@ -1260,9 +1372,11 @@
 			cursor: pointer;
 			user-select: none;
 		}
+
 		.post-group-header:hover {
 			background: var(--bg4);
 		}
+
 		.post-group-label {
 			font-size: .72rem;
 			font-weight: 700;
@@ -1271,11 +1385,13 @@
 			letter-spacing: .04em;
 			flex: 1;
 		}
+
 		.post-group-serials {
 			font-size: .65rem;
 			color: var(--text3);
 			font-family: monospace;
 		}
+
 		.post-group-count {
 			font-size: .68rem;
 			color: var(--text3);
@@ -1284,6 +1400,7 @@
 			border-radius: 99px;
 			padding: 1px 6px;
 		}
+
 		.post-group-sessions {
 			padding-left: 10px;
 			border-left: 2px solid var(--border);
@@ -1338,6 +1455,7 @@
 			opacity: .25;
 			cursor: default;
 		}
+
 		.si-rotate-badge.rotated {
 			color: var(--accent);
 			opacity: 1;
@@ -1990,10 +2108,12 @@
 			overflow-y: auto;
 			padding: 4px 0
 		}
+
 		#tv-sess-list .post-group-header {
 			cursor: default;
 			pointer-events: none;
 		}
+
 		#tv-sess-list .post-group-header:hover {
 			background: var(--bg3);
 		}
@@ -3087,6 +3207,10 @@
 			<!-- Sidebar -->
 			<nav id="sidebar">
 				<div class="nav-group">Pipeline</div>
+				<button class="nav-btn" onclick="nav('inbox',this)">
+					<span class="ico">⬇</span>Inbox → Bronze
+					<span class="nav-badge" id="nb-inbox">0</span>
+				</button>
 				<button class="nav-btn active" onclick="nav('pipeline',this)">
 					<span class="ico">◈</span>Pipeline
 					<span class="nav-badge" id="nb-pipeline">0</span>
@@ -3135,6 +3259,100 @@
 			<main id="main">
 
 				<!-- ══════════════════════════════════════════════════════
+  PAGE : INBOX → BRONZE
+══════════════════════════════════════════════════════ -->
+				<div class="page" id="page-inbox">
+					<div class="ph">Inbox → Bronze</div>
+					<div class="ps">Vérification et promotion des sessions brutes vers le stockage bronze.</div>
+
+					<!-- Barre d'outils -->
+					<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+						<div
+							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
+							<span style="font-size:.75rem;color:var(--text3)">Inbox :</span>
+							<input type="text" id="inbox-dir-input" placeholder="/mnt/inbox"
+								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
+						</div>
+						<div
+							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
+							<span style="font-size:.75rem;color:var(--text3)">Bronze :</span>
+							<input type="text" id="bronze-dir-input" placeholder="/mnt/storage/bronze"
+								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
+						</div>
+						<button class="btn p" id="inbox-scan-btn" onclick="inboxScan()">
+							⟳ Scanner l'inbox
+						</button>
+						<button class="btn" id="inbox-promote-all-btn" onclick="inboxPromoteAll()" disabled
+							style="background:var(--green)22;border-color:var(--green)55;color:var(--green)">
+							⬆ Promouvoir tout (valides)
+						</button>
+					</div>
+
+					<!-- Concurrence -->
+					<div
+						style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;margin-bottom:14px">
+						<div
+							style="font-size:.68rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">
+							Concurrence
+						</div>
+						<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+							<!-- Threads -->
+							<div style="display:flex;align-items:center;gap:8px">
+								<span style="font-size:.78rem;color:var(--text2);min-width:60px">Threads</span>
+								<input type="range" id="ib-threads-range" min="1" max="32" value="4" step="1"
+									style="width:100px;accent-color:var(--accent)" oninput="ibSyncSlider('threads')" />
+								<input type="number" id="ib-threads-num" min="1" max="32" value="4"
+									style="width:46px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.82rem;padding:2px 5px;text-align:center"
+									oninput="ibSyncNum('threads')" />
+								<span style="font-size:.7rem;color:var(--text3)">I/O checks</span>
+							</div>
+							<!-- Processus -->
+							<div style="display:flex;align-items:center;gap:8px">
+								<span style="font-size:.78rem;color:var(--text2);min-width:60px">Processus</span>
+								<input type="range" id="ib-procs-range" min="1" max="16" value="2" step="1"
+									style="width:100px;accent-color:var(--accent2)" oninput="ibSyncSlider('procs')" />
+								<input type="number" id="ib-procs-num" min="1" max="16" value="2"
+									style="width:46px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.82rem;padding:2px 5px;text-align:center"
+									oninput="ibSyncNum('procs')" />
+								<span style="font-size:.7rem;color:var(--text3)">trakeur CPU</span>
+							</div>
+							<!-- Info CPU + bouton apply -->
+							<div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+								<span id="ib-cpu-info" style="font-size:.72rem;color:var(--text3)">— cœurs</span>
+								<button class="btn sm p" onclick="ibApplyConfig()" style="font-size:.74rem">
+									Appliquer
+								</button>
+								<span id="ib-cfg-status"
+									style="font-size:.72rem;color:var(--text3);min-width:60px"></span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Stats rapides -->
+					<div class="g3" style="margin-bottom:16px" id="inbox-stats">
+						<div class="stat">
+							<div class="v" id="ib-total">—</div>
+							<div class="l">Sessions détectées</div>
+						</div>
+						<div class="stat">
+							<div class="v" style="color:var(--green)" id="ib-ok">—</div>
+							<div class="l">Prêtes à promouvoir</div>
+						</div>
+						<div class="stat">
+							<div class="v" style="color:var(--red)" id="ib-fail">—</div>
+							<div class="l">Avec erreurs</div>
+						</div>
+					</div>
+
+					<!-- Liste des sessions -->
+					<div id="inbox-session-list" style="display:flex;flex-direction:column;gap:10px">
+						<div style="color:var(--text3);font-size:.83rem;text-align:center;padding:32px 0">
+							Cliquez sur <strong>Scanner l'inbox</strong> pour démarrer.
+						</div>
+					</div>
+				</div>
+
+				<!-- ══════════════════════════════════════════════════════
   PAGE : PIPELINE
 ══════════════════════════════════════════════════════ -->
 				<div class="page active" id="page-pipeline">
@@ -3147,9 +3365,10 @@
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:250px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Répertoire</label>
 								<span id="cfg-root-display"
-									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Volumes/T9/data
+									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
+									ok 2
 								</span>
-								<input type="hidden" id="cfg-root" value="/Volumes/T9/data" />
+								<input type="hidden" id="cfg-root" value="/Users/christopher/Downloads/Video ok 2" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3294,9 +3513,10 @@
 							<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
 							<button class="btn sm"
 								style="background:var(--accent)1a;border-color:var(--accent)44;color:var(--accent)"
-								onclick="selRotated()" title="Sélectionner uniquement les sessions avec vidéo rotée 180°">↻ Rotées</button>
-							<button class="btn sm"
-								onclick="selNotRotated()" title="Sélectionner uniquement les sessions sans rotation vidéo">○ Non-rotées</button>
+								onclick="selRotated()"
+								title="Sélectionner uniquement les sessions avec vidéo rotée 180°">↻ Rotées</button>
+							<button class="btn sm" onclick="selNotRotated()"
+								title="Sélectionner uniquement les sessions sans rotation vidéo">○ Non-rotées</button>
 						</div>
 						<div id="sess-list"></div>
 						<div class="div" style="margin:10px 0 8px"></div>
@@ -3315,18 +3535,23 @@
 
 					<!-- Bouton Vérifier + Export auto -->
 					<div style="margin-top:16px">
-						<button class="btn-verify-export" id="btn-verify-export" onclick="verifyAndExportSelected()" disabled>
+						<button class="btn-verify-export" id="btn-verify-export" onclick="verifyAndExportSelected()"
+							disabled>
 							<span id="btn-verify-export-ico">✔</span> Vérifier et exporter automatiquement
 						</button>
-						<div id="verify-export-progress" style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
+						<div id="verify-export-progress"
+							style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
 							<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
 								<span id="verify-export-status-ico">⏳</span>
 								<span id="verify-export-status-text">Vérification en cours…</span>
 							</div>
 							<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
-								<div id="verify-export-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+								<div id="verify-export-bar"
+									style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
 							</div>
-							<div id="verify-export-log" style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
+							<div id="verify-export-log"
+								style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none">
+							</div>
 						</div>
 					</div>
 
@@ -3340,15 +3565,21 @@
 							✕ Rejeter
 						</button>
 					</div>
-					<div id="sess-export-banner" style="display:none;margin-top:10px;padding:10px 14px;background:var(--green)15;border:1px solid var(--green)44;border-radius:var(--rs);font-size:.8rem;color:var(--green);align-items:center;gap:8px">
+					<div id="sess-export-banner"
+						style="display:none;margin-top:10px;padding:10px 14px;background:var(--green)15;border:1px solid var(--green)44;border-radius:var(--rs);font-size:.8rem;color:var(--green);align-items:center;gap:8px">
 						<span style="font-size:1rem">⬆</span>
 						<span id="sess-export-banner-text"></span>
-						<a href="#" onclick="nav('jobs',null);return false" style="margin-left:auto;color:var(--green);font-size:.75rem;text-decoration:underline">Voir les jobs →</a>
+						<a href="#" onclick="nav('jobs',null);return false"
+							style="margin-left:auto;color:var(--green);font-size:.75rem;text-decoration:underline">Voir
+							les jobs →</a>
 					</div>
-					<div id="sess-reject-banner" style="display:none;margin-top:10px;padding:10px 14px;background:var(--red)15;border:1px solid var(--red)44;border-radius:var(--rs);font-size:.8rem;color:var(--red);align-items:center;gap:8px">
+					<div id="sess-reject-banner"
+						style="display:none;margin-top:10px;padding:10px 14px;background:var(--red)15;border:1px solid var(--red)44;border-radius:var(--rs);font-size:.8rem;color:var(--red);align-items:center;gap:8px">
 						<span style="font-size:1rem">✕</span>
 						<span id="sess-reject-banner-text"></span>
-						<a href="#" onclick="nav('jobs',null);return false" style="margin-left:auto;color:var(--red);font-size:.75rem;text-decoration:underline">Voir les jobs →</a>
+						<a href="#" onclick="nav('jobs',null);return false"
+							style="margin-left:auto;color:var(--red);font-size:.75rem;text-decoration:underline">Voir
+							les jobs →</a>
 					</div>
 				</div>
 
@@ -3725,6 +3956,33 @@
 											</label>
 										</div>
 
+										<!-- Offset gripper -->
+										<div class="tv-rp-section">
+											<div class="tv-rp-title">Offset gripper</div>
+											<div class="tv-rp-row">
+												<label>Décalage (ms)</label>
+												<input type="number" id="tv-grip-offset" value="0" step="10"
+													style="width:80px;background:var(--bg3);border:1px solid var(--border);color:var(--text1);border-radius:4px;padding:2px 6px;font-size:.8rem"
+													oninput="tvSetGripOffset(+this.value)">
+											</div>
+											<div class="tv-rp-row" style="gap:4px">
+												<button style="flex:1;font-size:.73rem"
+													onclick="tvSetGripOffset(TV.gripOffset - 10);ge('tv-grip-offset').value=TV.gripOffset">−10</button>
+												<button style="flex:1;font-size:.73rem"
+													onclick="tvSetGripOffset(0);ge('tv-grip-offset').value=0">0</button>
+												<button style="flex:1;font-size:.73rem"
+													onclick="tvSetGripOffset(TV.gripOffset + 10);ge('tv-grip-offset').value=TV.gripOffset">+10</button>
+											</div>
+											<div class="tv-rp-row" style="margin-top:4px">
+												<button id="tv-grip-apply-btn"
+													style="flex:1;font-size:.73rem;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 0;cursor:pointer"
+													onclick="tvApplyGripperOffset()">Appliquer sur les données</button>
+											</div>
+											<div id="tv-grip-apply-status"
+												style="font-size:.7rem;color:var(--text3);margin-top:3px;min-height:1em">
+											</div>
+										</div>
+
 										<!-- Vue 3D -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Vue 3D</div>
@@ -3986,33 +4244,39 @@
 								<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Watcher automatique</label>
-										<div class="pc-toggle" id="trig-watcher" onclick="pcToggle(this)" data-key="trig_watcher" data-val="1">
+										<div class="pc-toggle" id="trig-watcher" onclick="pcToggle(this)"
+											data-key="trig_watcher" data-val="1">
 											<div class="pc-knob"></div>
 										</div>
 										<span class="pc-toggle-label" id="trig-watcher-lbl">Activé</span>
-										<span style="color:var(--text3);font-size:.73rem;flex:1">Lance la pipeline dès qu'un nouveau dossier apparaît dans le répertoire de travail</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Lance la pipeline dès
+											qu'un nouveau dossier apparaît dans le répertoire de travail</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Scan au démarrage</label>
-										<div class="pc-toggle" id="trig-startup" onclick="pcToggle(this)" data-key="trig_startup" data-val="1">
+										<div class="pc-toggle" id="trig-startup" onclick="pcToggle(this)"
+											data-key="trig_startup" data-val="1">
 											<div class="pc-knob"></div>
 										</div>
 										<span class="pc-toggle-label" id="trig-startup-lbl">Activé</span>
-										<span style="color:var(--text3);font-size:.73rem;flex:1">Scanne et traite les sessions non traitées au lancement du serveur</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Scanne et traite les
+											sessions non traitées au lancement du serveur</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Intervalle de poll (s)</label>
 										<input type="number" id="trig-interval" value="5" min="1" max="300"
 											oninput="pcSave()"
 											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
-										<span style="color:var(--text3);font-size:.73rem">Fréquence de vérification du dossier de travail</span>
+										<span style="color:var(--text3);font-size:.73rem">Fréquence de vérification du
+											dossier de travail</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Délai de grâce (s)</label>
 										<input type="number" id="trig-grace" value="3" min="0" max="60"
 											oninput="pcSave()"
 											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
-										<span style="color:var(--text3);font-size:.73rem">Attente avant de considérer une session comme stable (écriture terminée)</span>
+										<span style="color:var(--text3);font-size:.73rem">Attente avant de considérer
+											une session comme stable (écriture terminée)</span>
 									</div>
 								</div>
 							</div>
@@ -4023,18 +4287,22 @@
 								<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Traitement parallèle</label>
-										<div class="pc-toggle" id="global-parallel" onclick="pcToggle(this)" data-key="global_parallel" data-val="0" style="background:var(--bg4)">
+										<div class="pc-toggle" id="global-parallel" onclick="pcToggle(this)"
+											data-key="global_parallel" data-val="0" style="background:var(--bg4)">
 											<div class="pc-knob"></div>
 										</div>
-										<span class="pc-toggle-label" id="global-parallel-lbl" style="color:var(--text3)">Désactivé</span>
-										<span style="color:var(--text3);font-size:.73rem;flex:1">Traite plusieurs sessions simultanément (attention aux ressources)</span>
+										<span class="pc-toggle-label" id="global-parallel-lbl"
+											style="color:var(--text3)">Désactivé</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Traite plusieurs
+											sessions simultanément (attention aux ressources)</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Workers max</label>
 										<input type="number" id="global-workers" value="2" min="1" max="16"
 											oninput="pcSave()"
 											style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:4px 8px" />
-										<span style="color:var(--text3);font-size:.73rem">Nombre de sessions traitées en parallèle</span>
+										<span style="color:var(--text3);font-size:.73rem">Nombre de sessions traitées en
+											parallèle</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Retry en cas d'erreur</label>
@@ -4045,11 +4313,13 @@
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Arrêt sur erreur</label>
-										<div class="pc-toggle" id="global-stoponerr" onclick="pcToggle(this)" data-key="global_stoponerr" data-val="1">
+										<div class="pc-toggle" id="global-stoponerr" onclick="pcToggle(this)"
+											data-key="global_stoponerr" data-val="1">
 											<div class="pc-knob"></div>
 										</div>
 										<span class="pc-toggle-label" id="global-stoponerr-lbl">Activé</span>
-										<span style="color:var(--text3);font-size:.73rem;flex:1">Stoppe la pipeline si une étape critique échoue</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Stoppe la pipeline si
+											une étape critique échoue</span>
 									</div>
 									<div class="fr" style="align-items:center;gap:10px">
 										<label style="min-width:160px">Notifications logs</label>
@@ -4060,7 +4330,8 @@
 											<option value="WARNING">WARNING</option>
 											<option value="ERROR">ERROR</option>
 										</select>
-										<span style="color:var(--text3);font-size:.73rem;flex:1">Niveau de verbosité des logs pipeline</span>
+										<span style="color:var(--text3);font-size:.73rem;flex:1">Niveau de verbosité des
+											logs pipeline</span>
 									</div>
 								</div>
 							</div>
@@ -4071,7 +4342,8 @@
 						<div class="card" style="min-width:0">
 							<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
 								<div class="card-h" style="margin:0">Étapes de traitement</div>
-								<span style="font-size:.73rem;color:var(--text3);flex:1">Glissez ↕ pour réordonner</span>
+								<span style="font-size:.73rem;color:var(--text3);flex:1">Glissez ↕ pour
+									réordonner</span>
 								<button class="btn sm" onclick="pcResetOrder()">↺ Réinitialiser l'ordre</button>
 							</div>
 
@@ -4090,7 +4362,8 @@
 					<!-- ══ Vérifier et exporter par lots ══ -->
 					<div class="card" style="margin-top:16px">
 						<div class="card-h">Vérifier et exporter par lots</div>
-						<div class="ps" style="margin:0 0 12px">Vérifie les sessions sélectionnées par groupes de 10, puis exporte chaque groupe validé.</div>
+						<div class="ps" style="margin:0 0 12px">Vérifie les sessions sélectionnées par groupes de 10,
+							puis exporte chaque groupe validé.</div>
 
 						<!-- Destination -->
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Destination</div>
@@ -4105,22 +4378,33 @@
 						</div>
 						<div id="pc-exp-dest-local">
 							<div class="fr"><label>Dossier de sortie</label>
-								<input type="text" id="pc-export-local-path" value="/mnt/storage/pool" placeholder="/mnt/storage/pool" />
+								<input type="text" id="pc-export-local-path" value="/mnt/storage/pool"
+									placeholder="/mnt/storage/pool" />
 							</div>
 						</div>
 						<div id="pc-exp-dest-s3" style="display:none">
 							<div style="font-size:.73rem;color:var(--text3);padding:6px 0 4px 158px">
-								Credentials S3 : bucket <b id="pc-exp-s3-bucket-label" style="color:var(--accent)">—</b> · région <b id="pc-exp-s3-region-label" style="color:var(--accent)">—</b>
-								— <a href="#" onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]\'));return false" style="color:var(--accent);text-decoration:underline">modifier dans Paramètres → Connexion AWS S3</a>
+								Credentials S3 : bucket <b id="pc-exp-s3-bucket-label" style="color:var(--accent)">—</b>
+								· région <b id="pc-exp-s3-region-label" style="color:var(--accent)">—</b>
+								— <a href="#"
+									onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]\'));return false"
+									style="color:var(--accent);text-decoration:underline">modifier dans Paramètres →
+									Connexion AWS S3</a>
 							</div>
-							<div class="fr"><label>Préfixe export</label><input type="text" id="pc-export-s3-prefix" placeholder="export/" /></div>
+							<div class="fr"><label>Préfixe export</label><input type="text" id="pc-export-s3-prefix"
+									placeholder="export/" /></div>
 						</div>
 						<div id="pc-exp-dest-sftp" style="display:none">
-							<div class="fr"><label>Hôte</label><input type="text" id="pc-export-sftp-host" placeholder="storage.example.com" /></div>
-							<div class="fr"><label>Port</label><input type="number" id="pc-export-sftp-port" value="22" /></div>
-							<div class="fr"><label>Utilisateur</label><input type="text" id="pc-export-sftp-user" placeholder="robot" /></div>
-							<div class="fr"><label>Mot de passe</label><input type="password" id="pc-export-sftp-pass" placeholder="••••••••" autocomplete="off" /></div>
-							<div class="fr"><label>Chemin distant</label><input type="text" id="pc-export-sftp-path" placeholder="/data/sessions" /></div>
+							<div class="fr"><label>Hôte</label><input type="text" id="pc-export-sftp-host"
+									placeholder="storage.example.com" /></div>
+							<div class="fr"><label>Port</label><input type="number" id="pc-export-sftp-port"
+									value="22" /></div>
+							<div class="fr"><label>Utilisateur</label><input type="text" id="pc-export-sftp-user"
+									placeholder="robot" /></div>
+							<div class="fr"><label>Mot de passe</label><input type="password" id="pc-export-sftp-pass"
+									placeholder="••••••••" autocomplete="off" /></div>
+							<div class="fr"><label>Chemin distant</label><input type="text" id="pc-export-sftp-path"
+									placeholder="/data/sessions" /></div>
 						</div>
 
 						<div class="div" style="margin:12px 0"></div>
@@ -4129,28 +4413,39 @@
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Format de sortie</div>
 						<div class="chk">
 							<input type="checkbox" id="pc-export-lerobot" onchange="pcOnLerobotChange()" />
-							<label style="font-weight:600">Convertir au format <span style="color:#a78bfa">LeRobot v3</span></label>
+							<label style="font-weight:600">Convertir au format <span style="color:#a78bfa">LeRobot
+									v3</span></label>
 						</div>
-						<div id="pc-exp-lerobot-opts" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:1px solid #a78bfa44">
-							<div style="font-size:.78rem;color:#a78bfa;margin-bottom:8px;font-weight:600">Options LeRobot v3</div>
-							<div class="fr"><label>Nom du dataset</label><input type="text" id="pc-lerobot-name" placeholder="my_robot_dataset" /></div>
+						<div id="pc-exp-lerobot-opts"
+							style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--rs);border:1px solid #a78bfa44">
+							<div style="font-size:.78rem;color:#a78bfa;margin-bottom:8px;font-weight:600">Options
+								LeRobot v3</div>
+							<div class="fr"><label>Nom du dataset</label><input type="text" id="pc-lerobot-name"
+									placeholder="my_robot_dataset" /></div>
 							<div class="fr"><label>Robot type</label>
-								<select id="pc-lerobot-robot" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
+								<select id="pc-lerobot-robot"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px">
 									<option value="so100">SO-100</option>
 									<option value="so101">SO-101</option>
 									<option value="moss">Moss</option>
 									<option value="custom">Custom</option>
 								</select>
 							</div>
-							<div class="fr"><label>FPS vidéo</label><input type="number" id="pc-lerobot-fps" value="30" min="1" max="120" /></div>
-							<div class="fr"><label>Sessions par chunk</label><input type="number" id="pc-lerobot-chunks-size" value="1000" min="1" max="100000" /></div>
-							<div class="fr"><label>Batch mémoire</label><input type="number" id="pc-lerobot-batch-size" value="5" min="1" max="100" /></div>
-							<div class="chk" style="margin-top:4px"><input type="checkbox" id="pc-lerobot-push-hub" onchange="pcOnHfPushChange()" />
+							<div class="fr"><label>FPS vidéo</label><input type="number" id="pc-lerobot-fps" value="30"
+									min="1" max="120" /></div>
+							<div class="fr"><label>Sessions par chunk</label><input type="number"
+									id="pc-lerobot-chunks-size" value="1000" min="1" max="100000" /></div>
+							<div class="fr"><label>Batch mémoire</label><input type="number" id="pc-lerobot-batch-size"
+									value="5" min="1" max="100" /></div>
+							<div class="chk" style="margin-top:4px"><input type="checkbox" id="pc-lerobot-push-hub"
+									onchange="pcOnHfPushChange()" />
 								<label>Pousser sur HuggingFace Hub</label>
 							</div>
 							<div id="pc-exp-hf-token-row" style="display:none;margin-top:6px">
-								<div class="fr"><label>HF Token</label><input type="password" id="pc-lerobot-hf-token" placeholder="hf_••••••••" autocomplete="off" /></div>
-								<div class="fr"><label>Repo ID</label><input type="text" id="pc-lerobot-repo" placeholder="username/dataset_name" /></div>
+								<div class="fr"><label>HF Token</label><input type="password" id="pc-lerobot-hf-token"
+										placeholder="hf_••••••••" autocomplete="off" /></div>
+								<div class="fr"><label>Repo ID</label><input type="text" id="pc-lerobot-repo"
+										placeholder="username/dataset_name" /></div>
 							</div>
 						</div>
 
@@ -4159,35 +4454,44 @@
 						<!-- Dry-run + bouton -->
 						<div class="chk" style="margin-bottom:10px">
 							<input type="checkbox" id="pc-dry-run" />
-							<label style="font-weight:600">Mode <span style="color:var(--orange)">Dry-Run</span> — simuler sans écrire</label>
+							<label style="font-weight:600">Mode <span style="color:var(--orange)">Dry-Run</span> —
+								simuler sans écrire</label>
 						</div>
 
-						<button class="btn-verify-export" id="pc-btn-verify-export" onclick="verifyAndExportSelected('pc')" disabled>
+						<button class="btn-verify-export" id="pc-btn-verify-export"
+							onclick="verifyAndExportSelected('pc')" disabled>
 							<span id="pc-btn-verify-export-ico">✔</span> Vérifier et exporter automatiquement
 						</button>
 
-						<div id="pc-verify-export-progress" style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
+						<div id="pc-verify-export-progress"
+							style="display:none;margin-top:8px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);font-size:.8rem;color:var(--text2)">
 							<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
 								<span id="pc-verify-export-status-ico">⏳</span>
 								<span id="pc-verify-export-status-text">Vérification en cours…</span>
 							</div>
 							<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
-								<div id="pc-verify-export-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+								<div id="pc-verify-export-bar"
+									style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
 							</div>
-							<div id="pc-verify-export-log" style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none"></div>
+							<div id="pc-verify-export-log"
+								style="margin-top:6px;max-height:280px;overflow-y:auto;font-size:.72rem;color:var(--text3);font-family:monospace;display:none">
+							</div>
 						</div>
 					</div>
 
 					<!-- Step detail modal -->
-					<div id="pc-step-modal" style="display:none;position:fixed;inset:0;background:#000a;z-index:200;align-items:center;justify-content:center">
-						<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:24px;min-width:420px;max-width:600px;width:90vw;position:relative">
+					<div id="pc-step-modal"
+						style="display:none;position:fixed;inset:0;background:#000a;z-index:200;align-items:center;justify-content:center">
+						<div
+							style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:24px;min-width:420px;max-width:600px;width:90vw;position:relative">
 							<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
 								<span id="pc-modal-ico" style="font-size:1.5rem"></span>
 								<div>
 									<div id="pc-modal-title" style="font-weight:700;font-size:1rem"></div>
 									<div id="pc-modal-desc" style="font-size:.78rem;color:var(--text2)"></div>
 								</div>
-								<button onclick="pcCloseModal()" style="margin-left:auto;background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer">✕</button>
+								<button onclick="pcCloseModal()"
+									style="margin-left:auto;background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer">✕</button>
 							</div>
 							<div id="pc-modal-body" style="display:flex;flex-direction:column;gap:10px"></div>
 							<div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
@@ -4245,7 +4549,8 @@
 							<div class="fr" style="align-items:center">
 								<label>Format d'input</label>
 								<div style="display:flex;align-items:center;gap:10px">
-									<span id="s-fmt-label-custom" style="font-size:.82rem;font-weight:600;color:var(--accent)">Custom</span>
+									<span id="s-fmt-label-custom"
+										style="font-size:.82rem;font-weight:600;color:var(--accent)">Custom</span>
 									<div id="s-input-fmt-toggle" onclick="toggleInputFormat()" style="
 										width:42px;height:22px;border-radius:11px;background:var(--bg4);border:1px solid var(--border2);
 										cursor:pointer;position:relative;transition:background .2s;flex-shrink:0">
@@ -4253,18 +4558,21 @@
 											position:absolute;top:2px;left:2px;width:16px;height:16px;
 											border-radius:50%;background:var(--accent);transition:left .2s"></div>
 									</div>
-									<span id="s-fmt-label-lerobot" style="font-size:.82rem;color:var(--text3)">LeRobot</span>
+									<span id="s-fmt-label-lerobot"
+										style="font-size:.82rem;color:var(--text3)">LeRobot</span>
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/Volumes/T9/data" />
+								<input type="text" id="s-root" value="/Users/christopher/Downloads/Video ok 2" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
-									<input type="text" id="s-lerobot-input-path" placeholder="/data/my_lerobot_dataset" />
+									<input type="text" id="s-lerobot-input-path"
+										placeholder="/data/my_lerobot_dataset" />
 								</div>
 								<div style="font-size:.73rem;color:var(--text3);margin-bottom:8px;padding-left:158px">
-									Chemin vers le dossier racine du dataset LeRobot (contient <code style="color:var(--accent3)">meta/info.json</code>).
+									Chemin vers le dossier racine du dataset LeRobot (contient <code
+										style="color:var(--accent3)">meta/info.json</code>).
 								</div>
 							</div>
 							<div class="fr"><label>Modèle IA</label>
@@ -4308,21 +4616,33 @@
 					<!-- ══ Section S3 centralisée ══ -->
 					<div class="card" style="margin-top:16px">
 						<div class="card-h">Connexion AWS S3</div>
-						<div class="ps" style="margin:0 0 12px">Credentials partagés par le S3 Browser, l'ingestion et l'export.</div>
-						<div class="fr"><label>Bucket S3</label><input type="text" id="s3-bucket" placeholder="my-robot-data" /></div>
-						<div class="fr"><label>Région AWS</label><input type="text" id="s3-region" placeholder="eu-west-1" /></div>
-						<div class="fr"><label>Access Key ID</label><input type="text" id="s3-key" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
-						<div class="fr"><label>Secret Key</label><input type="password" id="s3-secret" placeholder="••••••••" autocomplete="off" /></div>
+						<div class="ps" style="margin:0 0 12px">Credentials partagés par le S3 Browser, l'ingestion et
+							l'export.</div>
+						<div class="fr"><label>Bucket S3</label><input type="text" id="s3-bucket"
+								placeholder="my-robot-data" /></div>
+						<div class="fr"><label>Région AWS</label><input type="text" id="s3-region"
+								placeholder="eu-west-1" /></div>
+						<div class="fr"><label>Access Key ID</label><input type="text" id="s3-key"
+								placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off" /></div>
+						<div class="fr"><label>Secret Key</label><input type="password" id="s3-secret"
+								placeholder="••••••••" autocomplete="off" /></div>
 						<div class="div" style="margin:10px 0 8px"></div>
-						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Source (ingestion / S3 Browser)</div>
-						<div class="fr"><label>Préfixe source</label><input type="text" id="s3-src-prefix" placeholder="sessions/" /></div>
-						<div class="fr"><label>Dossier local temp</label><input type="text" id="s3-localdir" placeholder="/tmp/s3_stream" /></div>
-						<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px;padding-left:158px">Dossier local où seront streamés les fichiers S3 pour vérification.</div>
+						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Source (ingestion / S3 Browser)
+						</div>
+						<div class="fr"><label>Préfixe source</label><input type="text" id="s3-src-prefix"
+								placeholder="sessions/" /></div>
+						<div class="fr"><label>Dossier local temp</label><input type="text" id="s3-localdir"
+								placeholder="/tmp/s3_stream" /></div>
+						<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px;padding-left:158px">Dossier
+							local où seront streamés les fichiers S3 pour vérification.</div>
 						<div class="card-h" style="font-size:.75rem;margin-bottom:8px">Export</div>
-						<div class="fr"><label>Préfixe export</label><input type="text" id="s3-export-prefix" placeholder="export/" /></div>
+						<div class="fr"><label>Préfixe export</label><input type="text" id="s3-export-prefix"
+								placeholder="export/" /></div>
 						<div class="row" style="margin-top:10px">
 							<button class="btn p" onclick="saveS3Settings()">Sauvegarder</button>
-							<button class="btn c" onclick="nav('s3browser', document.querySelector('.nav-btn[onclick*=s3browser]'))">☁ Ouvrir S3 Browser</button>
+							<button class="btn c"
+								onclick="nav('s3browser', document.querySelector('.nav-btn[onclick*=s3browser]'))">☁
+								Ouvrir S3 Browser</button>
 						</div>
 					</div>
 
@@ -4356,10 +4676,15 @@
 						<!-- AWS S3 — credentials lus depuis la section S3 centralisée -->
 						<div id="exp-dest-s3" style="display:none">
 							<div style="font-size:.73rem;color:var(--text3);padding:6px 0 4px 158px">
-								Credentials S3 : bucket <b id="exp-s3-bucket-label" style="color:var(--accent)">—</b> · région <b id="exp-s3-region-label" style="color:var(--accent)">—</b>
-								— <a href="#" onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]'));return false" style="color:var(--accent);text-decoration:underline">modifier dans Paramètres → Connexion AWS S3</a>
+								Credentials S3 : bucket <b id="exp-s3-bucket-label" style="color:var(--accent)">—</b> ·
+								région <b id="exp-s3-region-label" style="color:var(--accent)">—</b>
+								— <a href="#"
+									onclick="nav('settings',document.querySelector('.nav-btn[onclick*=settings]'));return false"
+									style="color:var(--accent);text-decoration:underline">modifier dans Paramètres →
+									Connexion AWS S3</a>
 							</div>
-							<div class="fr"><label>Préfixe export</label><input type="text" id="s-export-s3-prefix" placeholder="export/" /></div>
+							<div class="fr"><label>Préfixe export</label><input type="text" id="s-export-s3-prefix"
+									placeholder="export/" /></div>
 						</div>
 
 						<!-- SFTP -->
@@ -4403,10 +4728,14 @@
 							</div>
 							<div class="fr"><label>FPS vidéo</label><input type="number" id="s-lerobot-fps" value="30"
 									min="1" max="120" /></div>
-							<div class="fr"><label>Sessions par chunk</label><input type="number" id="s-lerobot-chunks-size" value="1000"
-									min="1" max="100000" title="Nombre d'épisodes (sessions) par chunk LeRobot" /></div>
-							<div class="fr"><label title="Épisodes traités en mémoire à la fois — réduire si l'ordi plante (défaut: 5)">Batch mémoire</label><input type="number" id="s-lerobot-batch-size" value="5"
-									min="1" max="100" title="Épisodes traités en mémoire à la fois. Réduire si l'ordi plante." /></div>
+							<div class="fr"><label>Sessions par chunk</label><input type="number"
+									id="s-lerobot-chunks-size" value="1000" min="1" max="100000"
+									title="Nombre d'épisodes (sessions) par chunk LeRobot" /></div>
+							<div class="fr"><label
+									title="Épisodes traités en mémoire à la fois — réduire si l'ordi plante (défaut: 5)">Batch
+									mémoire</label><input type="number" id="s-lerobot-batch-size" value="5" min="1"
+									max="100"
+									title="Épisodes traités en mémoire à la fois. Réduire si l'ordi plante." /></div>
 							<div class="chk" style="margin-top:4px"><input type="checkbox" id="s-lerobot-push-hub" />
 								<label>Pousser sur HuggingFace Hub</label>
 							</div>
@@ -4435,7 +4764,8 @@
 							<input type="checkbox" id="s-auto-reject-missing" style="width:auto;margin:0" />
 						</div>
 						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
-							Si coché, toute session avec des fichiers manquants est automatiquement rejetée lors de la vérification.
+							Si coché, toute session avec des fichiers manquants est automatiquement rejetée lors de la
+							vérification.
 						</div>
 
 						<div class="div" style="margin:14px 0"></div>
@@ -4447,7 +4777,8 @@
 							<label style="font-weight:600">Mode <span style="color:var(--orange)">Dry-Run</span></label>
 						</div>
 						<div style="font-size:.73rem;color:var(--text3);margin-bottom:12px;padding-left:158px">
-							Simule l'export sans écrire de fichiers. Les vérifications s'exécutent normalement, mais aucune donnée n'est copiée ni déplacée.
+							Simule l'export sans écrire de fichiers. Les vérifications s'exécutent normalement, mais
+							aucune donnée n'est copiée ni déplacée.
 						</div>
 
 						<div class="div" style="margin:14px 0"></div>
@@ -4466,23 +4797,33 @@
 					<div class="card" style="padding:12px 16px;margin-bottom:12px">
 						<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
 							<span style="font-size:.78rem;color:var(--text3);flex-shrink:0">s3://</span>
-							<span id="s3b-bucket-label" style="font-size:.78rem;color:var(--accent);font-weight:700;flex-shrink:0">—</span>
+							<span id="s3b-bucket-label"
+								style="font-size:.78rem;color:var(--accent);font-weight:700;flex-shrink:0">—</span>
 							<span style="font-size:.78rem;color:var(--text3);flex-shrink:0">/</span>
-							<span id="s3b-prefix-label" style="font-size:.78rem;color:var(--text2);font-family:monospace;word-break:break-all"></span>
+							<span id="s3b-prefix-label"
+								style="font-size:.78rem;color:var(--text2);font-family:monospace;word-break:break-all"></span>
 							<div style="flex:1"></div>
-							<button class="btn sm" onclick="s3bNavUp()" id="s3b-btn-up" title="Remonter">↑ Parent</button>
+							<button class="btn sm" onclick="s3bNavUp()" id="s3b-btn-up" title="Remonter">↑
+								Parent</button>
 							<button class="btn sm" onclick="s3bRefresh()">⟳ Rafraîchir</button>
-							<button class="btn sm" onclick="nav('settings', document.querySelector('.nav-btn[onclick*=settings]'))">⚙ Config S3</button>
+							<button class="btn sm"
+								onclick="nav('settings', document.querySelector('.nav-btn[onclick*=settings]'))">⚙
+								Config S3</button>
 						</div>
 						<!-- Breadcrumb -->
-						<div id="s3b-breadcrumb" style="margin-top:8px;font-size:.75rem;color:var(--text3);display:flex;gap:4px;flex-wrap:wrap"></div>
+						<div id="s3b-breadcrumb"
+							style="margin-top:8px;font-size:.75rem;color:var(--text3);display:flex;gap:4px;flex-wrap:wrap">
+						</div>
 					</div>
 
 					<!-- Status / messages -->
-					<div id="s3b-status" style="display:none;padding:10px 14px;border-radius:var(--r);margin-bottom:12px;font-size:.82rem"></div>
+					<div id="s3b-status"
+						style="display:none;padding:10px 14px;border-radius:var(--r);margin-bottom:12px;font-size:.82rem">
+					</div>
 
 					<!-- Actions sur sélection -->
-					<div id="s3b-actions-bar" style="display:none;margin-bottom:10px;gap:8px;align-items:center;flex-wrap:wrap">
+					<div id="s3b-actions-bar"
+						style="display:none;margin-bottom:10px;gap:8px;align-items:center;flex-wrap:wrap">
 						<span id="s3b-sel-count" style="font-size:.78rem;color:var(--text2)">0 sélectionné(s)</span>
 						<button class="btn sm c" onclick="s3bStreamSelected()">⬇ Streamer localement</button>
 						<button class="btn sm" onclick="s3bMoveSelected()">✂ Déplacer vers…</button>
@@ -4492,15 +4833,20 @@
 					<!-- Liste dossiers / fichiers -->
 					<div class="card" style="padding:0;overflow:hidden">
 						<!-- En-tête colonnes -->
-						<div style="display:grid;grid-template-columns:28px 1fr 110px 90px;gap:0;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.7rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">
+						<div
+							style="display:grid;grid-template-columns:28px 1fr 110px 90px;gap:0;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.7rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">
 							<span></span>
 							<span>Nom</span>
 							<span style="text-align:right">Taille</span>
 							<span style="text-align:right">Modifié</span>
 						</div>
 						<div id="s3b-list" style="min-height:120px"></div>
-						<div id="s3b-empty" style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">Dossier vide</div>
-						<div id="s3b-loading" style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">Chargement…</div>
+						<div id="s3b-empty"
+							style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">
+							Dossier vide</div>
+						<div id="s3b-loading"
+							style="display:none;padding:32px;text-align:center;font-size:.82rem;color:var(--text3)">
+							Chargement…</div>
 					</div>
 				</div>
 
@@ -4627,15 +4973,21 @@
 	</div>
 
 	<!-- ══ Modal S3 Move ════════════════════════════════════════════════ -->
-	<div id="s3-move-backdrop" onclick="s3MoveModalClose(event)" style="display:none;position:fixed;inset:0;background:#00000088;z-index:1200;align-items:center;justify-content:center">
-		<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;width:480px;max-width:95vw">
+	<div id="s3-move-backdrop" onclick="s3MoveModalClose(event)"
+		style="display:none;position:fixed;inset:0;background:#00000088;z-index:1200;align-items:center;justify-content:center">
+		<div
+			style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;width:480px;max-width:95vw">
 			<h3 style="margin-bottom:16px;font-size:1rem">✂ Déplacer vers…</h3>
-			<div style="font-size:.78rem;color:var(--text3);margin-bottom:10px" id="s3-move-items-label">0 dossier(s) sélectionné(s)</div>
+			<div style="font-size:.78rem;color:var(--text3);margin-bottom:10px" id="s3-move-items-label">0 dossier(s)
+				sélectionné(s)</div>
 			<div style="margin-bottom:12px">
-				<label style="font-size:.78rem;color:var(--text2);display:block;margin-bottom:4px">Préfixe de destination (dans le même bucket)</label>
-				<input type="text" id="s3-move-dest" placeholder="rejected/" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:7px 10px;font:inherit" />
+				<label style="font-size:.78rem;color:var(--text2);display:block;margin-bottom:4px">Préfixe de
+					destination (dans le même bucket)</label>
+				<input type="text" id="s3-move-dest" placeholder="rejected/"
+					style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:7px 10px;font:inherit" />
 			</div>
-			<div style="padding:10px 12px;background:var(--orange)11;border:1px solid var(--orange)33;border-radius:var(--rs);font-size:.78rem;color:var(--orange);margin-bottom:16px">
+			<div
+				style="padding:10px 12px;background:var(--orange)11;border:1px solid var(--orange)33;border-radius:var(--rs);font-size:.78rem;color:var(--orange);margin-bottom:16px">
 				⚠ Les dossiers seront déplacés (copiés puis supprimés sur S3). Cette opération est irréversible.
 			</div>
 			<div style="display:flex;gap:8px;justify-content:flex-end">
@@ -4666,7 +5018,7 @@
 			drawerSess: null,
 			watcher: { running: false },
 			cfg: {
-				root: '/Volumes/T9/data', model: '_sync_ml_model', nas: '',
+				root: '/Users/christopher/Downloads/Video ok 2', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -4857,8 +5209,8 @@
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
-			const fmt  = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data';
+			const fmt = S.cfg.input_format || 'custom';
+			const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/Video ok 2';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -5159,8 +5511,8 @@
 					const existing = body.querySelector(`.pipe-card[data-sess="${CSS.escape(sess.name)}"]`);
 
 					const badge = sess.lerobot
-					? `<span style="margin-left:5px;font-size:.6rem;padding:1px 5px;border-radius:3px;background:#a78bfa22;color:#a78bfa;border:1px solid #a78bfa44;vertical-align:middle">LeRobot</span>`
-					: scoreBadgeHTML(ps);
+						? `<span style="margin-left:5px;font-size:.6rem;padding:1px 5px;border-radius:3px;background:#a78bfa22;color:#a78bfa;border:1px solid #a78bfa44;vertical-align:middle">LeRobot</span>`
+						: scoreBadgeHTML(ps);
 
 					if (existing && !moved) {
 						// Mise à jour en place (pas d'animation, juste rafraîchir le contenu)
@@ -5207,10 +5559,10 @@
 			ge('btn-drawer-rollback').onclick = () => rollbackDrawer();
 			// Masquer les actions pipeline pour les sessions LeRobot
 			const isLR = !!sess.lerobot;
-			ge('btn-drawer-run').style.display       = isLR ? 'none' : '';
-			ge('btn-drawer-rollback').style.display  = isLR ? 'none' : '';
-			ge('btn-drawer-unlock').style.display    = isLR ? 'none' : '';
-			ge('btn-drawer-verify').style.display    = isLR ? 'none' : '';
+			ge('btn-drawer-run').style.display = isLR ? 'none' : '';
+			ge('btn-drawer-rollback').style.display = isLR ? 'none' : '';
+			ge('btn-drawer-unlock').style.display = isLR ? 'none' : '';
+			ge('btn-drawer-verify').style.display = isLR ? 'none' : '';
 			renderDrawerContent(sess);
 			ge('sess-drawer').classList.add('open');
 		}
@@ -5340,9 +5692,9 @@
 				// — check.py score —
 				if (checkScore != null) {
 					const csColor = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
-					const csIcon  = checkScore >= 70 ? '✓' : '✗';
-					const csIa    = sess.meta?.check_ia_score != null ? `  ia=${sess.meta.check_ia_score.toFixed(3)}` : '';
-					const csBloc  = sess.meta?.check_blocking ? `  <span style="color:var(--red)">✗ ${esc(sess.meta.check_blocking)}</span>` : '';
+					const csIcon = checkScore >= 70 ? '✓' : '✗';
+					const csIa = sess.meta?.check_ia_score != null ? `  ia=${sess.meta.check_ia_score.toFixed(3)}` : '';
+					const csBloc = sess.meta?.check_blocking ? `  <span style="color:var(--red)">✗ ${esc(sess.meta.check_blocking)}</span>` : '';
 					html += `<div style="font-size:.75rem;margin-bottom:3px">
         <span style="color:var(--text3)">check.py</span>
         <span style="color:${csColor};margin-left:6px">${csIcon} ${Math.round(checkScore)}%${csIa}</span>${csBloc}
@@ -5638,7 +5990,7 @@
 				const blocking = r.blocking_reason || '';
 
 				// Stocker dans meta pour l'affichage
-				S.drawerSess.meta.check_score    = score;
+				S.drawerSess.meta.check_score = score;
 				S.drawerSess.meta.check_ia_score = iaScore;
 				S.drawerSess.meta.check_blocking = blocking;
 
@@ -5798,7 +6150,7 @@
 			const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
 
 			const _rotateTitle = s.video_rotated
-				? `Vidéo rotée 180°${s.rotate_info?.rotated_at ? ' — ' + s.rotate_info.rotated_at.slice(0,10) : ''}${s.rotate_info?.sides?.length ? ' (' + s.rotate_info.sides.join(', ') + ')' : ''}`
+				? `Vidéo rotée 180°${s.rotate_info?.rotated_at ? ' — ' + s.rotate_info.rotated_at.slice(0, 10) : ''}${s.rotate_info?.sides?.length ? ' (' + s.rotate_info.sides.join(', ') + ')' : ''}`
 				: 'Vidéo non rotée';
 
 			div.innerHTML = `
@@ -5878,7 +6230,7 @@
 		}
 
 		function _saveSelection() {
-			try { localStorage.setItem('syncml-selected', JSON.stringify([...S.selected])); } catch (e) {}
+			try { localStorage.setItem('syncml-selected', JSON.stringify([...S.selected])); } catch (e) { }
 		}
 		function _restoreSelection(availablePaths) {
 			try {
@@ -6199,6 +6551,7 @@
 			// Vidéo native
 			vidInfo: {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
 			vidReady: {},      // { head: bool, left: bool, right: bool }
+			gripOffset: 0,    // décalage en ms appliqué aux données gripper (visuel uniquement)
 		};
 
 		const TV_COLORS = {
@@ -6476,6 +6829,8 @@
 			TV.data = null;
 			TV.sessPath = path;
 			TV.t_ms = 0;
+			TV.gripOffset = 0;
+			ge('tv-grip-offset').value = 0;
 			ge('tv-rp-btn-export').disabled = false;
 			ge('tv-rp-btn-check').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
@@ -6755,7 +7110,7 @@
 							});
 							const errCount = res.errors?.length || 0;
 							if (errCount) log(`Renommage trackers bulk: ${errCount} erreur(s)`, 'WARN');
-						} catch(e) {
+						} catch (e) {
 							log('Tracker swap bulk: ' + e.message, 'ERROR');
 						}
 					}
@@ -6789,7 +7144,7 @@
 							const s = S.sessions.find(x => x.path === sess.path);
 							if (s) await loadSessionPipelineState(s);
 						}
-					} catch(e) {
+					} catch (e) {
 						log('Camera swap bulk: ' + e.message, 'ERROR');
 					}
 				}
@@ -6815,6 +7170,50 @@
 					v.currentTime = targetSec;
 				}
 				ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
+			}
+		}
+
+		function tvSetGripOffset(ms) {
+			TV.gripOffset = ms;
+			tvRebuildCharts();
+		}
+
+		async function tvApplyGripperOffset() {
+			if (!TV.sessPath) return;
+			if (TV.gripOffset === 0) {
+				ge('tv-grip-apply-status').textContent = 'Offset = 0, rien à appliquer.';
+				return;
+			}
+			const btn = ge('tv-grip-apply-btn');
+			const status = ge('tv-grip-apply-status');
+			btn.disabled = true;
+			status.textContent = 'Application en cours…';
+			status.style.color = 'var(--text3)';
+			try {
+				const res = await fetch('/api/session/apply_gripper_offset', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ session: TV.sessPath, offset_ms: TV.gripOffset })
+				});
+				const data = await res.json();
+				if (!res.ok) throw new Error(data.detail || res.statusText);
+				const files = (data.files_patched || []).join(', ');
+				status.textContent = `✓ ${data.offset_ms > 0 ? '+' : ''}${data.offset_ms} ms appliqué (${files})`;
+				status.style.color = 'var(--green)';
+				// Recharger les données pour refléter les nouveaux timestamps
+				tvSetGripOffset(0);
+				ge('tv-grip-offset').value = 0;
+				const dataResp = await fetch(`/api/session/data?session_path=${encodeURIComponent(TV.sessPath)}`);
+				if (dataResp.ok) {
+					TV.data = await dataResp.json();
+					TV.duration_ms = TV.data.duration_ms || 0;
+					tvRebuildCharts();
+				}
+			} catch (e) {
+				status.textContent = '✗ ' + e.message;
+				status.style.color = 'var(--red)';
+			} finally {
+				btn.disabled = false;
 			}
 		}
 
@@ -6874,10 +7273,13 @@
 			[['left', 'grip_left'], ['right', 'grip_right']].forEach(([side, ck]) => {
 				const g = d[`gripper_${side}`];
 				if (!g?.t_ms?.length) return;
+				const t_shifted = TV.gripOffset !== 0
+					? g.t_ms.map(t => t + TV.gripOffset)
+					: g.t_ms;
 				if (g.opening_mm?.length) {
 					gDs.push({
 						label: `Ouverture ${side} (mm)`,
-						data: tvDownsample(g.t_ms, g.opening_mm, 800),
+						data: tvDownsample(t_shifted, g.opening_mm, 800),
 						borderColor: TV_COLORS[ck], borderWidth: 1.5,
 						pointRadius: 0, tension: .2, fill: false, parsing: false,
 					});
@@ -6885,7 +7287,7 @@
 				if (g.angle_deg?.length) {
 					gDs.push({
 						label: `Angle ${side} (°)`,
-						data: tvDownsample(g.t_ms, g.angle_deg, 800),
+						data: tvDownsample(t_shifted, g.angle_deg, 800),
 						borderColor: TV_COLORS[ck] + '99', borderWidth: 1, borderDash: [4, 3],
 						pointRadius: 0, tension: .2, fill: false, parsing: false,
 					});
@@ -7869,7 +8271,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/Volumes/T9/data				';
+				const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/Video ok 2				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -7908,9 +8310,9 @@
 		// ══════════════════════════════════════════════════════════════════
 		function _applyInputFormat(fmt) {
 			const isLR = fmt === 'lerobot';
-			ge('s-input-fmt-knob').style.left   = isLR ? '22px' : '2px';
+			ge('s-input-fmt-knob').style.left = isLR ? '22px' : '2px';
 			ge('s-input-fmt-toggle').style.background = isLR ? 'var(--accent2)' : 'var(--bg4)';
-			ge('s-fmt-label-custom').style.color  = isLR ? 'var(--text3)' : 'var(--accent)';
+			ge('s-fmt-label-custom').style.color = isLR ? 'var(--text3)' : 'var(--accent)';
 			ge('s-fmt-label-lerobot').style.color = isLR ? 'var(--accent2)' : 'var(--text3)';
 			ge('s-lerobot-input-opts').style.display = isLR ? '' : 'none';
 			S.cfg.input_format = fmt;
@@ -7922,7 +8324,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/Volumes/T9/data';
+			S.cfg.root = ge('s-root').value || '/Users/christopher/Downloads/Video ok 2';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -7940,7 +8342,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/Volumes/T9/data';
+				const root = c.root || '/Users/christopher/Downloads/Video ok 2';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -8053,8 +8455,8 @@
 		function pcOnExportTypeChange() {
 			const v = ge('pc-export-type').value;
 			ge('pc-exp-dest-local').style.display = v === 'local' ? '' : 'none';
-			ge('pc-exp-dest-s3').style.display    = v === 's3'    ? '' : 'none';
-			ge('pc-exp-dest-sftp').style.display  = v === 'sftp'  ? '' : 'none';
+			ge('pc-exp-dest-s3').style.display = v === 's3' ? '' : 'none';
+			ge('pc-exp-dest-sftp').style.display = v === 'sftp' ? '' : 'none';
 		}
 		function pcOnLerobotChange() {
 			ge('pc-exp-lerobot-opts').style.display = ge('pc-export-lerobot').checked ? '' : 'none';
@@ -8065,28 +8467,28 @@
 		function pcGetExportCfg() {
 			const s3 = getS3Cfg();
 			return {
-				dest_type:          ge('pc-export-type').value,
-				local_path:         ge('pc-export-local-path').value || '/mnt/storage/pool',
-				s3_bucket:          s3.bucket,
-				s3_prefix:          ge('pc-export-s3-prefix').value || s3.export_prefix,
-				s3_region:          s3.region,
-				s3_key:             s3.key,
-				s3_secret:          s3.secret,
-				sftp_host:          ge('pc-export-sftp-host').value,
-				sftp_port:          +ge('pc-export-sftp-port').value || 22,
-				sftp_user:          ge('pc-export-sftp-user').value,
-				sftp_pass:          ge('pc-export-sftp-pass').value,
-				sftp_path:          ge('pc-export-sftp-path').value,
-				lerobot:            ge('pc-export-lerobot').checked,
-				lr_name:            ge('pc-lerobot-name').value,
-				lr_robot:           ge('pc-lerobot-robot').value,
-				lr_fps:             +ge('pc-lerobot-fps').value || 30,
-				lr_chunks_size:     +ge('pc-lerobot-chunks-size').value || 1000,
-				lr_batch_size:      +ge('pc-lerobot-batch-size').value || 5,
-				lr_push:            ge('pc-lerobot-push-hub').checked,
-				lr_token:           ge('pc-lerobot-hf-token').value,
-				lr_repo:            ge('pc-lerobot-repo').value,
-				dry_run:            ge('pc-dry-run').checked,
+				dest_type: ge('pc-export-type').value,
+				local_path: ge('pc-export-local-path').value || '/mnt/storage/pool',
+				s3_bucket: s3.bucket,
+				s3_prefix: ge('pc-export-s3-prefix').value || s3.export_prefix,
+				s3_region: s3.region,
+				s3_key: s3.key,
+				s3_secret: s3.secret,
+				sftp_host: ge('pc-export-sftp-host').value,
+				sftp_port: +ge('pc-export-sftp-port').value || 22,
+				sftp_user: ge('pc-export-sftp-user').value,
+				sftp_pass: ge('pc-export-sftp-pass').value,
+				sftp_path: ge('pc-export-sftp-path').value,
+				lerobot: ge('pc-export-lerobot').checked,
+				lr_name: ge('pc-lerobot-name').value,
+				lr_robot: ge('pc-lerobot-robot').value,
+				lr_fps: +ge('pc-lerobot-fps').value || 30,
+				lr_chunks_size: +ge('pc-lerobot-chunks-size').value || 1000,
+				lr_batch_size: +ge('pc-lerobot-batch-size').value || 5,
+				lr_push: ge('pc-lerobot-push-hub').checked,
+				lr_token: ge('pc-lerobot-hf-token').value,
+				lr_repo: ge('pc-lerobot-repo').value,
+				dry_run: ge('pc-dry-run').checked,
 			};
 		}
 		// Active/désactive le bouton de la page Config Pipeline selon la sélection
@@ -8165,7 +8567,7 @@
 			let totalFailed = 0;
 			let totalExported = 0;
 			const allValidRotated = [];  // sessions rotées → export LeRobot global
-			const allValidRaw     = [];  // sessions non-rotées → export raw par batch
+			const allValidRaw = [];  // sessions non-rotées → export raw par batch
 
 			// ── Phase 1 : vérification par batches de 10 ─────────────────────
 			for (let bIdx = 0; bIdx < totalBatches; bIdx++) {
@@ -8177,8 +8579,8 @@
 				addLog(`━━ Batch ${batchNum}/${totalBatches} — vérification (${batchSessions.length} session(s)) ━━`, 'var(--accent)');
 
 				const batchOkRotated = [];
-				const batchOkRaw     = [];
-				const batchFailed    = [];
+				const batchOkRaw = [];
+				const batchFailed = [];
 
 				for (let i = 0; i < batchSessions.length; i++) {
 					const sessPath = batchSessions[i];
@@ -8287,7 +8689,7 @@
 					statusTxt.textContent = `Export LeRobot ${subdir}/ — ${sessList.length} session(s)…`;
 					const body = _buildExportBody(sessList, cfg);
 					if (body.dest_local) body.dest_local.path = (body.dest_local.path || '').replace(/\/?$/, '/' + subdir);
-					if (body.dest_s3)    body.dest_s3.prefix  = ((body.dest_s3.prefix || '').replace(/\/?$/, '/') + subdir + '/').replace('//', '/');
+					if (body.dest_s3) body.dest_s3.prefix = ((body.dest_s3.prefix || '').replace(/\/?$/, '/') + subdir + '/').replace('//', '/');
 					try {
 						const res = await api('POST', '/api/export', body);
 						addLog(`✓ Job lancé — ${sessList.length} sessions → ${subdir}/ — job ${res.job_id}`, 'var(--green)');
@@ -8313,7 +8715,7 @@
 			addLog(`  Rejetées            : ${totalFailed}`, totalFailed ? 'var(--orange)' : '');
 			if (isLerobot) {
 				if (allValidRotated.length) addLog(`  LeRobot rotated/    : ${allValidRotated.length} épisodes`, 'var(--accent)');
-				if (allValidRaw.length)     addLog(`  LeRobot non_rotated/: ${allValidRaw.length} épisodes`, 'var(--accent)');
+				if (allValidRaw.length) addLog(`  LeRobot non_rotated/: ${allValidRaw.length} épisodes`, 'var(--accent)');
 			} else {
 				addLog(`  Exportées           : ${totalExported}`, totalExported ? 'var(--green)' : 'var(--red)');
 			}
@@ -8361,9 +8763,11 @@
 				body.dest_sftp = { host: cfg.sftp_host, port: cfg.sftp_port, user: cfg.sftp_user, password: cfg.sftp_pass, remote_path: cfg.sftp_path };
 			}
 			if (cfg.lerobot) {
-				body.lerobot = { enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30,
+				body.lerobot = {
+					enabled: true, dataset_name: cfg.lr_name || 'robot_dataset', robot_type: cfg.lr_robot || 'so100', fps: cfg.lr_fps || 30,
 					chunks_size: cfg.lr_chunks_size || 1000, batch_size: cfg.lr_batch_size || 5,
-					push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || '' };
+					push_to_hub: cfg.lr_push, hf_token: cfg.lr_token || '', repo_id: cfg.lr_repo || ''
+				};
 			}
 			return body;
 		}
@@ -8721,15 +9125,15 @@
 		// ══════════════════════════════════════════════════════════════════
 
 		const PC_STEPS_DEFAULT = [
-			{ key: 'detect',     label: 'Détection',    ico: '①',  desc: 'Détecte les nouveaux dossiers de session dans le répertoire de travail', critical: true,  opts: {} },
-			{ key: 'check_sync', label: 'Sync Check',   ico: '⏱',  desc: 'Vérifie la synchronisation temporelle caméra/capteurs', critical: true,  opts: { max_lag_ms: 400 } },
-			{ key: 'verify',     label: 'Vérification', ico: '⚠',  desc: 'Contrôle l\'intégrité des fichiers et la complétude de la session', critical: true,  opts: {} },
-			{ key: 'tracker',    label: 'Tracker',      ico: '②',  desc: 'Extraction des données de tracking (position, orientation)', critical: false, opts: {} },
-			{ key: 'video',      label: 'Vidéo',        ico: '③',  desc: 'Traitement et encodage des flux vidéo', critical: false, opts: { codec: 'h264', crf: 23 } },
-			{ key: 'flux_csv',   label: 'Flux CSV',     ico: '④',  desc: 'Export des flux de données en format CSV', critical: false, opts: { delimiter: ',', encoding: 'utf-8' } },
-			{ key: 'ia_sync',    label: 'IA Sync',      ico: '⑤',  desc: 'Correction de synchronisation par modèle IA', critical: false, opts: { resample_ms: 5, max_lag_ms: 400, confidence: 0.7 } },
-			{ key: 'validate',   label: 'Validation',   ico: '⑥',  desc: 'Validation finale avant archivage', critical: true,  opts: {} },
-			{ key: 'store',      label: 'Archivage NAS', ico: '⑦', desc: 'Copie vers le NAS de stockage', critical: false, opts: { verify_checksum: true } },
+			{ key: 'detect', label: 'Détection', ico: '①', desc: 'Détecte les nouveaux dossiers de session dans le répertoire de travail', critical: true, opts: {} },
+			{ key: 'check_sync', label: 'Sync Check', ico: '⏱', desc: 'Vérifie la synchronisation temporelle caméra/capteurs', critical: true, opts: { max_lag_ms: 400 } },
+			{ key: 'verify', label: 'Vérification', ico: '⚠', desc: 'Contrôle l\'intégrité des fichiers et la complétude de la session', critical: true, opts: {} },
+			{ key: 'tracker', label: 'Tracker', ico: '②', desc: 'Extraction des données de tracking (position, orientation)', critical: false, opts: {} },
+			{ key: 'video', label: 'Vidéo', ico: '③', desc: 'Traitement et encodage des flux vidéo', critical: false, opts: { codec: 'h264', crf: 23 } },
+			{ key: 'flux_csv', label: 'Flux CSV', ico: '④', desc: 'Export des flux de données en format CSV', critical: false, opts: { delimiter: ',', encoding: 'utf-8' } },
+			{ key: 'ia_sync', label: 'IA Sync', ico: '⑤', desc: 'Correction de synchronisation par modèle IA', critical: false, opts: { resample_ms: 5, max_lag_ms: 400, confidence: 0.7 } },
+			{ key: 'validate', label: 'Validation', ico: '⑥', desc: 'Validation finale avant archivage', critical: true, opts: {} },
+			{ key: 'store', label: 'Archivage NAS', ico: '⑦', desc: 'Copie vers le NAS de stockage', critical: false, opts: { verify_checksum: true } },
 		];
 
 		// Champs de configuration affichés dans le modal par étape
@@ -8738,17 +9142,17 @@
 				{ key: 'max_lag_ms', label: 'Max lag (ms)', type: 'number', min: 0, max: 5000 },
 			],
 			video: [
-				{ key: 'codec',   label: 'Codec',  type: 'select', options: ['h264','h265','vp9','av1'] },
-				{ key: 'crf',     label: 'CRF',    type: 'number', min: 0, max: 51 },
+				{ key: 'codec', label: 'Codec', type: 'select', options: ['h264', 'h265', 'vp9', 'av1'] },
+				{ key: 'crf', label: 'CRF', type: 'number', min: 0, max: 51 },
 			],
 			flux_csv: [
 				{ key: 'delimiter', label: 'Délimiteur', type: 'select', options: [',', ';', '\t'] },
-				{ key: 'encoding',  label: 'Encodage',   type: 'select', options: ['utf-8','latin-1','ascii'] },
+				{ key: 'encoding', label: 'Encodage', type: 'select', options: ['utf-8', 'latin-1', 'ascii'] },
 			],
 			ia_sync: [
-				{ key: 'resample_ms', label: 'Resample (ms)',  type: 'number', min: 1, max: 1000 },
-				{ key: 'max_lag_ms',  label: 'Max lag (ms)',   type: 'number', min: 0, max: 5000 },
-				{ key: 'confidence',  label: 'Confiance min',  type: 'number', min: 0, max: 1, step: 0.05 },
+				{ key: 'resample_ms', label: 'Resample (ms)', type: 'number', min: 1, max: 1000 },
+				{ key: 'max_lag_ms', label: 'Max lag (ms)', type: 'number', min: 0, max: 5000 },
+				{ key: 'confidence', label: 'Confiance min', type: 'number', min: 0, max: 1, step: 0.05 },
 			],
 			store: [
 				{ key: 'verify_checksum', label: 'Vérif. checksum', type: 'toggle' },
@@ -8767,7 +9171,7 @@
 			try {
 				const saved = localStorage.getItem('pc_config');
 				if (saved) pcConfig = JSON.parse(saved);
-			} catch(e) {}
+			} catch (e) { }
 			pcRenderSteps();
 			pcRenderGlobal();
 		}
@@ -8775,10 +9179,10 @@
 		function pcSave() {
 			// Persist triggers from DOM
 			pcConfig.triggers.interval_s = parseInt(ge('trig-interval')?.value ?? 5);
-			pcConfig.triggers.grace_s    = parseInt(ge('trig-grace')?.value ?? 3);
-			pcConfig.global.workers      = parseInt(ge('global-workers')?.value ?? 2);
-			pcConfig.global.retry        = parseInt(ge('global-retry')?.value ?? 1);
-			pcConfig.global.log_level    = ge('global-loglevel')?.value ?? 'INFO';
+			pcConfig.triggers.grace_s = parseInt(ge('trig-grace')?.value ?? 3);
+			pcConfig.global.workers = parseInt(ge('global-workers')?.value ?? 2);
+			pcConfig.global.retry = parseInt(ge('global-retry')?.value ?? 1);
+			pcConfig.global.log_level = ge('global-loglevel')?.value ?? 'INFO';
 			localStorage.setItem('pc_config', JSON.stringify(pcConfig));
 		}
 
@@ -8792,10 +9196,10 @@
 				lbl.style.color = wasOn ? 'var(--text3)' : '';
 			}
 			// Map key to config
-			if (key === 'trig_watcher')    pcConfig.triggers.watcher      = !wasOn;
-			if (key === 'trig_startup')    pcConfig.triggers.startup       = !wasOn;
-			if (key === 'global_parallel') pcConfig.global.parallel        = !wasOn;
-			if (key === 'global_stoponerr') pcConfig.global.stop_on_error  = !wasOn;
+			if (key === 'trig_watcher') pcConfig.triggers.watcher = !wasOn;
+			if (key === 'trig_startup') pcConfig.triggers.startup = !wasOn;
+			if (key === 'global_parallel') pcConfig.global.parallel = !wasOn;
+			if (key === 'global_stoponerr') pcConfig.global.stop_on_error = !wasOn;
 			pcSave();
 		}
 
@@ -8805,12 +9209,12 @@
 			const tw = ge('trig-watcher'); if (tw) { tw.dataset.val = t.watcher ? '1' : '0'; ge('trig-watcher-lbl').textContent = t.watcher ? 'Activé' : 'Désactivé'; ge('trig-watcher-lbl').style.color = t.watcher ? '' : 'var(--text3)'; }
 			const ts = ge('trig-startup'); if (ts) { ts.dataset.val = t.startup ? '1' : '0'; ge('trig-startup-lbl').textContent = t.startup ? 'Activé' : 'Désactivé'; ge('trig-startup-lbl').style.color = t.startup ? '' : 'var(--text3)'; }
 			if (ge('trig-interval')) ge('trig-interval').value = t.interval_s;
-			if (ge('trig-grace'))    ge('trig-grace').value    = t.grace_s;
+			if (ge('trig-grace')) ge('trig-grace').value = t.grace_s;
 			// Global
 			const gp = ge('global-parallel'); if (gp) { gp.dataset.val = g.parallel ? '1' : '0'; ge('global-parallel-lbl').textContent = g.parallel ? 'Activé' : 'Désactivé'; ge('global-parallel-lbl').style.color = g.parallel ? '' : 'var(--text3)'; }
 			const gs = ge('global-stoponerr'); if (gs) { gs.dataset.val = g.stop_on_error ? '1' : '0'; ge('global-stoponerr-lbl').textContent = g.stop_on_error ? 'Activé' : 'Désactivé'; ge('global-stoponerr-lbl').style.color = g.stop_on_error ? '' : 'var(--text3)'; }
-			if (ge('global-workers'))  ge('global-workers').value  = g.workers;
-			if (ge('global-retry'))    ge('global-retry').value    = g.retry;
+			if (ge('global-workers')) ge('global-workers').value = g.workers;
+			if (ge('global-retry')) ge('global-retry').value = g.retry;
 			if (ge('global-loglevel')) ge('global-loglevel').value = g.log_level;
 		}
 
@@ -8929,13 +9333,13 @@
 
 		function pcOpenModal(key) {
 			const step = pcConfig.steps.find(s => s.key === key);
-			const def  = PC_STEPS_DEFAULT.find(s => s.key === key);
+			const def = PC_STEPS_DEFAULT.find(s => s.key === key);
 			const schema = PC_STEP_OPTS_SCHEMA[key] || [];
 			if (!step || !schema.length) return;
 			pcModalKey = key;
-			ge('pc-modal-ico').textContent   = step.ico;
-			ge('pc-modal-title').textContent  = step.label;
-			ge('pc-modal-desc').textContent   = step.desc;
+			ge('pc-modal-ico').textContent = step.ico;
+			ge('pc-modal-title').textContent = step.label;
+			ge('pc-modal-desc').textContent = step.desc;
 			const body = ge('pc-modal-body');
 			body.innerHTML = '';
 			schema.forEach(field => {
@@ -8970,18 +9374,244 @@
 
 		function pcSaveModalStep() {
 			if (!pcModalKey) return;
-			const step   = pcConfig.steps.find(s => s.key === pcModalKey);
+			const step = pcConfig.steps.find(s => s.key === pcModalKey);
 			const schema = PC_STEP_OPTS_SCHEMA[pcModalKey] || [];
 			schema.forEach(field => {
 				const el = ge('pcopt-' + field.key);
 				if (!el) return;
-				if (field.type === 'number')  step.opts[field.key] = parseFloat(el.value);
+				if (field.type === 'number') step.opts[field.key] = parseFloat(el.value);
 				else if (field.type === 'toggle') step.opts[field.key] = el.dataset.val === '1';
 				else step.opts[field.key] = el.value;
 			});
 			pcSave();
 			pcCloseModal();
 			log(`Config étape "${step.label}" sauvegardée`, 'INFO');
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Inbox → Bronze
+		// ══════════════════════════════════════════════════════════════════
+		const IB = {
+			reports: [],       // SessionReport[]
+			promoting: new Set(),  // session_paths en cours
+			cfg: { n_threads: 4, n_processes: 2, cpu_count: 1 },
+		};
+
+		const IB_CHECK_ICONS = {
+			'1 · Structure': '📁',
+			'2 · Placement trackers': '📡',
+			'3 · Validité CSV': '📊',
+			'4 · Complétude': '✅',
+			'5 · Trakeur': '🧠',
+		};
+
+		// ── Concurrence ──────────────────────────────────────────────────
+		function ibSyncSlider(kind) {
+			if (kind === 'threads') {
+				ge('ib-threads-num').value = ge('ib-threads-range').value;
+			} else {
+				ge('ib-procs-num').value = ge('ib-procs-range').value;
+			}
+		}
+
+		function ibSyncNum(kind) {
+			if (kind === 'threads') {
+				const v = Math.max(1, Math.min(32, +ge('ib-threads-num').value || 1));
+				ge('ib-threads-num').value = v;
+				ge('ib-threads-range').value = v;
+			} else {
+				const v = Math.max(1, Math.min(16, +ge('ib-procs-num').value || 1));
+				ge('ib-procs-num').value = v;
+				ge('ib-procs-range').value = v;
+			}
+		}
+
+		async function ibLoadConfig() {
+			try {
+				const cfg = await api('GET', '/api/inbox/config');
+				IB.cfg = cfg;
+				ge('ib-threads-range').value = cfg.n_threads;
+				ge('ib-threads-num').value = cfg.n_threads;
+				ge('ib-procs-range').value = cfg.n_processes;
+				ge('ib-procs-num').value = cfg.n_processes;
+				ge('ib-threads-range').max = Math.max(32, cfg.cpu_count * 4);
+				ge('ib-procs-range').max = Math.max(16, cfg.cpu_count);
+				ge('ib-threads-num').max = Math.max(32, cfg.cpu_count * 4);
+				ge('ib-procs-num').max = Math.max(16, cfg.cpu_count);
+				ge('ib-cpu-info').textContent = `${cfg.cpu_count} cœur${cfg.cpu_count > 1 ? 's' : ''}`;
+			} catch (e) { /* serveur pas encore dispo */ }
+		}
+
+		async function ibApplyConfig() {
+			const n_threads = Math.max(1, +ge('ib-threads-num').value || 1);
+			const n_processes = Math.max(1, +ge('ib-procs-num').value || 1);
+			const status = ge('ib-cfg-status');
+			status.textContent = '…';
+			status.style.color = 'var(--text3)';
+			try {
+				const cfg = await api('POST', '/api/inbox/config', { n_threads, n_processes });
+				IB.cfg = cfg;
+				status.textContent = '✔ Appliqué';
+				status.style.color = 'var(--green)';
+				// Resync les sliders avec les valeurs clampées retournées par le serveur
+				ge('ib-threads-range').value = cfg.n_threads;
+				ge('ib-threads-num').value = cfg.n_threads;
+				ge('ib-procs-range').value = cfg.n_processes;
+				ge('ib-procs-num').value = cfg.n_processes;
+				setTimeout(() => { status.textContent = ''; }, 2000);
+			} catch (e) {
+				status.textContent = '✖ Erreur';
+				status.style.color = 'var(--red)';
+			}
+		}
+
+		async function inboxScan() {
+			const btn = ge('inbox-scan-btn');
+			btn.disabled = true;
+			btn.textContent = '⟳ Scan…';
+
+			const inboxDir = ge('inbox-dir-input').value.trim() || null;
+
+			try {
+				const url = inboxDir
+					? `/api/inbox/scan?inbox_dir=${encodeURIComponent(inboxDir)}`
+					: '/api/inbox/scan';
+				const data = await api('GET', url);
+				IB.reports = data.sessions || [];
+				inboxRender();
+				log(`Inbox scannée : ${IB.reports.length} session(s) trouvée(s)`, 'OK');
+			} catch (e) {
+				log(`Erreur scan inbox : ${e.message}`, 'ERROR');
+			} finally {
+				btn.disabled = false;
+				btn.textContent = '⟳ Scanner l\'inbox';
+			}
+		}
+
+		function inboxRender() {
+			const total = IB.reports.length;
+			const nOk = IB.reports.filter(r => r.all_ok).length;
+			const nFail = total - nOk;
+
+			ge('ib-total').textContent = total;
+			ge('ib-ok').textContent = nOk;
+			ge('ib-fail').textContent = nFail;
+			ge('nb-inbox').textContent = total;
+
+			ge('inbox-promote-all-btn').disabled = nOk === 0;
+
+			const list = ge('inbox-session-list');
+			if (total === 0) {
+				list.innerHTML = '<div style="color:var(--text3);font-size:.83rem;text-align:center;padding:32px 0">Aucune session dans l\'inbox.</div>';
+				return;
+			}
+
+			list.innerHTML = IB.reports.map(r => inboxSessionCard(r)).join('');
+		}
+
+		function inboxSessionCard(r) {
+			const allOk = r.all_ok;
+			const border = allOk ? 'var(--green)' : 'var(--red)';
+			const icon = allOk ? '✔' : '✖';
+			const iconClr = allOk ? 'var(--green)' : 'var(--red)';
+			const promoting = IB.promoting.has(r.session_path);
+			const promoted = !!r.promoted_to;
+
+			const checksHtml = (r.checks || []).map(c => {
+				const ico = IB_CHECK_ICONS[c.name] || '▸';
+				const clr = c.ok ? 'var(--green)' : 'var(--red)';
+				const sym = c.ok ? '✔' : '✖';
+				const detailsHtml = (c.details || []).length
+					? `<div style="margin-top:3px;padding-left:14px;font-size:.7rem;color:var(--text3)">${c.details.map(d => `<div>${esc(d)}</div>`).join('')
+					}</div>`
+					: '';
+				return `
+				<div style="display:flex;flex-direction:column;padding:4px 0;border-bottom:1px solid var(--border)">
+					<div style="display:flex;align-items:center;gap:7px">
+						<span style="color:${clr};font-size:.8rem;min-width:14px">${sym}</span>
+						<span style="font-size:.75rem;color:var(--text3);min-width:18px">${ico}</span>
+						<span style="font-size:.78rem;font-weight:600">${esc(c.name)}</span>
+						<span style="font-size:.75rem;color:var(--text2);margin-left:auto">${esc(c.message)}</span>
+					</div>
+					${detailsHtml}
+				</div>`;
+			}).join('');
+
+			const scenario = r.checks?.find ? '' : '';
+			// lire scénario depuis les checks (metadata dans promoted_to ou error)
+			const scenarioInfo = r.promoted_to
+				? `<span style="color:var(--green);font-size:.72rem">→ ${esc(r.promoted_to)}</span>`
+				: r.error
+					? `<span style="color:var(--red);font-size:.72rem">${esc(r.error)}</span>`
+					: '';
+
+			const actionBtn = promoted
+				? `<span style="color:var(--green);font-size:.78rem;font-weight:600">✔ Promu</span>`
+				: promoting
+					? `<button class="btn sm" disabled style="font-size:.75rem">⟳ Promotion…</button>`
+					: allOk
+						? `<button class="btn p sm" style="font-size:.75rem" onclick="inboxPromoteOne('${esc(r.session_path)}')">⬆ Promouvoir</button>`
+						: `<button class="btn sm" style="font-size:.75rem;opacity:.5" disabled>⬆ Promouvoir</button>`;
+
+			return `
+			<div style="background:var(--bg2);border:1px solid ${border}44;border-radius:var(--r);padding:12px 14px">
+				<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+					<span style="color:${iconClr};font-size:1.1rem">${icon}</span>
+					<div>
+						<div style="font-weight:700;font-size:.88rem">${esc(r.session_name)}</div>
+						<div style="font-size:.72rem;color:var(--text3)">${esc(r.session_path)}</div>
+					</div>
+					<div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+						${scenarioInfo}
+						${actionBtn}
+					</div>
+				</div>
+				<div style="background:var(--bg3);border-radius:var(--rs);padding:6px 10px">
+					${checksHtml}
+				</div>
+			</div>`;
+		}
+
+		async function inboxPromoteOne(sessionPath) {
+			IB.promoting.add(sessionPath);
+			inboxRender();
+
+			const bronzeDir = ge('bronze-dir-input').value.trim() || null;
+			try {
+				const body = { session_path: sessionPath };
+				if (bronzeDir) body.bronze_dir = bronzeDir;
+				const { job_id } = await api('POST', '/api/inbox/promote', body);
+				log(`Promotion lancée : ${sessionPath.split('/').pop()} (job ${job_id})`, 'OK');
+
+				// Polling jusqu'à done
+				pollJobUntilDone(job_id, job => {
+					if (job.status === 'done' || job.status === 'error') {
+						IB.promoting.delete(sessionPath);
+						// Mettre à jour le report local
+						const idx = IB.reports.findIndex(r => r.session_path === sessionPath);
+						if (idx >= 0 && job.result) {
+							IB.reports[idx] = { ...IB.reports[idx], ...job.result };
+						}
+						inboxRender();
+						if (job.status === 'done') {
+							log(`Session promue : ${sessionPath.split('/').pop()}`, 'OK');
+						} else {
+							log(`Erreur promotion : ${job.error || '?'}`, 'ERROR');
+						}
+					}
+				});
+			} catch (e) {
+				IB.promoting.delete(sessionPath);
+				log(`Erreur promotion : ${e.message}`, 'ERROR');
+				inboxRender();
+			}
+		}
+
+		async function inboxPromoteAll() {
+			const valids = IB.reports.filter(r => r.all_ok && !r.promoted_to);
+			for (const r of valids) {
+				await inboxPromoteOne(r.session_path);
+			}
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -9002,6 +9632,7 @@
 			if (name === 'jobs') refreshPoolStatus();
 			if (name === 's3browser') s3bInit();
 			if (name === 'pipelineconfig') { pcLoad(); pcRenderGlobal(); }
+			if (name === 'inbox') { ibLoadConfig(); inboxRender(); }
 		}
 
 		function vtab(name, el) {
@@ -9114,25 +9745,25 @@
 		function loadS3Settings() {
 			try {
 				const old_src = JSON.parse(localStorage.getItem('syncml-src-s3-cfg') || '{}');
-				const old_exp = JSON.parse(localStorage.getItem('syncml-export-cfg')  || '{}');
-				const cur     = JSON.parse(localStorage.getItem('syncml-s3-cfg')      || '{}');
+				const old_exp = JSON.parse(localStorage.getItem('syncml-export-cfg') || '{}');
+				const cur = JSON.parse(localStorage.getItem('syncml-s3-cfg') || '{}');
 				const c = Object.assign({}, {
-					bucket:        old_exp.s3_bucket  || old_src.bucket  || '',
-					region:        old_exp.s3_region  || old_src.region  || 'eu-west-1',
-					key:           old_exp.s3_key     || old_src.key     || '',
-					secret:        old_exp.s3_secret  || old_src.secret  || '',
-					src_prefix:    old_src.prefix || '',
-					export_prefix: old_exp.s3_prefix  || 'export/',
-					localdir:      old_src.localdir   || '/tmp/s3_stream',
+					bucket: old_exp.s3_bucket || old_src.bucket || '',
+					region: old_exp.s3_region || old_src.region || 'eu-west-1',
+					key: old_exp.s3_key || old_src.key || '',
+					secret: old_exp.s3_secret || old_src.secret || '',
+					src_prefix: old_src.prefix || '',
+					export_prefix: old_exp.s3_prefix || 'export/',
+					localdir: old_src.localdir || '/tmp/s3_stream',
 				}, cur);
-				if (c.bucket)        ge('s3-bucket').value        = c.bucket;
-				if (c.region)        ge('s3-region').value        = c.region;
-				if (c.key)           ge('s3-key').value           = c.key;
-				if (c.secret)        ge('s3-secret').value        = c.secret;
-				if (c.src_prefix)    ge('s3-src-prefix').value    = c.src_prefix;
+				if (c.bucket) ge('s3-bucket').value = c.bucket;
+				if (c.region) ge('s3-region').value = c.region;
+				if (c.key) ge('s3-key').value = c.key;
+				if (c.secret) ge('s3-secret').value = c.secret;
+				if (c.src_prefix) ge('s3-src-prefix').value = c.src_prefix;
 				if (c.export_prefix) ge('s3-export-prefix').value = c.export_prefix;
-				if (c.localdir)      ge('s3-localdir').value      = c.localdir;
-				if (c.export_prefix && !ge('s-export-s3-prefix').value)  ge('s-export-s3-prefix').value  = c.export_prefix;
+				if (c.localdir) ge('s3-localdir').value = c.localdir;
+				if (c.export_prefix && !ge('s-export-s3-prefix').value) ge('s-export-s3-prefix').value = c.export_prefix;
 				if (c.export_prefix && !ge('pc-export-s3-prefix').value) ge('pc-export-s3-prefix').value = c.export_prefix;
 				_refreshS3Labels();
 			} catch (e) { }
@@ -9140,13 +9771,13 @@
 
 		function getS3Cfg() {
 			return {
-				bucket:        ge('s3-bucket').value.trim(),
-				region:        ge('s3-region').value.trim() || 'eu-west-1',
-				key:           ge('s3-key').value.trim(),
-				secret:        ge('s3-secret').value.trim(),
-				src_prefix:    ge('s3-src-prefix').value.trim(),
+				bucket: ge('s3-bucket').value.trim(),
+				region: ge('s3-region').value.trim() || 'eu-west-1',
+				key: ge('s3-key').value.trim(),
+				secret: ge('s3-secret').value.trim(),
+				src_prefix: ge('s3-src-prefix').value.trim(),
 				export_prefix: ge('s3-export-prefix').value.trim() || 'export/',
-				localdir:      ge('s3-localdir').value.trim() || '/tmp/s3_stream',
+				localdir: ge('s3-localdir').value.trim() || '/tmp/s3_stream',
 			};
 		}
 
@@ -9160,21 +9791,21 @@
 			const s3 = getS3Cfg();
 			const b = s3.bucket || '—';
 			const r = s3.region || '—';
-			['exp-s3-bucket-label','pc-exp-s3-bucket-label'].forEach(id => { const el = ge(id); if (el) el.textContent = b; });
-			['exp-s3-region-label','pc-exp-s3-region-label'].forEach(id => { const el = ge(id); if (el) el.textContent = r; });
+			['exp-s3-bucket-label', 'pc-exp-s3-bucket-label'].forEach(id => { const el = ge(id); if (el) el.textContent = b; });
+			['exp-s3-region-label', 'pc-exp-s3-region-label'].forEach(id => { const el = ge(id); if (el) el.textContent = r; });
 		}
 
 		// ══════════════════════════════════════════════════════════════════
 		// S3 Browser — state & navigation
 		// ══════════════════════════════════════════════════════════════════
 		const S3B = {
-			bucket:   '',
-			prefix:   '',         // préfixe courant (toujours "/" à la fin ou "")
+			bucket: '',
+			prefix: '',         // préfixe courant (toujours "/" à la fin ou "")
 			rootPrefix: '',       // préfixe racine configuré
-			folders:  [],
-			files:    [],
+			folders: [],
+			files: [],
 			selected: new Set(),  // préfixes de dossiers sélectionnés
-			loading:  false,
+			loading: false,
 		};
 
 		function s3bInit() {
@@ -9183,9 +9814,9 @@
 				s3bStatus('Configurez d\'abord un bucket S3 dans Paramètres → Source S3.', 'warn');
 				return;
 			}
-			S3B.bucket     = cfg.bucket;
+			S3B.bucket = cfg.bucket;
 			S3B.rootPrefix = cfg.prefix;
-			S3B.prefix     = cfg.prefix;
+			S3B.prefix = cfg.prefix;
 			ge('s3b-bucket-label').textContent = cfg.bucket;
 			s3bLoad(cfg.prefix);
 		}
@@ -9203,15 +9834,15 @@
 			try {
 				const cfg = getSrcS3Cfg();
 				const r = await api('POST', '/api/s3/browse', {
-					bucket:     S3B.bucket,
-					prefix:     prefix,
+					bucket: S3B.bucket,
+					prefix: prefix,
 					access_key: cfg.key,
 					secret_key: cfg.secret,
-					region:     cfg.region,
+					region: cfg.region,
 				});
-				S3B.folders  = r.folders;
-				S3B.files    = r.files;
-				S3B.prefix   = r.prefix;
+				S3B.folders = r.folders;
+				S3B.files = r.files;
+				S3B.prefix = r.prefix;
 
 				ge('s3b-prefix-label').textContent = r.prefix;
 				s3bRenderBreadcrumb(r.prefix);
@@ -9306,10 +9937,10 @@
 			S3B.files.forEach(f => {
 				const div = document.createElement('div');
 				div.style.cssText = rowStyle + ';cursor:default';
-				const sz = f.size > 1048576 ? (f.size/1048576).toFixed(1)+' Mo'
-				         : f.size > 1024    ? (f.size/1024).toFixed(0)+' Ko'
-				         :                    f.size+' o';
-				const mod = f.last_modified ? f.last_modified.slice(0,10) : '—';
+				const sz = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' Mo'
+					: f.size > 1024 ? (f.size / 1024).toFixed(0) + ' Ko'
+						: f.size + ' o';
+				const mod = f.last_modified ? f.last_modified.slice(0, 10) : '—';
 				div.innerHTML = `
 					<span></span>
 					<span style="display:flex;align-items:center;gap:8px;color:var(--text2)">
@@ -9344,13 +9975,13 @@
 			const bar = ge('s3b-actions-bar');
 			const n = S3B.selected.size;
 			bar.style.display = n > 0 ? 'flex' : 'none';
-			ge('s3b-sel-count').textContent = `${n} dossier${n>1?'s':''} sélectionné${n>1?'s':''}`;
+			ge('s3b-sel-count').textContent = `${n} dossier${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
 		}
 
 		function s3bNavUp() {
 			const p = S3B.prefix.replace(/\/$/, '');
 			const parent = p.substring(0, p.lastIndexOf('/') + 1);
-			const root   = S3B.rootPrefix;
+			const root = S3B.rootPrefix;
 			s3bLoad(parent.length >= root.length ? parent : root);
 		}
 
@@ -9363,13 +9994,13 @@
 			if (!msg) { el.style.display = 'none'; return; }
 			const colors = {
 				error: 'var(--red)',
-				warn:  'var(--orange)',
-				ok:    'var(--green)',
-				info:  'var(--text2)',
+				warn: 'var(--orange)',
+				ok: 'var(--green)',
+				info: 'var(--text2)',
 			};
 			el.style.cssText = `display:block;padding:10px 14px;border-radius:var(--r);margin-bottom:12px;font-size:.82rem;
-				background:${colors[type]||'var(--text2)'}18;border:1px solid ${colors[type]||'var(--text2)'}44;
-				color:${colors[type]||'var(--text2)'}`;
+				background:${colors[type] || 'var(--text2)'}18;border:1px solid ${colors[type] || 'var(--text2)'}44;
+				color:${colors[type] || 'var(--text2)'}`;
 			el.textContent = msg;
 		}
 
@@ -9390,15 +10021,15 @@
 				const localDir = cfg.localdir.replace(/\/$/, '') + '/' + name;
 				try {
 					const r = await api('POST', '/api/s3/stream', {
-						bucket:     S3B.bucket,
-						prefix:     prefix,
-						local_dir:  localDir,
+						bucket: S3B.bucket,
+						prefix: prefix,
+						local_dir: localDir,
 						access_key: cfg.key,
 						secret_key: cfg.secret,
-						region:     cfg.region,
+						region: cfg.region,
 					});
 					log(`S3 stream démarré → ${name}  (job ${r.job_id})`, 'OK');
-				} catch(e) {
+				} catch (e) {
 					log(`Erreur stream ${name}: ${e.message}`, 'ERROR');
 				}
 			}
@@ -9415,7 +10046,7 @@
 		function s3bMoveSelected() {
 			const n = S3B.selected.size;
 			if (!n) return;
-			ge('s3-move-items-label').textContent = `${n} dossier${n>1?'s':''} sélectionné${n>1?'s':''}`;
+			ge('s3-move-items-label').textContent = `${n} dossier${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
 			ge('s3-move-dest').value = '';
 			ge('s3-move-backdrop').style.display = 'flex';
 		}
@@ -9441,16 +10072,16 @@
 				const destPrefix = dest.replace(/\/$/, '') + '/' + name + '/';
 				try {
 					const r = await api('POST', '/api/s3/move', {
-						bucket:      S3B.bucket,
-						src_prefix:  prefix,
+						bucket: S3B.bucket,
+						src_prefix: prefix,
 						dest_prefix: destPrefix,
-						access_key:  cfg.key,
-						secret_key:  cfg.secret,
-						region:      cfg.region,
+						access_key: cfg.key,
+						secret_key: cfg.secret,
+						region: cfg.region,
 					});
 					log(`S3 déplacé : ${prefix} → ${destPrefix}  (${r.moved} objets)`, 'OK');
 					ok++;
-				} catch(e) {
+				} catch (e) {
 					log(`Erreur déplacement ${name}: ${e.message}`, 'ERROR');
 					errors++;
 				}

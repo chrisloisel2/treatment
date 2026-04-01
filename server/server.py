@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /Volumes/T9/data  → source brute, lecture seule
-  /Volumes/T9/data/    → espace de travail (copie de travail)
+  /Users/christopher/Downloads/Video ok 2  → source brute, lecture seule
+  /Users/christopher/Downloads/Video ok 2/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/Volumes/T9/data")
+    INGEST_DIR = Path("/Users/christopher/Downloads/Video ok 2")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/Volumes/T9/data"
+DEFAULT_WATCH_DIR = "/Users/christopher/Downloads/Video ok 2"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -294,7 +294,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /Volumes/T9/data/ (sessions déposées par l'opérateur)
+        # Découverte dans /Users/christopher/Downloads/Video ok 2/ (sessions déposées par l'opérateur)
         # Exclus : dossiers cachés (.) et dossiers internes (_)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
@@ -851,7 +851,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /Volumes/T9/data/
+    session:       str        # chemin dans /Users/christopher/Downloads/Video ok 2/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -860,7 +860,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /Volumes/T9/data/
+    session:              str          # nom ou chemin de session dans /Users/christopher/Downloads/Video ok 2/
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1103,7 +1103,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /Volumes/T9/data/."""
+    """Lance un entraînement asynchrone sur les sessions de /Users/christopher/Downloads/Video ok 2/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1124,7 +1124,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /Volumes/T9/data/."""
+    """Lance une inférence asynchrone sur une session de /Users/christopher/Downloads/Video ok 2/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1168,13 +1168,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /Volumes/T9/data/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /Users/christopher/Downloads/Video ok 2/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /Volumes/T9/data/
+    # req.session peut être un nom ou un chemin complet dans /Users/christopher/Downloads/Video ok 2/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1190,7 +1190,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /Volumes/T9/data/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /Users/christopher/Downloads/Video ok 2/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -1744,6 +1744,60 @@ async def session_csv_columns(session_path: str):
 # Visualisation — données temporelles alignées
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _compute_session_start_ns(session_path: str) -> int:
+    """
+    Calcule le vrai t=0 de la session : minimum des premiers timestamps de
+    tous les flux disponibles (tracker, grippers, vidéos JSONL).
+    Ne se base PAS sur start_time_ns du metadata.
+    Retourne un timestamp en nanosecondes epoch.
+    """
+    import pandas as _pd
+    sess = Path(session_path)
+    candidates: list = []
+
+    trk_path = sess / "tracker_positions.csv"
+    if trk_path.exists():
+        try:
+            df = _pd.read_csv(trk_path, usecols=["timestamp_ns"], nrows=1)
+            if "timestamp_ns" in df.columns:
+                candidates.append(float(df["timestamp_ns"].iloc[0]))
+        except Exception:
+            pass
+
+    for side in ("left", "right"):
+        grip_path = sess / f"gripper_{side}_data.csv"
+        if grip_path.exists():
+            try:
+                df = _pd.read_csv(grip_path, nrows=1)
+                if "timestamp_ns" in df.columns:
+                    candidates.append(float(df["timestamp_ns"].iloc[0]))
+                elif "t_ms_corrected_ns" in df.columns:
+                    candidates.append(float(df["t_ms_corrected_ns"].iloc[0]))
+            except Exception:
+                pass
+
+    vid_dir = sess / "videos"
+    if vid_dir.exists():
+        for side in ("head", "left", "right"):
+            jl = vid_dir / f"{side}.jsonl"
+            if jl.exists():
+                rows = _parse_jsonl(jl)
+                if rows:
+                    candidates.append(float(rows[0]["capture_time"]) * 1_000_000)
+
+    if candidates:
+        return int(min(candidates))
+
+    # Fallback : start_time_ns du metadata
+    meta_path = sess / "metadata.json"
+    if meta_path.exists():
+        try:
+            return int(json.loads(meta_path.read_text()).get("start_time_ns", 0))
+        except Exception:
+            pass
+    return 0
+
+
 def _load_session_timeseries(session_path: str) -> dict:
     """
     Charge toutes les séries temporelles d'une session et les aligne sur
@@ -1774,8 +1828,32 @@ def _load_session_timeseries(session_path: str) -> dict:
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
     result["meta"] = meta
-    start_ns = int(meta.get("start_time_ns", 0))
+
+    # t=0 = minimum réel de tous les flux (indépendant de start_time_ns metadata)
+    start_ns = _compute_session_start_ns(session_path)
     result["start_ns"] = start_ns
+
+    # ── Charger les données brutes ──
+    trk_path = sess / "tracker_positions.csv"
+    trk_df = None
+    if trk_path.exists():
+        trk_df = pd.read_csv(trk_path)
+
+    grip_dfs: dict = {}
+    for side in ("left", "right"):
+        grip_path = sess / f"gripper_{side}_data.csv"
+        if grip_path.exists():
+            grip_dfs[side] = pd.read_csv(grip_path)
+
+    vid_dir = sess / "videos"
+    jsonl_rows: dict = {}
+    if vid_dir.exists():
+        for side in ("head", "left", "right"):
+            jl = vid_dir / f"{side}.jsonl"
+            if jl.exists():
+                rows = _parse_jsonl(jl)
+                if rows:
+                    jsonl_rows[side] = rows
 
     def _ns_to_ms(ns_arr):
         """Convertit des timestamps ns en ms depuis start_ns."""
@@ -1786,10 +1864,11 @@ def _load_session_timeseries(session_path: str) -> dict:
         start_ms = start_ns / 1_000_000
         return (np.asarray(epoch_ms_arr, dtype=np.float64) - start_ms).tolist()
 
+    # ── Passe 2 : construire les séries temporelles ──
+
     # ── Trackers ──
-    trk_path = sess / "tracker_positions.csv"
-    if trk_path.exists():
-        df = pd.read_csv(trk_path)
+    if trk_df is not None:
+        df = trk_df
         t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
         trk: dict = {"t_ms": t_ms}
         for role in ("head", "left", "right"):
@@ -1810,37 +1889,29 @@ def _load_session_timeseries(session_path: str) -> dict:
 
     # ── Grippers ──
     for side in ("left", "right"):
-        grip_path = sess / f"gripper_{side}_data.csv"
-        if grip_path.exists():
-            df = pd.read_csv(grip_path)
-            # t_ms est relatif à start_time_ns dans certaines versions
-            # On utilise timestamp_ns si disponible, sinon t_ms corrigé
-            if "timestamp_ns" in df.columns:
-                t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
-            elif "t_ms_corrected_ns" in df.columns:
-                t_ms = _ns_to_ms(df["t_ms_corrected_ns"].to_numpy())
-            else:
-                # t_ms brut depuis début
-                t_ms = df["time_seconds"].to_numpy(dtype=float) * 1000
-                t_ms = t_ms.tolist()
-            grip: dict = {"t_ms": t_ms}
-            if "opening_mm" in df.columns:
-                grip["opening_mm"] = df["opening_mm"].tolist()
-            if "angle_deg" in df.columns:
-                grip["angle_deg"] = df["angle_deg"].tolist()
-            result[f"gripper_{side}"] = grip
+        if side not in grip_dfs:
+            continue
+        df = grip_dfs[side]
+        if "timestamp_ns" in df.columns:
+            t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
+        elif "t_ms_corrected_ns" in df.columns:
+            t_ms = _ns_to_ms(df["t_ms_corrected_ns"].to_numpy())
+        else:
+            # t_ms brut depuis début
+            t_ms = df["time_seconds"].to_numpy(dtype=float) * 1000
+            t_ms = t_ms.tolist()
+        grip: dict = {"t_ms": t_ms}
+        if "opening_mm" in df.columns:
+            grip["opening_mm"] = df["opening_mm"].tolist()
+        if "angle_deg" in df.columns:
+            grip["angle_deg"] = df["angle_deg"].tolist()
+        result[f"gripper_{side}"] = grip
 
     # ── JSONL vidéo (timestamps frames) ──
-    vid_dir = sess / "videos"
-    if vid_dir.exists():
-        for side in ("head", "left", "right"):
-            jl = vid_dir / f"{side}.jsonl"
-            if jl.exists():
-                rows = _parse_jsonl(jl)
-                if rows:
-                    t_ms = _epoch_ms_to_ms([r["capture_time"] for r in rows])
-                    idx  = [r["index"] for r in rows]
-                    result["videos"][side] = {"t_ms": t_ms, "frame_idx": idx}
+    for side, rows in jsonl_rows.items():
+        t_ms = _epoch_ms_to_ms([r["capture_time"] for r in rows])
+        idx  = [r["index"] for r in rows]
+        result["videos"][side] = {"t_ms": t_ms, "frame_idx": idx}
 
     # ── Flux CSV (optical flow) ──
     if vid_dir.exists():
@@ -1896,11 +1967,8 @@ def _extract_video_frame(session_path: str, side: str, t_ms: float) -> Optional[
         import cv2
         sess = Path(session_path)
 
-        # Lire start_ns depuis metadata pour la conversion
-        meta_path = sess / "metadata.json"
-        start_ns = 0
-        if meta_path.exists():
-            start_ns = int(json.loads(meta_path.read_text()).get("start_time_ns", 0))
+        # Utiliser le vrai t=0 (minimum des timestamps réels de tous les flux)
+        start_ns = _compute_session_start_ns(session_path)
 
         # Charger le JSONL pour trouver l'index de frame le plus proche
         jl_path = sess / "videos" / f"{side}.jsonl"
@@ -2022,22 +2090,18 @@ async def session_video(side: str, session_path: str, request: Request):
 @app.get("/api/session/video_info")
 async def session_video_info(session_path: str):
     """
-    Retourne pour chaque caméra le t0 en secondes (offset entre start_time_ns de la session
-    et la première capture_time du JSONL), pour synchroniser video.currentTime avec la timeline.
+    Retourne pour chaque caméra le t0 en secondes (offset entre le vrai t=0 de la session
+    — minimum réel de tous les flux — et la première capture_time du JSONL),
+    pour synchroniser video.currentTime avec la timeline.
     """
     sess = Path(session_path)
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
 
-    meta_path = sess / "metadata.json"
-    start_ns = 0
-    if meta_path.exists():
-        try:
-            start_ns = int(json.loads(meta_path.read_text()).get("start_time_ns", 0))
-        except Exception:
-            pass
-
+    # t=0 = minimum réel de tous les flux (indépendant de start_time_ns metadata)
+    start_ns = _compute_session_start_ns(session_path)
     start_ms = start_ns / 1_000_000
+
     result = {}
     for side in ("head", "left", "right"):
         jl = sess / "videos" / f"{side}.jsonl"
@@ -2048,7 +2112,7 @@ async def session_video_info(session_path: str):
         if not rows:
             continue
         first_capture_ms = float(rows[0]["capture_time"])
-        # offset = temps de la première frame relative à start_ns de session (en secondes)
+        # offset = temps de la première frame relative au vrai t=0 (en secondes)
         t0_s = (first_capture_ms - start_ms) / 1000.0
         result[side] = {
             "t0_s": t0_s,
@@ -2625,7 +2689,8 @@ def _load_diff_data(session_path: str) -> dict:
     meta = {}
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
-    start_ns = int(meta.get("start_time_ns", 0))
+    # t=0 = minimum réel de tous les flux (indépendant de start_time_ns metadata)
+    start_ns = _compute_session_start_ns(session_path)
     result["start_ns"] = start_ns
 
     def _ns_to_ms(ns_arr):
@@ -2974,7 +3039,21 @@ def _worker_export(job: Job, req: ExportRequest):
             work_dir = INGEST_DIR.parent / "_lerobot_work" / f"lerobot_{job.id}"
             work_dir.mkdir(parents=True, exist_ok=True)
             try:
-                dataset_dir = _build_lerobot_dataset(job, valid_sessions, req.lerobot, work_dir)
+                from lerobot_convert import build_lerobot_dataset, ConvertOptions
+                _opts = ConvertOptions(
+                    dataset_name=req.lerobot.dataset_name,
+                    robot_type=req.lerobot.robot_type,
+                    fps=req.lerobot.fps,
+                    chunks_size=req.lerobot.chunks_size,
+                    batch_size=req.lerobot.batch_size,
+                    push_to_hub=req.lerobot.push_to_hub,
+                    hf_token=req.lerobot.hf_token,
+                    repo_id=req.lerobot.repo_id,
+                )
+                dataset_dir = build_lerobot_dataset(
+                    valid_sessions, _opts, work_dir,
+                    log_fn=lambda msg, level="INFO": _log_job(job, msg, level),
+                )
                 dataset_name = req.lerobot.dataset_name
                 # Pour l'export local, on copie le contenu du dataset_dir directement dans
                 # dest/dataset_name/ (pas dest/dataset_name/dataset_name/).
@@ -3041,552 +3120,6 @@ def _worker_export(job: Job, req: ExportRequest):
     _update_job(job, status=status, ended_at=_now(), progress=100.0, result=result, error=err_msg)
     _log_job(job, f"Export terminé — {len(errors)} erreur(s)", "OK" if not errors else "WARN")
 
-
-def _flush_episode_parquet(meta_dir: Path, episode_rows: list[dict]) -> None:
-    """Écrit (ou écrase) le parquet meta/episodes avec les lignes courantes.
-    Appelé périodiquement pour que le dataset soit récupérable après un crash."""
-    try:
-        import pandas as pd
-        ep_parquet_path = meta_dir / "episodes" / "chunk-000" / "file-000.parquet"
-        ep_parquet_path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(episode_rows).to_parquet(ep_parquet_path, index=False)
-    except Exception:
-        pass  # ne jamais planter le job à cause d'un flush intermédiaire
-
-
-def _build_lerobot_dataset(job: Job, sessions: list, opts: LeRobotOptions, tmp_dir: Path) -> Path:
-    """Construit un dataset LeRobot v3.0 complet depuis une liste de sessions.
-
-    Chaque session devient un épisode. Les épisodes sont répartis en chunks
-    de opts.chunks_size fichiers chacun.
-
-    Structure conforme LeRobot v3.0 :
-        dataset_name/
-          meta/
-            info.json
-            tasks.parquet                         (meta/tasks.parquet)
-            episodes/chunk-000/file-000.parquet   (meta/episodes/…)
-          data/
-            chunk-000/file-000.parquet            (un fichier par épisode)
-            chunk-000/file-001.parquet
-          videos/
-            observation.images.head/chunk-000/file-000.mp4
-            observation.images.head/chunk-000/file-001.mp4
-            ...
-    Paths templates :
-        data_path  = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet"
-        video_path = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
-    """
-    import shutil
-
-    try:
-        import pandas as pd
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError:
-        raise RuntimeError("pandas/pyarrow non installés — pip install pandas pyarrow")
-
-    dataset_dir = tmp_dir / opts.dataset_name
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-    meta_dir = dataset_dir / "meta"
-    meta_dir.mkdir(exist_ok=True)
-
-    chunks_size = max(1, opts.chunks_size)
-    total_episodes = len(sessions)
-
-    # ── Détecter les caméras depuis toutes les sessions ───────────────────────
-    camera_keys: list[str] = []
-    for sess in sessions:
-        vid_dir = sess / "videos"
-        if vid_dir.is_dir():
-            keys = [f"observation.images.{v.stem}" for v in sorted(vid_dir.glob("*.mp4"))]
-            if keys:
-                camera_keys = keys
-                break
-    if not camera_keys:
-        for sess in sessions:
-            vids = sorted(sess.glob("*.mp4"))
-            if vids:
-                camera_keys = [f"observation.images.{v.stem}" for v in vids]
-                break
-
-    # ── Lire les vraies métadonnées vidéo (codec, résolution, fps réels) ─────
-    def _read_video_info(mp4_path: Path) -> dict:
-        """Lit les métadonnées réelles d'une vidéo via ffprobe."""
-        try:
-            import subprocess
-            r = subprocess.run(
-                ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(mp4_path)],
-                capture_output=True, text=True, timeout=10
-            )
-            data = json.loads(r.stdout)
-            vs = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
-            if vs is None:
-                raise ValueError("no video stream")
-            num, den = vs.get("r_frame_rate", "30/1").split("/")
-            fps = int(round(int(num) / max(1, int(den))))
-            pix_fmt = vs.get("pix_fmt", "yuv420p")
-            if pix_fmt == "yuvj420p":
-                pix_fmt = "yuv420p"
-            channels = 1 if "gray" in pix_fmt else (4 if "rgba" in pix_fmt or "yuva" in pix_fmt else 3)
-            has_audio = any(s.get("codec_type") == "audio" for s in data["streams"])
-            return {
-                "video.fps": fps,
-                "video.codec": vs.get("codec_name", "h264"),
-                "video.pix_fmt": pix_fmt,
-                "video.height": int(vs.get("height", 480)),
-                "video.width": int(vs.get("width", 640)),
-                "video.channels": channels,
-                "video.is_depth_map": False,
-                "has_audio": has_audio,
-            }
-        except Exception:
-            return {
-                "video.fps": opts.fps,
-                "video.codec": "h264",
-                "video.pix_fmt": "yuv420p",
-                "video.height": 480,
-                "video.width": 640,
-                "video.channels": 3,
-                "video.is_depth_map": False,
-                "has_audio": False,
-            }
-
-    video_infos: dict[str, dict] = {}
-    for cam_key in camera_keys:
-        cam_name = cam_key.replace("observation.images.", "")
-        for sess in sessions:
-            src = sess / "videos" / f"{cam_name}.mp4"
-            if not src.exists():
-                src = sess / f"{cam_name}.mp4"
-            if src.exists():
-                video_infos[cam_key] = _read_video_info(src)
-                break
-        if cam_key not in video_infos:
-            video_infos[cam_key] = _read_video_info(Path("/dev/null"))
-
-    # ── Lire le JSONL caméra d'une session ────────────────────────────────────
-    def _read_jsonl(path: Path) -> list[dict]:
-        """Lit un fichier JSONL caméra (format {index, capture_time})."""
-        frames = []
-        try:
-            raw = path.read_bytes()
-            for part in raw.split(b"\r\n"):
-                part = part.strip()
-                if len(part) > 5:
-                    try:
-                        frames.append(json.loads(part))
-                    except json.JSONDecodeError:
-                        pass
-        except Exception:
-            pass
-        return frames
-
-    def _build_camera_timeline(sess: Path, camera_keys: list[str]) -> "pd.DataFrame | None":
-        """
-        Construit la timeline de référence à partir du JSONL de la première caméra disponible.
-        Retourne un DataFrame avec colonnes : capture_time_ms (epoch ms), timestamp (relatif s).
-        La timeline est la horloge de référence : 1 ligne = 1 frame vidéo.
-        """
-        for cam_key in camera_keys:
-            cam_name = cam_key.replace("observation.images.", "")
-            jsonl_path = sess / "videos" / f"{cam_name}.jsonl"
-            if not jsonl_path.exists():
-                continue
-            frames = _read_jsonl(jsonl_path)
-            if not frames:
-                continue
-            capture_times = [float(f["capture_time"]) for f in frames]
-            t0 = capture_times[0]
-            timestamps = [(t - t0) / 1000.0 for t in capture_times]
-            return pd.DataFrame({
-                "capture_time_ms": capture_times,
-                "timestamp":       timestamps,
-            })
-        return None
-
-    # ── Merger tous les CSV d'une session en un seul DataFrame ───────────────
-    # Colonnes structurelles qui ne doivent pas être préfixées ni exportées en tant que features :
-    # uniquement les identifiants internes LeRobot et les clés d'alignement temporel brutes.
-    # t_ms / t_ms_corrected_ns sont des données utiles → elles doivent être préfixées et incluses.
-    _NO_PREFIX = {"time_seconds", "timestamp", "timestamp_ns",
-                  "frame_index", "episode_index", "index", "task_index", "_ts_ms_key"}
-
-    def _prefixed_df(df: pd.DataFrame, stem: str) -> pd.DataFrame:
-        """Préfixe les colonnes de données avec le stem du fichier CSV.
-
-        Ex : gripper_right_data  →  gripper_right_opening_mm, gripper_right_angle_deg
-             tracker_positions   →  tracker_head_x (inchangé, commence déjà par 'tracker')
-        Règle : si la colonne commence déjà par le premier mot du stem, pas de préfixe.
-        Les colonnes dans _NO_PREFIX ne sont jamais modifiées.
-        """
-        first_word = stem.split("_")[0]  # ex: 'gripper' ou 'tracker'
-        rename = {}
-        for col in df.columns:
-            if col in _NO_PREFIX:
-                continue
-            safe = col.replace("-", "_").replace(" ", "_")
-            if safe.startswith(first_word):
-                rename[col] = safe  # déjà qualifié
-            else:
-                rename[col] = f"{stem}_{safe}"
-        return df.rename(columns=rename)
-
-    def _merge_session_csvs(sess: Path, cam_timeline: "pd.DataFrame | None") -> "pd.DataFrame | None":
-        """
-        Lit tous les CSV de la session, préfixe leurs colonnes avec le nom de fichier,
-        puis les fusionne sur la timeline caméra (1 ligne = 1 frame vidéo, via merge_asof
-        sur capture_time_ms / timestamp_ns).
-
-        Si aucune timeline caméra n'est disponible, fallback sur le CSV le plus long.
-        Les colonnes non-numériques (texte, bool) sont exclues du parquet.
-        """
-        import numpy as np
-
-        csv_files = sorted(sess.glob("*.csv"))
-        if not csv_files:
-            return cam_timeline  # retourner au moins la timeline si pas de CSV
-
-        dfs: list[tuple[str, pd.DataFrame]] = []  # (stem, df)
-        for csv_f in csv_files:
-            try:
-                df_tmp = pd.read_csv(csv_f)
-                if df_tmp.empty:
-                    continue
-                # Convertir timestamp_ns en ms pour l'alignement sur capture_time_ms
-                if "timestamp_ns" in df_tmp.columns:
-                    df_tmp["_ts_ms_key"] = pd.to_numeric(df_tmp["timestamp_ns"], errors="coerce") / 1_000_000
-                elif "time_seconds" in df_tmp.columns:
-                    # Convertir time_seconds epoch en ms approximatif (fallback)
-                    df_tmp["_ts_ms_key"] = pd.to_numeric(df_tmp["time_seconds"], errors="coerce") * 1000
-                if "_ts_ms_key" in df_tmp.columns:
-                    df_tmp = df_tmp.sort_values("_ts_ms_key").reset_index(drop=True)
-                stem = csv_f.stem
-                if stem.endswith("_data"):
-                    stem = stem[:-5]
-                df_tmp = _prefixed_df(df_tmp, stem)
-                dfs.append((stem, df_tmp))
-            except Exception as e:
-                _log_job(job, f"    CSV ignoré ({csv_f.name}): {e}", "WARN")
-
-        if not dfs:
-            return cam_timeline
-
-        # ── Cas 1 : timeline caméra disponible → aligner chaque CSV dessus ─────
-        if cam_timeline is not None:
-            base = cam_timeline.copy()
-            for stem, other in dfs:
-                if "_ts_ms_key" not in other.columns:
-                    continue
-                new_cols = [c for c in other.columns
-                            if c not in base.columns and c != "_ts_ms_key"
-                            and pd.api.types.is_numeric_dtype(other[c])]
-                if not new_cols:
-                    continue
-                other_sub = other[["_ts_ms_key"] + new_cols].copy()
-                base = pd.merge_asof(
-                    base.sort_values("capture_time_ms"),
-                    other_sub.sort_values("_ts_ms_key"),
-                    left_on="capture_time_ms",
-                    right_on="_ts_ms_key",
-                    direction="nearest",
-                    tolerance=500.0,  # tolérance 500 ms
-                )
-                # merge_asof conserve les deux clés quand elles diffèrent
-                base = base.drop(columns=[c for c in base.columns if c.startswith("_ts_ms_key")], errors="ignore")
-            base = base.drop(columns=["capture_time_ms"], errors="ignore")
-            return base
-
-        # ── Cas 2 : pas de JSONL → fallback CSV le plus long (comportement original) ──
-        dfs.sort(key=lambda t: len(t[1]), reverse=True)
-        base = dfs[0][1].copy()
-        for _, other in dfs[1:]:
-            new_cols = [c for c in other.columns if c != "time_seconds" and c not in base.columns]
-            if not new_cols:
-                continue
-            other_sub = other[["time_seconds"] + new_cols].copy() if "time_seconds" in other.columns else other[new_cols].copy()
-            if "time_seconds" in base.columns and "time_seconds" in other.columns:
-                base = pd.merge_asof(
-                    base,
-                    other_sub,
-                    on="time_seconds",
-                    direction="nearest",
-                    tolerance=0.5,
-                )
-            else:
-                for col in new_cols:
-                    base[col] = other[col].reindex(base.index)
-        base = base.drop(columns=["_ts_ms_key"], errors="ignore")
-        return base
-
-    # ── Détecter les colonnes numériques depuis toutes les sessions ───────────
-    # Scan complet avec préfixage identique à _merge_session_csvs
-    feature_columns: dict[str, dict] = {}
-    STANDARD_COLS = {"timestamp", "frame_index", "episode_index", "index", "task_index",
-                     "time_seconds", "capture_time_ms", "_ts_ms_key"}
-    for sess in sessions:
-        csv_files = sorted(sess.glob("*.csv"))
-        for csv_f in csv_files:
-            try:
-                df_sample = pd.read_csv(csv_f, nrows=2)
-                stem = csv_f.stem
-                if stem.endswith("_data"):
-                    stem = stem[:-5]
-                df_sample = _prefixed_df(df_sample, stem)
-                for col in df_sample.columns:
-                    if col in STANDARD_COLS:
-                        continue
-                    if pd.api.types.is_numeric_dtype(df_sample[col]):
-                        feature_columns[col] = {"dtype": "float64", "shape": (1,), "names": None}
-            except Exception:
-                pass
-
-    # ── Construire le dict features complet (format LeRobot v3) ───────────────
-    features: dict = {
-        "timestamp":     {"dtype": "float32", "shape": (1,), "names": None},
-        "frame_index":   {"dtype": "int64",   "shape": (1,), "names": None},
-        "episode_index": {"dtype": "int64",   "shape": (1,), "names": None},
-        "index":         {"dtype": "int64",   "shape": (1,), "names": None},
-        "task_index":    {"dtype": "int64",   "shape": (1,), "names": None},
-        **feature_columns,
-    }
-    for cam_key in camera_keys:
-        vi = video_infos[cam_key]
-        features[cam_key] = {
-            "dtype": "video",
-            "shape": (vi["video.height"], vi["video.width"], vi["video.channels"]),
-            "names": ["height", "width", "channel"],
-            "info": vi,
-        }
-
-    _log_job(job, f"  Schema : {len(feature_columns)} colonnes de données + {len(camera_keys)} caméras", "INFO")
-
-    # ── Itérer les sessions → épisodes ────────────────────────────────────────
-    batch_size   = max(1, opts.batch_size)
-    total_frames = 0
-    episode_rows: list[dict] = []
-    dataset_from = 0
-    ep_errors:   list[str]  = []
-
-    for ep_idx, sess in enumerate(sessions):
-        chunk_idx = ep_idx // chunks_size
-        file_idx  = ep_idx % chunks_size
-
-        data_path = dataset_dir / "data" / f"chunk-{chunk_idx:03d}" / f"file-{file_idx:03d}.parquet"
-
-        # ── Reprise après crash : épisode déjà traité ─────────────────────────
-        if data_path.exists():
-            try:
-                n_frames = len(pd.read_parquet(data_path, columns=["frame_index"]))
-            except Exception:
-                n_frames = 0
-            ep_row: dict = {
-                "episode_index":             ep_idx,
-                "tasks":                     [0],
-                "length":                    n_frames,
-                "dataset_from_index":        dataset_from,
-                "dataset_to_index":          dataset_from + n_frames,
-                "data/chunk_index":          chunk_idx,
-                "data/file_index":           file_idx,
-                "meta/episodes/chunk_index": 0,
-                "meta/episodes/file_index":  0,
-            }
-            for cam_key in camera_keys:
-                ep_row[f"videos/{cam_key}/chunk_index"] = chunk_idx
-                ep_row[f"videos/{cam_key}/file_index"]  = file_idx
-            episode_rows.append(ep_row)
-            dataset_from += n_frames
-            total_frames += n_frames
-            _log_job(job, f"  épisode {ep_idx:04d} ({sess.name}) — déjà traité, skip", "INFO")
-            _update_job(job, progress=round((ep_idx + 1) / total_episodes * 90, 1))
-            continue
-
-        # ── Traitement d'un épisode ───────────────────────────────────────────
-        try:
-            import subprocess as _sp
-            import numpy as _np
-
-            # Construire la timeline caméra (1 ligne = 1 frame vidéo @ fps réel)
-            cam_timeline = _build_camera_timeline(sess, camera_keys)
-            ref_df = _merge_session_csvs(sess, cam_timeline)
-            n_frames = len(ref_df) if ref_df is not None else 0
-
-            rows: dict = {
-                "frame_index":   list(range(n_frames)),
-                "episode_index": [ep_idx] * n_frames,
-                "index":         [total_frames + i for i in range(n_frames)],
-                "task_index":    [0] * n_frames,
-            }
-
-            # timestamp : priorité au JSONL caméra (relatif en s), sinon time_seconds
-            if ref_df is not None and "timestamp" in ref_df.columns:
-                rows["timestamp"] = [float(v) for v in ref_df["timestamp"]]
-            elif ref_df is not None and "time_seconds" in ref_df.columns:
-                t0 = float(ref_df["time_seconds"].iloc[0])
-                rows["timestamp"] = [float(v) - t0 for v in ref_df["time_seconds"]]
-            else:
-                rows["timestamp"] = [i / opts.fps for i in range(n_frames)]
-
-            # Inclure toutes les colonnes numériques (trackers, gripper, etc.)
-            _SKIP_COLS = STANDARD_COLS | {"capture_time_ms", "_ts_ms_key"}
-            if ref_df is not None:
-                for col in ref_df.columns:
-                    safe = col.replace("-", "_").replace(" ", "_")
-                    if safe in rows or safe in _SKIP_COLS:
-                        continue
-                    col_data = ref_df[col]
-                    if not pd.api.types.is_numeric_dtype(col_data):
-                        continue
-                    try:
-                        rows[safe] = [float(v) if pd.notna(v) else 0.0 for v in col_data]
-                    except (ValueError, TypeError):
-                        pass
-
-            ep_df = pd.DataFrame(rows)
-            data_path.parent.mkdir(parents=True, exist_ok=True)
-            ep_df.to_parquet(data_path, index=False)
-
-            # Durée parquet = timestamp de la dernière frame
-            parquet_duration_s = float(ep_df["timestamp"].iloc[-1]) if n_frames > 0 else 0.0
-            del ep_df, rows, ref_df
-
-            # ── Copier + trimmer les vidéos pour aligner avec le parquet ─────
-            for cam_key in camera_keys:
-                cam_name = cam_key.replace("observation.images.", "")
-                src_mp4 = sess / "videos" / f"{cam_name}.mp4"
-                if not src_mp4.exists():
-                    src_mp4 = sess / f"{cam_name}.mp4"
-                if not src_mp4.exists():
-                    _log_job(job, f"    vidéo manquante : {cam_name}.mp4 dans {sess.name}", "WARN")
-                    continue
-
-                vid_out = dataset_dir / "videos" / cam_key / f"chunk-{chunk_idx:03d}"
-                vid_out.mkdir(parents=True, exist_ok=True)
-                dst_mp4 = vid_out / f"file-{file_idx:03d}.mp4"
-
-                # Vérifier la durée source
-                try:
-                    r_probe = _sp.run(
-                        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(src_mp4)],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    probe_d = json.loads(r_probe.stdout)
-                    probe_vs = next((s for s in probe_d["streams"] if s["codec_type"] == "video"), None)
-                    src_duration = float(probe_vs["duration"]) if probe_vs else 0.0
-                except Exception:
-                    src_duration = 0.0
-
-                # Trimmer si la source dépasse la durée parquet de plus de 200ms
-                needs_trim = src_duration > parquet_duration_s + 0.2 and parquet_duration_s > 0
-                if needs_trim:
-                    tmp_mp4 = tmp_dir / f"_trim_ep{ep_idx}_{cam_name}.mp4"
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-i", str(src_mp4),
-                        "-t", f"{parquet_duration_s:.6f}",
-                        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
-                        "-pix_fmt", "yuv420p",
-                        str(tmp_mp4)
-                    ]
-                    r_ffmpeg = _sp.run(cmd, capture_output=True, text=True, timeout=300)
-                    if r_ffmpeg.returncode == 0:
-                        shutil.move(str(tmp_mp4), str(dst_mp4))
-                        _log_job(job, f"    {cam_name}: trimmed {src_duration:.2f}s → {parquet_duration_s:.2f}s", "INFO")
-                    else:
-                        # Fallback : copie directe si ffmpeg échoue
-                        shutil.copy2(src_mp4, dst_mp4)
-                        _log_job(job, f"    {cam_name}: trim échoué, copie directe ({r_ffmpeg.stderr[-100:]})", "WARN")
-                else:
-                    shutil.copy2(src_mp4, dst_mp4)
-
-            ep_row = {
-                "episode_index":             ep_idx,
-                "tasks":                     [0],
-                "length":                    n_frames,
-                "dataset_from_index":        dataset_from,
-                "dataset_to_index":          dataset_from + n_frames,
-                "data/chunk_index":          chunk_idx,
-                "data/file_index":           file_idx,
-                "meta/episodes/chunk_index": 0,
-                "meta/episodes/file_index":  0,
-            }
-            for cam_key in camera_keys:
-                ep_row[f"videos/{cam_key}/chunk_index"] = chunk_idx
-                ep_row[f"videos/{cam_key}/file_index"]  = file_idx
-
-            episode_rows.append(ep_row)
-            dataset_from += n_frames
-            total_frames += n_frames
-            _log_job(job, f"  épisode {ep_idx:04d} ({sess.name}) — {n_frames} frames → chunk-{chunk_idx:03d}/file-{file_idx:03d}", "INFO")
-
-        except Exception as exc:
-            import traceback
-            detail = traceback.format_exc()
-            ep_errors.append(f"ep {ep_idx:04d} ({sess.name}): {exc}")
-            _log_job(job, f"  ✗ épisode {ep_idx:04d} ({sess.name}): {exc}\n{detail}", "ERROR")
-            # Supprimer le parquet partiel pour permettre une reprise propre
-            if data_path.exists():
-                try:
-                    data_path.unlink()
-                except Exception:
-                    pass
-
-        # Flush intermédiaire + progression
-        if len(episode_rows) % batch_size == 0 and episode_rows:
-            _flush_episode_parquet(meta_dir, episode_rows)
-        _update_job(job, progress=round((ep_idx + 1) / total_episodes * 90, 1))
-
-    # ── Écrire les métadonnées finales (même si des épisodes ont échoué) ─────
-    # meta/tasks.parquet
-    tasks_df = pd.DataFrame([{"task_index": 0, "task": "robot episode"}])
-    (meta_dir / "tasks.parquet").write_bytes(tasks_df.to_parquet(index=False))
-
-    # meta/stats.json
-    (meta_dir / "stats.json").write_text("{}", encoding="utf-8")
-
-    # meta/episodes/chunk-000/file-000.parquet
-    _flush_episode_parquet(meta_dir, episode_rows)
-
-    # meta/info.json
-    total_chunks = max(1, (total_episodes + chunks_size - 1) // chunks_size)
-    # Compter les épisodes réellement écrits (sans les erreurs)
-    successful_episodes = len(episode_rows)
-    info = {
-        "codebase_version": "v3.0",
-        "robot_type": opts.robot_type,
-        "total_episodes": successful_episodes,
-        "total_frames": total_frames,
-        "total_tasks": 1,
-        "total_videos": successful_episodes * len(camera_keys),
-        "total_chunks": total_chunks,
-        "chunks_size": chunks_size,
-        "data_files_size_in_mb": 100,
-        "video_files_size_in_mb": 200,
-        "fps": opts.fps,
-        "splits": {"train": f"0:{successful_episodes}"},
-        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
-        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
-        "features": features,
-    }
-    (meta_dir / "info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    _log_job(job, f"  Dataset LeRobot v3.0 : {successful_episodes} épisodes, {total_frames} frames, {total_chunks} chunk(s)", "OK")
-
-    if ep_errors:
-        _log_job(job, f"  ⚠ {len(ep_errors)} épisode(s) ignoré(s) :\n" + "\n".join(ep_errors), "WARN")
-
-    # ── Push HuggingFace Hub ──────────────────────────────────────────────────
-    if opts.push_to_hub and opts.hf_token and opts.repo_id:
-        try:
-            from huggingface_hub import HfApi
-            api = HfApi(token=opts.hf_token)
-            api.create_repo(repo_id=opts.repo_id, repo_type="dataset", exist_ok=True)
-            api.upload_folder(folder_path=str(dataset_dir), repo_id=opts.repo_id, repo_type="dataset")
-            _log_job(job, f"  ✓ Poussé sur HF Hub : {opts.repo_id}", "OK")
-        except Exception as e:
-            _log_job(job, f"  ✗ HF Hub push échoué : {e}", "WARN")
-
-    return dataset_dir
 
 
 def _export_local_lerobot(job: Job, src: Path, dest: ExportDestLocal, dataset_name: str):
@@ -3826,6 +3359,60 @@ async def fix_camera_offset(req: FixCameraOffsetRequest):
     return {"job_id": job.id}
 
 
+class ApplyGripperOffsetRequest(BaseModel):
+    session:   str
+    offset_ms: float  # décalage à ajouter aux timestamps gripper (en ms)
+
+
+@app.post("/api/session/apply_gripper_offset")
+async def apply_gripper_offset(req: ApplyGripperOffsetRequest):
+    """
+    Applique un décalage temporel permanent aux fichiers gripper_*_data.csv
+    de la session indiquée. Le décalage (offset_ms) est ajouté à la colonne
+    timestamp_ns (convertie depuis ms). Opération atomique via fichier temporaire.
+    """
+    import pandas as pd
+
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    sess = Path(req.session)
+    if not sess.exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    if req.offset_ms == 0:
+        return JSONResponse({"ok": True, "files_patched": []})
+
+    offset_ns = int(req.offset_ms * 1_000_000)  # ms → ns
+    files_patched: list[str] = []
+
+    for side in ("left", "right"):
+        grip_path = sess / f"gripper_{side}_data.csv"
+        if not grip_path.exists():
+            continue
+        df = pd.read_csv(grip_path)
+        ts_col = None
+        if "timestamp_ns" in df.columns:
+            ts_col = "timestamp_ns"
+        elif "t_ms_corrected_ns" in df.columns:
+            ts_col = "t_ms_corrected_ns"
+        if ts_col is None:
+            continue  # pas de colonne timestamp connue — ignorer
+        df[ts_col] = df[ts_col] + offset_ns
+        tmp_path = grip_path.with_name(f"__tmp_gripper_{side}_data.csv")
+        try:
+            df.to_csv(tmp_path, index=False)
+            tmp_path.replace(grip_path)
+            files_patched.append(grip_path.name)
+        except Exception as e:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise HTTPException(500, f"Erreur écriture {grip_path.name} : {e}")
+
+    if not files_patched:
+        raise HTTPException(400, "Aucune colonne timestamp_ns trouvée dans les fichiers gripper")
+
+    return JSONResponse({"ok": True, "files_patched": files_patched, "offset_ms": req.offset_ms})
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # S3 Input Source — browse / stream / move
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4019,6 +3606,131 @@ async def s3_stream(req: S3StreamRequest):
         daemon=True,
     ).start()
     return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Inbox → Bronze
+# ──────────────────────────────────────────────────────────────────────────────
+
+class InboxPromoteRequest(BaseModel):
+    session_path: str
+    bronze_dir:   Optional[str] = None
+
+
+def _worker_inbox_promote(job: Job, session_path: str, bronze_dir: Optional[str]):
+    try:
+        from pipeline.inbox_bronze import promote_session, BRONZE_DIR, _INBOX_CONFIG
+        from pathlib import Path as _Path
+
+        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=5)
+        _log_job(job, f"Vérification + promotion de {_Path(session_path).name}… "
+                      f"[threads={_INBOX_CONFIG.n_threads} procs={_INBOX_CONFIG.n_processes}]")
+
+        b_dir = _Path(bronze_dir) if bronze_dir else BRONZE_DIR
+
+        def _cb(msg, level="INFO"):
+            _log_job(job, msg, level)
+
+        report = promote_session(session_path, bronze_dir=b_dir, log_cb=_cb,
+                                 config=_INBOX_CONFIG)
+
+        _update_job(
+            job,
+            status   = JobStatus.DONE if (report.all_ok and report.promoted_to) else JobStatus.ERROR,
+            ended_at = _now(),
+            progress = 100,
+            result   = report.to_dict(),
+            error    = report.error,
+        )
+    except Exception:
+        err = traceback.format_exc()
+        _log_job(job, err, "ERROR")
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
+
+
+@app.get("/api/inbox/scan")
+async def inbox_scan(inbox_dir: Optional[str] = None):
+    """
+    Scanne /mnt/inbox (ou inbox_dir si fourni) et retourne le rapport de vérification
+    de chaque session trouvée. Parallélisé selon _INBOX_CONFIG.
+    """
+    try:
+        from pipeline.inbox_bronze import scan_inbox, INBOX_DIR, _INBOX_CONFIG
+        from pathlib import Path as _Path
+
+        root = _Path(inbox_dir) if inbox_dir else INBOX_DIR
+        reports = scan_inbox(root, config=_INBOX_CONFIG)
+        return {
+            "inbox_dir": str(root),
+            "sessions":  [r.to_dict() for r in reports],
+            "config":    _INBOX_CONFIG.to_dict(),
+        }
+    except Exception:
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+
+@app.post("/api/inbox/check")
+async def inbox_check(req: dict):
+    """
+    Exécute les 5 checks sur une session précise (sans la déplacer).
+    body: { "session_path": "/mnt/inbox/session_xxx" }
+    """
+    try:
+        from pipeline.inbox_bronze import run_checks, _INBOX_CONFIG
+        from pathlib import Path as _Path
+
+        session_path = req.get("session_path", "")
+        if not session_path:
+            raise HTTPException(status_code=400, detail="session_path requis")
+
+        report = run_checks(_Path(session_path), config=_INBOX_CONFIG)
+        return report.to_dict()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+
+@app.post("/api/inbox/promote")
+async def inbox_promote(req: InboxPromoteRequest):
+    """
+    Lance vérification + déplacement vers bronze en arrière-plan.
+    Retourne un job_id pour suivre la progression via WebSocket.
+    """
+    job = _new_job("inbox_promote")
+    threading.Thread(
+        target=_worker_inbox_promote,
+        args=(job, req.session_path, req.bronze_dir),
+        daemon=True,
+    ).start()
+    return {"job_id": job.id}
+
+
+@app.get("/api/inbox/config")
+async def inbox_config_get():
+    """Retourne la configuration de concurrence inbox → bronze."""
+    from pipeline.inbox_bronze import _INBOX_CONFIG
+    import os as _os
+    return {
+        **_INBOX_CONFIG.to_dict(),
+        "cpu_count": _os.cpu_count() or 1,
+    }
+
+
+@app.post("/api/inbox/config")
+async def inbox_config_set(req: dict):
+    """
+    Met à jour à chaud la configuration de concurrence.
+    body: { "n_threads": 4, "n_processes": 2 }
+    """
+    import pipeline.inbox_bronze as _ib
+    import os as _os
+    cpu = _os.cpu_count() or 1
+    if "n_threads" in req:
+        _ib._INBOX_CONFIG.n_threads   = max(1, min(int(req["n_threads"]),   cpu * 4))
+    if "n_processes" in req:
+        _ib._INBOX_CONFIG.n_processes = max(1, min(int(req["n_processes"]), cpu))
+    return {**_ib._INBOX_CONFIG.to_dict(), "cpu_count": cpu}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

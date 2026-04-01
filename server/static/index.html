@@ -3344,6 +3344,66 @@
 						</div>
 					</div>
 
+					<!-- Service 24/7 -->
+					<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:16px">
+						<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+							<div style="font-size:.68rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em">
+								Service 24/7 (systemd)
+							</div>
+							<div style="display:flex;align-items:center;gap:8px">
+								<span id="svc-badge" style="font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)">— inconnu</span>
+								<button class="btn sm" onclick="svcRefresh()" style="font-size:.72rem">↻ Statut</button>
+							</div>
+						</div>
+
+						<!-- Chemins & paramètres -->
+						<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Python</label>
+								<input type="text" id="svc-python" value="/usr/bin/python3"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Script serveur</label>
+								<input type="text" id="svc-script" placeholder="(auto)"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Inbox</label>
+								<input type="text" id="svc-inbox" value="/mnt/inbox"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Bronze</label>
+								<input type="text" id="svc-bronze" value="/mnt/storage/bronze"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Host</label>
+								<input type="text" id="svc-host" value="0.0.0.0"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+							<div style="display:flex;flex-direction:column;gap:3px">
+								<label style="font-size:.7rem;color:var(--text3)">Port</label>
+								<input type="number" id="svc-port" value="8000"
+									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
+							</div>
+						</div>
+
+						<!-- Actions -->
+						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+							<button class="btn p sm" onclick="svcInstall()" style="font-size:.76rem">
+								⬆ Installer / Redémarrer
+							</button>
+							<button class="btn sm" onclick="svcUninstall()"
+								style="font-size:.76rem;background:var(--red)18;border-color:var(--red)44;color:var(--red)">
+								✕ Désinstaller
+							</button>
+							<pre id="svc-status-out"
+								style="flex:1;min-width:200px;margin:0;font-size:.7rem;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:6px 8px;white-space:pre-wrap;max-height:80px;overflow:auto"></pre>
+						</div>
+					</div>
+
 					<!-- Liste des sessions -->
 					<div id="inbox-session-list" style="display:flex;flex-direction:column;gap:10px">
 						<div style="color:var(--text3);font-size:.83rem;text-align:center;padding:32px 0">
@@ -9678,6 +9738,69 @@
 		}
 
 		// ══════════════════════════════════════════════════════════════════
+		// Service 24/7 (systemd)
+		// ══════════════════════════════════════════════════════════════════
+		async function svcRefresh() {
+			try {
+				const s = await api('GET', '/api/inbox/service/status');
+				const badge = ge('svc-badge');
+				const out   = ge('svc-status-out');
+				if (s.active) {
+					badge.textContent = `● actif  PID ${s.pid || '?'}`;
+					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--green)18;color:var(--green);border:1px solid var(--green)44';
+				} else if (s.unit_exists) {
+					badge.textContent = '○ arrêté';
+					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--orange)18;color:var(--orange);border:1px solid var(--orange)44';
+				} else {
+					badge.textContent = '— non installé';
+					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)';
+				}
+				out.textContent = s.status_output || (s.unit_exists ? `${s.service_file}\nenabled: ${s.enabled}` : 'Aucun service installé.');
+			} catch(e) {
+				ge('svc-status-out').textContent = `Erreur : ${e.message}`;
+			}
+		}
+
+		async function svcInstall() {
+			const btn = document.querySelector('[onclick="svcInstall()"]');
+			const prev = btn.textContent;
+			btn.textContent = '…';
+			btn.disabled = true;
+			try {
+				const body = {
+					inbox_dir:     ge('svc-inbox').value.trim()  || '/mnt/inbox',
+					bronze_dir:    ge('svc-bronze').value.trim() || '/mnt/storage/bronze',
+					host:          ge('svc-host').value.trim()   || '0.0.0.0',
+					port:          parseInt(ge('svc-port').value) || 8000,
+				};
+				const py  = ge('svc-python').value.trim();
+				const sc  = ge('svc-script').value.trim();
+				if (py) body.python_bin    = py;
+				if (sc) body.server_script = sc;
+				const r = await api('POST', '/api/inbox/service/install', body);
+				log(r.message || 'Service installé.', 'OK');
+				await svcRefresh();
+			} catch(e) {
+				log(`Erreur installation service : ${e.message}`, 'ERROR');
+				ge('svc-status-out').textContent = e.message;
+			} finally {
+				btn.textContent = prev;
+				btn.disabled = false;
+			}
+		}
+
+		async function svcUninstall() {
+			if (!confirm('Désinstaller le service systemd ?')) return;
+			try {
+				const r = await api('POST', '/api/inbox/service/uninstall');
+				log(r.message || 'Service désinstallé.', 'WARN');
+				await svcRefresh();
+			} catch(e) {
+				log(`Erreur désinstallation : ${e.message}`, 'ERROR');
+			}
+		}
+
+		// ══════════════════════════════════════════════════════════════════
 		// Navigation
 		// ══════════════════════════════════════════════════════════════════
 		function nav(name, btn) {
@@ -9695,7 +9818,7 @@
 			if (name === 'jobs') refreshPoolStatus();
 			if (name === 's3browser') s3bInit();
 			if (name === 'pipelineconfig') { pcLoad(); pcRenderGlobal(); }
-			if (name === 'inbox') { ibLoadConfig(); inboxRender(); }
+			if (name === 'inbox') { ibLoadConfig(); inboxRender(); svcRefresh(); }
 		}
 
 		function vtab(name, el) {

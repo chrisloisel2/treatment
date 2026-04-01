@@ -5315,11 +5315,13 @@
 		}
 
 		async function loadSessionPipelineState(sess) {
-			try {
-				const state = await api('GET', `/api/pipeline/state?session_path=${encodeURIComponent(sess.path)}`);
-				sess.pipeline_state = state;
-			} catch (e) {
-				sess.pipeline_state = null;
+			// Le scan inclut déjà pipeline_steps/pipeline_done — pas d'appel HTTP supplémentaire.
+			if (!sess.pipeline_state && sess.pipeline_steps) {
+				sess.pipeline_state = {
+					steps:    sess.pipeline_steps,
+					finished: sess.pipeline_done || false,
+					success:  sess.pipeline_done || false,
+				};
 			}
 			return sess;
 		}

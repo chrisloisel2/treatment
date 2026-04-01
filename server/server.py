@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /Users/christopher/Downloads/Video ok 2  → source brute, lecture seule
-  /Users/christopher/Downloads/Video ok 2/    → espace de travail (copie de travail)
+  /mnt/storage/bronze  → source brute, lecture seule
+  /mnt/storage/bronze/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/Users/christopher/Downloads/Video ok 2")
+    INGEST_DIR = Path("/mnt/storage/bronze")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/Users/christopher/Downloads/Video ok 2"
+DEFAULT_WATCH_DIR = "/mnt/storage/bronze"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -294,7 +294,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /Users/christopher/Downloads/Video ok 2/ (sessions déposées par l'opérateur)
+        # Découverte dans /mnt/storage/bronze/ (sessions déposées par l'opérateur)
         # Exclus : dossiers cachés (.) et dossiers internes (_)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
@@ -851,7 +851,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /Users/christopher/Downloads/Video ok 2/
+    session:       str        # chemin dans /mnt/storage/bronze/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -860,7 +860,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /Users/christopher/Downloads/Video ok 2/
+    session:              str          # nom ou chemin de session dans /mnt/storage/bronze/
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1103,7 +1103,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /Users/christopher/Downloads/Video ok 2/."""
+    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/bronze/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1124,7 +1124,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /Users/christopher/Downloads/Video ok 2/."""
+    """Lance une inférence asynchrone sur une session de /mnt/storage/bronze/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1168,13 +1168,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /Users/christopher/Downloads/Video ok 2/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/bronze/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /Users/christopher/Downloads/Video ok 2/
+    # req.session peut être un nom ou un chemin complet dans /mnt/storage/bronze/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1190,7 +1190,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /Users/christopher/Downloads/Video ok 2/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /mnt/storage/bronze/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)

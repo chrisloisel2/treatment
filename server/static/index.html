@@ -3368,7 +3368,7 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
 									ok 2
 								</span>
-								<input type="hidden" id="cfg-root" value="/Users/christopher/Downloads/Video ok 2" />
+								<input type="hidden" id="cfg-root" value="/mnt/storage/bronze" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3517,6 +3517,10 @@
 								title="Sélectionner uniquement les sessions avec vidéo rotée 180°">↻ Rotées</button>
 							<button class="btn sm" onclick="selNotRotated()"
 								title="Sélectionner uniquement les sessions sans rotation vidéo">○ Non-rotées</button>
+						</div>
+						<!-- Filtre scénario -->
+						<div id="sess-scenario-bar"
+							style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;min-height:28px">
 						</div>
 						<div id="sess-list"></div>
 						<div class="div" style="margin:10px 0 8px"></div>
@@ -4563,7 +4567,7 @@
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/Users/christopher/Downloads/Video ok 2" />
+								<input type="text" id="s-root" value="/mnt/storage/bronze" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
@@ -5016,9 +5020,10 @@
 			estimates: [],
 			trainJobId: null,
 			drawerSess: null,
+			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
 			cfg: {
-				root: '/Users/christopher/Downloads/Video ok 2', model: '_sync_ml_model', nas: '',
+				root: '/mnt/storage/bronze', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5210,7 +5215,7 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/Video ok 2';
+			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -5233,6 +5238,7 @@
 							: sessions.map(loadSessionPipelineState);
 						Promise.all(loaders).then(() => {
 							S.sessions = sessions;
+							S.scenarioFilter = null;  // reset filtre au rechargement
 							const allPaths = new Set(sessions.map(s => s.path));
 							if (!_restoreSelection(allPaths)) {
 								S.selected = new Set(allPaths);
@@ -6175,15 +6181,66 @@
 			return div;
 		}
 
+		function _renderScenarioBar() {
+			const bar = ge('sess-scenario-bar');
+			if (!bar) return;
+
+			// Collecter les scénarios distincts triés
+			const scenarios = [...new Set(
+				S.sessions.map(s => s.meta?.scenario).filter(Boolean)
+			)].sort();
+
+			if (scenarios.length <= 1) {
+				bar.innerHTML = '';
+				return;
+			}
+
+			const allActive = S.scenarioFilter === null;
+			let html = `<span style="font-size:.72rem;color:var(--text3);margin-right:2px">Scénario :</span>`;
+			html += `<button onclick="sessSetScenario(null)" style="
+				font-size:.74rem;padding:2px 10px;border-radius:99px;border:1px solid;cursor:pointer;transition:all .1s;
+				${allActive
+					? 'background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600'
+					: 'background:var(--bg3);border-color:var(--border);color:var(--text2)'}
+			">Tous (${S.sessions.length})</button>`;
+
+			scenarios.forEach(sc => {
+				const count = S.sessions.filter(s => s.meta?.scenario === sc).length;
+				const active = S.scenarioFilter === sc;
+				html += `<button onclick="sessSetScenario('${esc(sc)}')" style="
+					font-size:.74rem;padding:2px 10px;border-radius:99px;border:1px solid;cursor:pointer;transition:all .1s;
+					${active
+						? 'background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600'
+						: 'background:var(--bg3);border-color:var(--border);color:var(--text2)'}
+				">${esc(sc)} <span style="opacity:.7">(${count})</span></button>`;
+			});
+
+			bar.innerHTML = html;
+		}
+
+		function sessSetScenario(sc) {
+			S.scenarioFilter = sc;
+			renderSessionsList();
+		}
+
 		function renderSessionsList() {
 			const list = ge('sess-list');
-			ge('sess-count').textContent = S.sessions.length;
+			_renderScenarioBar();
+
+			// Appliquer le filtre scénario
+			const visible = S.scenarioFilter
+				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
+				: S.sessions;
+
+			ge('sess-count').textContent = S.scenarioFilter
+				? `${visible.length} / ${S.sessions.length}`
+				: S.sessions.length;
 			list.innerHTML = '';
 			_updateSessActions();
 
 			// Grouper par poste (même set de serials caméra)
 			const groups = new Map(); // key -> { serials, sessions[] }
-			S.sessions.forEach(s => {
+			visible.forEach(s => {
 				const key = _sessPostKey(s);
 				if (!groups.has(key)) {
 					const cameras = s.meta?.cameras || {};
@@ -6250,12 +6307,18 @@
 			_updateSessActions();
 			tvRefreshSessions();
 		}
-		function selAll() { S.sessions.forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function deselAll() { S.selected.clear(); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selValid() { S.selected.clear(); S.sessions.filter(s => !_sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selIssues() { S.selected.clear(); S.sessions.filter(s => _sessionHasIssues(s)).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selRotated() { S.selected.clear(); S.sessions.filter(s => s.video_rotated).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selNotRotated() { S.selected.clear(); S.sessions.filter(s => !s.video_rotated).forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function _visibleSessions() {
+			return S.scenarioFilter
+				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
+				: S.sessions;
+		}
+
+		function selAll() { _visibleSessions().forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function deselAll() { _visibleSessions().forEach(s => S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selValid() { _visibleSessions().forEach(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selIssues() { _visibleSessions().forEach(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selRotated() { _visibleSessions().forEach(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function selNotRotated() { _visibleSessions().forEach(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;
@@ -8271,7 +8334,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/Video ok 2				';
+				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -8324,7 +8387,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/Users/christopher/Downloads/Video ok 2';
+			S.cfg.root = ge('s-root').value || '/mnt/storage/bronze';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -8342,7 +8405,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/Users/christopher/Downloads/Video ok 2';
+				const root = c.root || '/mnt/storage/bronze';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;

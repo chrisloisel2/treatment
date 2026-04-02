@@ -1408,76 +1408,187 @@
 			margin-left: 4px;
 		}
 
-		/* Session list panel */
-		.sess-item {
-			display: flex;
-			align-items: center;
-			gap: 9px;
-			padding: 8px 10px;
+		/* ══ Sessions table ════════════════════════════════════════════════ */
+		#sess-table-wrap {
+			overflow-y: auto;
+			max-height: 60vh;
+			border: 1px solid var(--border);
 			border-radius: var(--rs);
-			cursor: pointer;
-			transition: all .12s;
-			border: 1px solid transparent;
-			margin-bottom: 3px;
+			background: var(--bg);
 		}
 
-		.sess-item:hover {
+		#sess-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: .78rem;
+			table-layout: fixed;
+		}
+
+		#sess-table thead th {
+			position: sticky;
+			top: 0;
 			background: var(--bg3);
-			border-color: var(--border)
+			padding: 7px 10px;
+			text-align: left;
+			font-size: .65rem;
+			font-weight: 800;
+			color: var(--text3);
+			text-transform: uppercase;
+			letter-spacing: .07em;
+			border-bottom: 1px solid var(--border2);
+			white-space: nowrap;
+			z-index: 2;
+			user-select: none;
 		}
 
-		.sess-item.has-issues {
-			border-color: var(--red)66;
-			background: var(--red)08;
+		#sess-table thead th:first-child { width: 26px; }
+		#sess-table thead th.col-name  { width: auto; }
+		#sess-table thead th.col-files { width: 110px; }
+		#sess-table thead th.col-checks{ width: 190px; }
+		#sess-table thead th.col-score { width: 68px; text-align:center; }
+		#sess-table thead th.col-scen  { width: 110px; }
+		#sess-table thead th.col-rot   { width: 36px; text-align:center; }
+
+		#sess-table tbody tr {
+			border-bottom: 1px solid var(--border);
+			cursor: pointer;
+			transition: background .08s;
+		}
+
+		#sess-table tbody tr:last-child { border-bottom: none; }
+
+		#sess-table tbody tr:hover { background: var(--bg3); }
+
+		#sess-table tbody tr.st-selected {
+			background: var(--accent)15;
+		}
+		#sess-table tbody tr.st-selected td.st-cb-cell::after {
+			background: var(--accent);
+			box-shadow: 0 0 0 2px var(--accent)55;
+		}
+
+		#sess-table tbody tr.st-issues {
 			border-left: 3px solid var(--red);
 		}
+		#sess-table tbody tr.st-issues td.st-name { color: var(--red); }
 
-		.sess-item.has-issues .si-name::after {
-			content: ' ⚠';
-			color: var(--red);
-			font-size: .8em;
-		}
-
-		.sess-item.selected {
-			background: var(--accent)1a;
-			border-color: var(--accent)66
-		}
-
-		.sess-item.is-rotated {
-			border-left: 3px solid var(--accent);
-		}
-
-		.si-rotate-badge {
-			font-size: .8rem;
-			font-weight: 700;
-			flex-shrink: 0;
-			width: 20px;
-			text-align: center;
-			opacity: .25;
-			cursor: default;
-		}
-
-		.si-rotate-badge.rotated {
-			color: var(--accent);
-			opacity: 1;
-		}
-
-		.sess-item .si-name {
-			font-size: .83rem;
-			font-weight: 600;
-			flex: 1;
+		#sess-table tbody td {
+			padding: 6px 10px;
+			vertical-align: middle;
 			overflow: hidden;
 			text-overflow: ellipsis;
-			white-space: nowrap
+			white-space: nowrap;
 		}
 
-		.sess-item .si-chips {
-			display: flex;
+		td.st-cb-cell {
+			padding: 0 0 0 8px;
+			width: 26px;
+			text-align: center;
+		}
+		td.st-cb-cell::after {
+			content: '';
+			display: inline-block;
+			width: 13px; height: 13px;
+			border-radius: 3px;
+			border: 1.5px solid var(--border2);
+			background: var(--bg3);
+			vertical-align: middle;
+			transition: background .1s, box-shadow .1s;
+		}
+
+		td.st-name {
+			font-weight: 600;
+			color: var(--text);
+			font-size: .8rem;
+			font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		}
+
+		/* chips fichiers */
+		.st-chips { display:flex; gap:3px; }
+		.st-chip {
+			font-size: .6rem;
+			padding: 1px 5px;
+			border-radius: 3px;
+			font-weight: 700;
+			letter-spacing: .02em;
+		}
+		.st-chip.ck { background:var(--green)18; color:var(--green); border:1px solid var(--green)33; }
+		.st-chip.cx { background:var(--red)15;   color:var(--red);   border:1px solid var(--red)33; }
+
+		/* dots statut checks */
+		.st-dots { display:flex; gap:4px; align-items:center; }
+		.st-dot {
+			display: inline-flex;
+			align-items: center;
 			gap: 3px;
-			flex-wrap: wrap;
-			flex-shrink: 0
+			font-size: .62rem;
+			color: var(--text3);
+			white-space: nowrap;
+		}
+		.st-dot::before {
+			content: '';
+			display: inline-block;
+			width: 6px; height: 6px;
+			border-radius: 50%;
+			background: var(--border2);
+			flex-shrink: 0;
+		}
+		.st-dot.ok  { color:var(--green); }
+		.st-dot.ok::before  { background:var(--green); }
+		.st-dot.err { color:var(--red); }
+		.st-dot.err::before { background:var(--red); }
+		.st-dot.wrn { color:var(--orange); }
+		.st-dot.wrn::before { background:var(--orange); }
+
+		/* score badge */
+		.st-grade {
+			display: inline-block;
+			font-size: .75rem;
+			font-weight: 900;
+			width: 22px; height: 22px;
+			line-height: 22px;
+			text-align: center;
+			border-radius: 4px;
+			border: 1.5px solid currentColor;
 		}
 
+		/* rotation badge */
+		.st-rot {
+			font-size: .8rem;
+			opacity: .18;
+			display: block;
+			text-align: center;
+		}
+		.st-rot.on { color:var(--accent); opacity:1; }
+
+		/* group separator row */
+		#sess-table tbody tr.st-group-row {
+			background: var(--bg3);
+			border-bottom: 1px solid var(--border2);
+			cursor: default;
+		}
+		#sess-table tbody tr.st-group-row:hover { background: var(--bg4); }
+		#sess-table tbody tr.st-group-row td {
+			padding: 5px 10px;
+			font-size: .65rem;
+			font-weight: 800;
+			color: var(--text3);
+			text-transform: uppercase;
+			letter-spacing: .07em;
+		}
+		.st-group-sel-btn {
+			font-size: .62rem;
+			padding: 1px 7px;
+			border-radius: 3px;
+			border: 1px solid var(--border2);
+			background: var(--bg4);
+			color: var(--text2);
+			cursor: pointer;
+			margin-left: 8px;
+		}
+		.st-group-sel-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+		/* chip old */
 		.chip {
 			font-size: .67rem;
 			padding: 1px 5px;
@@ -1486,65 +1597,15 @@
 			border: 1px solid var(--border);
 			color: var(--text3)
 		}
-
 		.chip.ok {
 			background: var(--green)15;
 			border-color: var(--green)44;
 			color: var(--green)
 		}
-
 		.chip.miss {
 			background: var(--red)15;
 			border-color: var(--red)44;
 			color: var(--red)
-		}
-
-		/* ── Checks de vérification (camera / gripper / synch) ─────────── */
-		.si-checks {
-			display: flex;
-			gap: 6px;
-			flex-wrap: wrap;
-			margin-top: 3px
-		}
-
-		.si-check {
-			display: flex;
-			align-items: center;
-			gap: 3px;
-			font-size: .65rem;
-			color: var(--text3)
-		}
-
-		.si-dot {
-			width: 7px;
-			height: 7px;
-			border-radius: 50%;
-			background: var(--border);
-			flex-shrink: 0
-		}
-
-		.si-check.chk-ok .si-dot {
-			background: var(--green)
-		}
-
-		.si-check.chk-ok {
-			color: var(--green)
-		}
-
-		.si-check.chk-fail .si-dot {
-			background: var(--red)
-		}
-
-		.si-check.chk-fail {
-			color: var(--red)
-		}
-
-		.si-check.chk-warn .si-dot {
-			background: var(--orange)
-		}
-
-		.si-check.chk-warn {
-			color: var(--orange)
 		}
 
 		/* ══ Log Panel ══════════════════════════════════════════════════════ */
@@ -3654,7 +3715,22 @@
 						<div id="sess-scenario-bar"
 							style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;min-height:28px">
 						</div>
-						<div id="sess-list"></div>
+						<div id="sess-table-wrap">
+							<table id="sess-table">
+								<thead>
+									<tr>
+										<th></th>
+										<th class="col-name">Session</th>
+										<th class="col-files">Fichiers</th>
+										<th class="col-checks">Vérifications</th>
+										<th class="col-score">Score</th>
+										<th class="col-scen">Scénario</th>
+										<th class="col-rot" title="Rotation vidéo 180°">↻</th>
+									</tr>
+								</thead>
+								<tbody id="sess-list"></tbody>
+							</table>
+						</div>
 						<div class="div" style="margin:10px 0 8px"></div>
 						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 							<button class="btn p" id="btn-sess-run" onclick="openStepsModal('selected')" disabled>
@@ -6335,92 +6411,6 @@
 			return serials.length ? serials.join(',') : '__no_serials__' + s.name;
 		}
 
-		function _buildSessItem(s) {
-			const div = document.createElement('div');
-			const _si_hasIssues = _sessionHasIssues(s);
-			div.className = 'sess-item'
-				+ (S.selected.has(s.path) ? ' selected' : '')
-				+ (_si_hasIssues ? ' has-issues' : '')
-				+ (s.video_rotated ? ' is-rotated' : '');
-			div.onclick = () => { toggleSel(s.path, div); renderPipelineBoard(); };
-
-			const meta = s.meta || {};
-			const sc = syncScore(s.pipeline_state);
-			const _steps = s.pipeline_state?.steps || {};
-			const _stepCls = st => st === 'done' ? 'chk-ok' : st === 'failed' || st === 'rolled_back' ? 'chk-fail' : 'chk-pending';
-			const _verif = s.meta?.verification;
-			const _labelVerif = s.meta?.camera_label_verification;
-
-			// check_sync : utilise check_score (check.py) si disponible
-			const _checkScore = meta?.check_score ?? null;
-			const _videoDelay = _verif?.stats?.video_max_delay_ms;
-			const _syncSt = _steps['check_sync']?.status;
-			const _syncTitle = _checkScore != null
-				? `check.py : ${Math.round(_checkScore)}%  ia=${(meta?.check_ia_score ?? 0).toFixed(3)}${meta?.check_blocking ? '  ✗ ' + meta.check_blocking : ''}`
-				: (_videoDelay != null ? `Délai max ${_videoDelay}ms` : 'check non exécuté');
-			const _syncCls = _checkScore != null
-				? (_checkScore >= 70 ? 'chk-ok' : _checkScore >= 40 ? 'chk-warn' : 'chk-fail')
-				: (_videoDelay != null
-					? (_videoDelay <= 500 ? 'chk-ok' : 'chk-fail')
-					: (_syncSt === 'done' ? 'chk-ok' : _syncSt === 'failed' ? 'chk-fail' : 'chk-pending'));
-
-			// verify trackers
-			const _verifSt = _steps['verify']?.status;
-			const _gripIssues = (_verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
-			const _gripTitle = _verif
-				? (_gripIssues ? 'Issues trackers: ' + (_verif.issues || []).filter(i => /gripper|tracker|déplacement/i.test(i)).slice(0, 2).join('; ') : 'Trackers OK')
-				: 'verify non exécuté';
-			const _gripCls = _verif ? (_gripIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_verifSt);
-
-			// verify vidéo/désync
-			const _videoIssues = (_verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
-			const _videoSt = _steps['video']?.status;
-			const _videoTitle = _verif ? (_videoIssues ? 'Problème désync vidéo' : 'Vidéo OK') : 'verify non exécuté';
-			const _videoCls = _verif ? (_videoIssues ? 'chk-fail' : 'chk-ok') : _stepCls(_videoSt);
-
-			// verify_labels : labels caméras
-			const _labelSt = _steps['verify_labels']?.status;
-			const _labelConf = _labelVerif?.confidence != null ? ` (conf ${(_labelVerif.confidence * 100).toFixed(0)}%)` : '';
-			const _labelTitle = _labelVerif != null
-				? (_labelVerif.global_ok ? `Labels OK${_labelConf}` : `Labels incorrects${_labelConf}`)
-				: 'verify_labels non exécuté';
-			const _labelCls = _labelVerif != null
-				? (_labelVerif.global_ok ? 'chk-ok' : 'chk-fail')
-				: _stepCls(_labelSt);
-
-			// validate (ia_sync)
-			const _validSt = _steps['validate']?.status;
-			const _iaScore = meta.ia_sync_avg_score;
-			const _iaTitle = meta.ia_sync_validated
-				? `IA sync validé — score ${_iaScore != null ? _iaScore : '?'}`
-				: 'validate non exécuté';
-			const _validCls = meta.ia_sync_validated ? 'chk-ok' : _stepCls(_validSt);
-
-			const _rotateTitle = s.video_rotated
-				? `Vidéo rotée 180°${s.rotate_info?.rotated_at ? ' — ' + s.rotate_info.rotated_at.slice(0, 10) : ''}${s.rotate_info?.sides?.length ? ' (' + s.rotate_info.sides.join(', ') + ')' : ''}`
-				: 'Vidéo non rotée';
-
-			div.innerHTML = `
-      <div class="si-name">${s.name}</div>
-      <div class="si-chips">
-        <span class="chip ${s.has_tracker ? 'ok' : 'miss'}">tracker</span>
-        <span class="chip ${s.has_gripper ? 'ok' : 'miss'}">gripper</span>
-        <span class="chip ${s.has_ux ? 'ok' : 'miss'}">ux</span>
-        <span class="chip ${s.has_jsonl ? 'ok' : 'miss'}">jsonl</span>
-      </div>
-      <div class="si-checks">
-        <span class="si-check ${_syncCls}" title="${_syncTitle}"><span class="si-dot"></span>sync</span>
-        <span class="si-check ${_gripCls}" title="${_gripTitle}"><span class="si-dot"></span>trackers</span>
-        <span class="si-check ${_videoCls}" title="${_videoTitle}"><span class="si-dot"></span>vidéo</span>
-        <span class="si-check ${_labelCls}" title="${_labelTitle}"><span class="si-dot"></span>labels</span>
-        <span class="si-check ${_validCls}" title="${_iaTitle}"><span class="si-dot"></span>ia_sync</span>
-      </div>
-      ${meta.scenario ? `<span class="b dim" style="margin-left:6px">${meta.scenario}</span>` : ''}
-      ${sc ? `<span class="si-score"><span class="sb ${sc.grade}">${sc.grade}</span><span style="color:var(--text3)">${sc.score}/100</span></span>` : ''}
-      <span class="si-rotate-badge ${s.video_rotated ? 'rotated' : 'not-rotated'}" title="${_rotateTitle}">↻</span>
-    `;
-			return div;
-		}
 
 		function _renderScenarioBar() {
 			const bar = ge('sess-scenario-bar');
@@ -6464,11 +6454,14 @@
 			renderSessionsList();
 		}
 
+		// ── Sessions table : rendu virtuel léger ────────────────────────────
+		// Chaque ligne est une <tr> simple ; la sélection toggle juste une classe CSS.
+		// On ne rebuild PAS toute la table sur chaque clic, seulement sur scan/filtre.
+		let _sessRenderPending = false;
+
 		function renderSessionsList() {
-			const list = ge('sess-list');
 			_renderScenarioBar();
 
-			// Appliquer le filtre scénario
 			const visible = S.scenarioFilter
 				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
 				: S.sessions;
@@ -6476,55 +6469,181 @@
 			ge('sess-count').textContent = S.scenarioFilter
 				? `${visible.length} / ${S.sessions.length}`
 				: S.sessions.length;
-			list.innerHTML = '';
+
 			_updateSessActions();
 
-			// Grouper par poste (même set de serials caméra)
-			const groups = new Map(); // key -> { serials, sessions[] }
+			if (_sessRenderPending) return;
+			_sessRenderPending = true;
+
+			requestAnimationFrame(() => {
+				_sessRenderPending = false;
+				_renderSessTable(visible);
+			});
+		}
+
+		function _renderSessTable(visible) {
+			const tbody = ge('sess-list');
+			if (!tbody) return;
+
+			// Grouper par poste
+			const groups = new Map();
 			visible.forEach(s => {
 				const key = _sessPostKey(s);
 				if (!groups.has(key)) {
-					const cameras = s.meta?.cameras || {};
-					const serials = Object.values(cameras).map(c => c.serial).filter(Boolean).sort();
+					const cams = s.meta?.cameras || {};
+					const serials = Object.values(cams).map(c => c.serial).filter(Boolean).sort();
 					groups.set(key, { serials, sessions: [] });
 				}
 				groups.get(key).sessions.push(s);
 			});
 
-			let postIndex = 1;
+			const frag = document.createDocumentFragment();
+			let postIdx = 1;
+
 			groups.forEach(({ serials, sessions }) => {
-				const groupDiv = document.createElement('div');
-				groupDiv.className = 'post-group';
-
-				const header = document.createElement('div');
-				header.className = 'post-group-header';
-				const serialsText = serials.length ? serials.join(' · ') : '—';
-				header.innerHTML = `
-					<span class="post-group-label">Poste ${postIndex}</span>
-					<span class="post-group-serials" title="Numéros de série caméras">${serialsText}</span>
-					<span class="post-group-count">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>
-				`;
-
-				const sessionsDiv = document.createElement('div');
-				sessionsDiv.className = 'post-group-sessions';
-				sessions.forEach(s => sessionsDiv.appendChild(_buildSessItem(s)));
-
-				// Clic sur header : sélectionner/désélectionner tout le groupe
-				header.onclick = () => {
+				// — Ligne de groupe —
+				const gtr = document.createElement('tr');
+				gtr.className = 'st-group-row';
+				const gtd = document.createElement('td');
+				gtd.colSpan = 7;
+				const serialTxt = serials.length ? serials.join(' · ') : '—';
+				gtd.innerHTML = `Poste ${postIdx} <span style="font-weight:400;color:var(--text3);font-size:.62rem;letter-spacing:0;text-transform:none;margin-left:6px">${serialTxt}</span>`
+					+ `<button class="st-group-sel-btn" data-grp="${postIdx}">Sélect. groupe</button>`
+					+ `<span style="margin-left:auto;float:right;font-weight:400;color:var(--text3)">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>`;
+				gtr.appendChild(gtd);
+				// sélection groupe
+				gtd.querySelector('.st-group-sel-btn').addEventListener('click', (e) => {
+					e.stopPropagation();
 					const allSel = sessions.every(s => S.selected.has(s.path));
 					sessions.forEach(s => allSel ? S.selected.delete(s.path) : S.selected.add(s.path));
 					_saveSelection();
-					renderSessionsList();
+					// Mettre à jour juste les classes des lignes concernées
+					sessions.forEach(s => {
+						const row = tbody.querySelector(`tr[data-path="${CSS.escape(s.path)}"]`);
+						if (row) row.classList.toggle('st-selected', S.selected.has(s.path));
+					});
+					_updateSessActions();
+					_updateScriptRunBtn();
 					renderPipelineBoard();
 					refreshExportBtn();
-				};
+				});
+				frag.appendChild(gtr);
 
-				groupDiv.appendChild(header);
-				groupDiv.appendChild(sessionsDiv);
-				list.appendChild(groupDiv);
-				postIndex++;
+				// — Lignes sessions —
+				sessions.forEach(s => {
+					frag.appendChild(_buildSessRow(s));
+				});
+				postIdx++;
 			});
-			tvRefreshSessions();
+
+			tbody.textContent = ''; // vide sans parser HTML
+			tbody.appendChild(frag);
+		}
+
+		function _buildSessRow(s) {
+			const tr = document.createElement('tr');
+			tr.dataset.path = s.path;
+
+			const isSel = S.selected.has(s.path);
+			const hasIssues = _sessionHasIssues(s);
+			if (isSel) tr.classList.add('st-selected');
+			if (hasIssues) tr.classList.add('st-issues');
+
+			tr.addEventListener('click', () => {
+				if (S.selected.has(s.path)) S.selected.delete(s.path);
+				else S.selected.add(s.path);
+				tr.classList.toggle('st-selected', S.selected.has(s.path));
+				_saveSelection();
+				_updateSessActions();
+				_updateScriptRunBtn();
+				renderPipelineBoard();
+				refreshExportBtn();
+				tvRefreshSessions();
+			});
+
+			const meta   = s.meta || {};
+			const ps     = s.pipeline_state;
+			const steps  = ps?.steps || {};
+			const verif  = meta.verification;
+			const lblV   = meta.camera_label_verification;
+
+			// ── colonne checkbox ──
+			const tdCb = document.createElement('td');
+			tdCb.className = 'st-cb-cell';
+			tr.appendChild(tdCb);
+
+			// ── colonne nom ──
+			const tdName = document.createElement('td');
+			tdName.className = 'st-name';
+			tdName.title = s.path;
+			tdName.textContent = s.name;
+			tr.appendChild(tdName);
+
+			// ── colonne fichiers ──
+			const tdFiles = document.createElement('td');
+			const c = (ok, lbl) => `<span class="st-chip ${ok ? 'ck' : 'cx'}">${lbl}</span>`;
+			tdFiles.innerHTML = `<div class="st-chips">${c(s.has_tracker,'trk')}${c(s.has_gripper,'grp')}${c(s.has_ux,'ux')}${c(s.has_jsonl,'jsonl')}</div>`;
+			tr.appendChild(tdFiles);
+
+			// ── colonne checks ──
+			const tdChk = document.createElement('td');
+
+			// sync
+			const chkScore = meta.check_score ?? null;
+			const vidDelay = verif?.stats?.video_max_delay_ms;
+			const syncSt   = steps['check_sync']?.status;
+			let syncCls = 'pen';
+			if (chkScore != null) syncCls = chkScore >= 70 ? 'ok' : chkScore >= 40 ? 'wrn' : 'err';
+			else if (vidDelay != null) syncCls = vidDelay <= 500 ? 'ok' : 'err';
+			else if (syncSt === 'done') syncCls = 'ok';
+			else if (syncSt === 'failed') syncCls = 'err';
+			const syncLbl = chkScore != null ? `sync ${Math.round(chkScore)}%` : 'sync';
+
+			// trackers
+			const gripIss = (verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
+			const gripCls = verif ? (gripIss ? 'err' : 'ok') : (steps['verify']?.status === 'done' ? 'ok' : steps['verify']?.status === 'failed' ? 'err' : 'pen');
+
+			// vidéo
+			const vidIss  = (verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
+			const vidCls  = verif ? (vidIss ? 'err' : 'ok') : (steps['video']?.status === 'done' ? 'ok' : steps['video']?.status === 'failed' ? 'err' : 'pen');
+
+			// labels
+			const lblCls  = lblV != null ? (lblV.global_ok ? 'ok' : 'err') : (steps['verify_labels']?.status === 'done' ? 'ok' : steps['verify_labels']?.status === 'failed' ? 'err' : 'pen');
+
+			// ia_sync
+			const iaCls   = meta.ia_sync_validated ? 'ok' : (steps['validate']?.status === 'done' ? 'ok' : steps['validate']?.status === 'failed' ? 'err' : 'pen');
+
+			tdChk.innerHTML = `<div class="st-dots">
+				<span class="st-dot ${syncCls}" title="${syncLbl}">${syncLbl}</span>
+				<span class="st-dot ${gripCls}" title="trackers">trk</span>
+				<span class="st-dot ${vidCls}"  title="vidéo">vid</span>
+				<span class="st-dot ${lblCls}"  title="labels">lbl</span>
+				<span class="st-dot ${iaCls}"   title="ia_sync">ia</span>
+			</div>`;
+			tr.appendChild(tdChk);
+
+			// ── colonne score ──
+			const tdScore = document.createElement('td');
+			tdScore.style.textAlign = 'center';
+			const sc = syncScore(ps);
+			if (sc) {
+				tdScore.innerHTML = `<span class="st-grade" style="color:${sc.color};border-color:${sc.color}44">${sc.grade}</span>`;
+				tdScore.title = `Score: ${sc.score}/100`;
+			}
+			tr.appendChild(tdScore);
+
+			// ── colonne scénario ──
+			const tdScen = document.createElement('td');
+			tdScen.style.cssText = 'font-size:.72rem;color:var(--text3);overflow:hidden;text-overflow:ellipsis';
+			tdScen.textContent = meta.scenario || '';
+			tr.appendChild(tdScen);
+
+			// ── colonne rotation ──
+			const tdRot = document.createElement('td');
+			tdRot.innerHTML = `<span class="st-rot ${s.video_rotated ? 'on' : ''}" title="${s.video_rotated ? 'Vidéo rotée 180°' : 'Non rotée'}">↻</span>`;
+			tr.appendChild(tdRot);
+
+			return tr;
 		}
 
 		function _saveSelection() {
@@ -6542,8 +6661,9 @@
 		}
 
 		function toggleSel(path, el) {
-			if (S.selected.has(path)) { S.selected.delete(path); el.classList.remove('selected'); }
-			else { S.selected.add(path); el.classList.add('selected'); }
+			// kept for compatibility — new rows use inline listeners in _buildSessRow
+			if (S.selected.has(path)) { S.selected.delete(path); el?.classList.remove('st-selected'); }
+			else { S.selected.add(path); el?.classList.add('st-selected'); }
 			_saveSelection();
 			_updateSessActions();
 			tvRefreshSessions();
@@ -6554,12 +6674,28 @@
 				: S.sessions;
 		}
 
-		function selAll() { _visibleSessions().forEach(s => S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function deselAll() { _visibleSessions().forEach(s => S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selValid() { _visibleSessions().forEach(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selIssues() { _visibleSessions().forEach(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selRotated() { _visibleSessions().forEach(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
-		function selNotRotated() { _visibleSessions().forEach(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); _saveSelection(); renderSessionsList(); renderPipelineBoard(); refreshExportBtn(); }
+		function _applySelAndRefresh(fn) {
+			_visibleSessions().forEach(fn);
+			_saveSelection();
+			// Update class on existing rows without re-rendering the whole table
+			const tbody = ge('sess-list');
+			if (tbody) {
+				tbody.querySelectorAll('tr[data-path]').forEach(tr => {
+					tr.classList.toggle('st-selected', S.selected.has(tr.dataset.path));
+				});
+			}
+			_updateSessActions();
+			_updateScriptRunBtn();
+			renderPipelineBoard();
+			refreshExportBtn();
+		}
+
+		function selAll()       { _applySelAndRefresh(s => S.selected.add(s.path)); }
+		function deselAll()     { _applySelAndRefresh(s => S.selected.delete(s.path)); }
+		function selValid()     { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); }
+		function selIssues()    { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selRotated()   { _applySelAndRefresh(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selNotRotated(){ _applySelAndRefresh(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;

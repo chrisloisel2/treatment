@@ -893,63 +893,67 @@ async def index():
     return FileResponse(str(_static_dir / "index.html"))
 
 
-@app.get("/api/stats")
+def _worker_stats(job: Job):
+    """Scanne bronze/silver/gold/rejected et agrège les stats par scénario."""
+    BASE   = Path("/mnt/storage")
+    TIERS  = ["bronze", "silver", "gold", "rejected"]
+    try:
+        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=5)
+        result: dict = {}
+        for i, tier in enumerate(TIERS):
+            tier_dir   = BASE / tier
+            tier_data: dict = {}
+            total_count   = 0
+            total_seconds = 0.0
+            if tier_dir.exists() and tier_dir.is_dir():
+                try:
+                    entries = [
+                        d for d in tier_dir.iterdir()
+                        if d.is_dir()
+                        and not d.name.startswith(".")
+                        and not d.name.startswith("_")
+                    ]
+                except PermissionError:
+                    entries = []
+                _log_job(job, f"[{tier}] {len(entries)} dossiers trouvés")
+                for sess in sorted(entries, key=lambda p: p.name):
+                    meta: dict = {}
+                    meta_path = sess / "metadata.json"
+                    if meta_path.exists():
+                        try:
+                            meta = json.loads(meta_path.read_text())
+                        except Exception:
+                            pass
+                    scenario = meta.get("scenario") or "(sans scénario)"
+                    duration = float(meta.get("duration_seconds") or 0)
+                    if scenario not in tier_data:
+                        tier_data[scenario] = {"count": 0, "seconds": 0.0}
+                    tier_data[scenario]["count"]   += 1
+                    tier_data[scenario]["seconds"] += duration
+                    total_count   += 1
+                    total_seconds += duration
+            result[tier] = {
+                "total_count":   total_count,
+                "total_seconds": round(total_seconds, 2),
+                "by_scenario":   {
+                    sc: {"count": v["count"], "seconds": round(v["seconds"], 2)}
+                    for sc, v in sorted(tier_data.items())
+                },
+            }
+            _update_job(job, progress=5 + int(90 * (i + 1) / len(TIERS)))
+        _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100, result=result)
+    except Exception:
+        err = traceback.format_exc()
+        _log_job(job, err, "ERROR")
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
+
+
+@app.post("/api/stats")
 async def stats_overview():
-    """Statistiques globales sur bronze / silver / gold / rejected.
-    Scanne chaque tier, lit metadata.json de chaque session et agrège
-    par scénario : nombre de sessions + durée totale en secondes.
-    """
-    BASE = Path("/mnt/storage")
-    TIERS = ["bronze", "silver", "gold", "rejected"]
-
-    result: dict = {}
-
-    for tier in TIERS:
-        tier_dir = BASE / tier
-        tier_data: dict = {}   # scenario -> {count, seconds}
-        total_count   = 0
-        total_seconds = 0.0
-
-        if tier_dir.exists() and tier_dir.is_dir():
-            try:
-                entries = [
-                    d for d in tier_dir.iterdir()
-                    if d.is_dir()
-                    and not d.name.startswith(".")
-                    and not d.name.startswith("_")
-                ]
-            except PermissionError:
-                entries = []
-
-            for sess in sorted(entries, key=lambda p: p.name):
-                meta: dict = {}
-                meta_path = sess / "metadata.json"
-                if meta_path.exists():
-                    try:
-                        meta = json.loads(meta_path.read_text())
-                    except Exception:
-                        pass
-
-                scenario = meta.get("scenario") or "(sans scénario)"
-                duration = float(meta.get("duration_seconds") or 0)
-
-                if scenario not in tier_data:
-                    tier_data[scenario] = {"count": 0, "seconds": 0.0}
-                tier_data[scenario]["count"]   += 1
-                tier_data[scenario]["seconds"] += duration
-                total_count   += 1
-                total_seconds += duration
-
-        result[tier] = {
-            "total_count":   total_count,
-            "total_seconds": round(total_seconds, 2),
-            "by_scenario":   {
-                sc: {"count": v["count"], "seconds": round(v["seconds"], 2)}
-                for sc, v in sorted(tier_data.items())
-            },
-        }
-
-    return result
+    """Lance un scan asynchrone de bronze/silver/gold/rejected. Retourne job_id."""
+    job = _new_job("stats")
+    threading.Thread(target=_worker_stats, args=(job,), daemon=True).start()
+    return {"job_id": job.id}
 
 
 @app.get("/api/health")

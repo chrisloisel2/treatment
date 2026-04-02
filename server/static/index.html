@@ -9892,11 +9892,13 @@
 		}
 
 		// ══════════════════════════════════════════════════════════════════
-		// Statistiques ECharts — polling /api/stats toutes les 5 s
+		// Statistiques ECharts — job toutes les 5 s
 		// ══════════════════════════════════════════════════════════════════
 		const _ecInst = {};
-		let _statsTimer = null;
-		let _statsActive = false;
+		let _statsTimer   = null;
+		let _statsActive  = false;
+		let _statsJobId   = null;
+		let _statsPolling = false;
 
 		function _ecInit(id) {
 			if (_ecInst[id]) { _ecInst[id].dispose(); }
@@ -9906,9 +9908,9 @@
 
 		function renderStats() {
 			_statsActive = true;
-			_statsFetch();
+			_statsLaunch();
 			if (!_statsTimer) {
-				_statsTimer = setInterval(() => { if (_statsActive) _statsFetch(); }, 5000);
+				_statsTimer = setInterval(() => { if (_statsActive && !_statsPolling) _statsLaunch(); }, 5000);
 			}
 		}
 
@@ -9916,14 +9918,34 @@
 			_statsActive = false;
 		}
 
-		async function _statsFetch() {
-			let data;
+		async function _statsLaunch() {
+			_statsPolling = true;
 			try {
-				data = await api('GET', '/api/stats');
-			} catch (e) {
-				return;
+				const { job_id } = await api('POST', '/api/stats');
+				_statsJobId = job_id;
+				_statsPollJob(job_id);
+			} catch(e) {
+				_statsPolling = false;
 			}
-			_statsRender(data);
+		}
+
+		function _statsPollJob(jobId) {
+			const t = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${jobId}`);
+					if (j.status === 'done') {
+						clearInterval(t);
+						_statsPolling = false;
+						if (j.result) _statsRender(j.result);
+					} else if (j.status === 'error') {
+						clearInterval(t);
+						_statsPolling = false;
+					}
+				} catch(e) {
+					clearInterval(t);
+					_statsPolling = false;
+				}
+			}, 400);
 		}
 
 		function _statsRender(data) {

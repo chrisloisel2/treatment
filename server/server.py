@@ -893,6 +893,65 @@ async def index():
     return FileResponse(str(_static_dir / "index.html"))
 
 
+@app.get("/api/stats")
+async def stats_overview():
+    """Statistiques globales sur bronze / silver / gold / rejected.
+    Scanne chaque tier, lit metadata.json de chaque session et agrège
+    par scénario : nombre de sessions + durée totale en secondes.
+    """
+    BASE = Path("/mnt/storage")
+    TIERS = ["bronze", "silver", "gold", "rejected"]
+
+    result: dict = {}
+
+    for tier in TIERS:
+        tier_dir = BASE / tier
+        tier_data: dict = {}   # scenario -> {count, seconds}
+        total_count   = 0
+        total_seconds = 0.0
+
+        if tier_dir.exists() and tier_dir.is_dir():
+            try:
+                entries = [
+                    d for d in tier_dir.iterdir()
+                    if d.is_dir()
+                    and not d.name.startswith(".")
+                    and not d.name.startswith("_")
+                ]
+            except PermissionError:
+                entries = []
+
+            for sess in sorted(entries, key=lambda p: p.name):
+                meta: dict = {}
+                meta_path = sess / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        meta = json.loads(meta_path.read_text())
+                    except Exception:
+                        pass
+
+                scenario = meta.get("scenario") or "(sans scénario)"
+                duration = float(meta.get("duration_seconds") or 0)
+
+                if scenario not in tier_data:
+                    tier_data[scenario] = {"count": 0, "seconds": 0.0}
+                tier_data[scenario]["count"]   += 1
+                tier_data[scenario]["seconds"] += duration
+                total_count   += 1
+                total_seconds += duration
+
+        result[tier] = {
+            "total_count":   total_count,
+            "total_seconds": round(total_seconds, 2),
+            "by_scenario":   {
+                sc: {"count": v["count"], "seconds": round(v["seconds"], 2)}
+                for sc, v in sorted(tier_data.items())
+            },
+        }
+
+    return result
+
+
 @app.get("/api/health")
 async def health():
     """Health check pour orchestrateurs (Kubernetes, Airflow, etc.)."""

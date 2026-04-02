@@ -1750,6 +1750,43 @@
 			justify-content: flex-end
 		}
 
+		/* ── Scripts section ──────────────────────────────────────────────── */
+		.script-chip {
+			display: inline-flex;
+			align-items: center;
+			gap: 5px;
+			padding: 4px 10px;
+			background: var(--bg3);
+			border: 1px solid var(--border);
+			border-radius: 4px;
+			font-size: .74rem;
+			color: var(--text2);
+			cursor: pointer;
+			user-select: none;
+			transition: background .12s, border-color .12s, color .12s;
+			white-space: nowrap;
+			max-width: 260px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.script-chip:hover {
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+
+		.script-chip.selected {
+			background: var(--accent)22;
+			border-color: var(--accent);
+			color: var(--accent);
+			font-weight: 600;
+		}
+
+		.script-chip .sc-ico {
+			font-size: .8rem;
+			opacity: .7;
+		}
+
 		/* Divider */
 		.div {
 			height: 1px;
@@ -3280,7 +3317,7 @@
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Bronze :</span>
-							<input type="text" id="bronze-dir-input" placeholder="/mnt/storage/bronze"
+							<input type="text" id="bronze-dir-input" placeholder="/mnt/inbox"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<button class="btn p" id="inbox-scan-btn" onclick="inboxScan()">
@@ -3349,13 +3386,17 @@
 					</div>
 
 					<!-- Service 24/7 -->
-					<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:16px">
+					<div
+						style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:16px">
 						<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-							<div style="font-size:.68rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em">
+							<div
+								style="font-size:.68rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em">
 								Service 24/7 (systemd)
 							</div>
 							<div style="display:flex;align-items:center;gap:8px">
-								<span id="svc-badge" style="font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)">— inconnu</span>
+								<span id="svc-badge"
+									style="font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)">—
+									inconnu</span>
 								<button class="btn sm" onclick="svcRefresh()" style="font-size:.72rem">↻ Statut</button>
 							</div>
 						</div>
@@ -3379,7 +3420,7 @@
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Bronze</label>
-								<input type="text" id="svc-bronze" value="/mnt/storage/bronze"
+								<input type="text" id="svc-bronze" value="/mnt/inbox"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
@@ -3411,8 +3452,10 @@
 
 						<!-- Zone commandes shell (root) -->
 						<div id="svc-cmd-box" style="display:none">
-							<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-								<span style="font-size:.7rem;color:var(--orange)">⚠ Exécutez ces commandes en root sur le serveur :</span>
+							<div
+								style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+								<span style="font-size:.7rem;color:var(--orange)">⚠ Exécutez ces commandes en root sur
+									le serveur :</span>
 								<button class="btn sm" onclick="svcCopyCmd()" style="font-size:.7rem">⎘ Copier</button>
 							</div>
 							<pre id="svc-status-out"
@@ -3444,7 +3487,7 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
 									ok 2
 								</span>
-								<input type="hidden" id="cfg-root" value="/mnt/storage/bronze" />
+								<input type="hidden" id="cfg-root" value="/mnt/inbox" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3478,6 +3521,19 @@
 						<div class="stat c">
 							<div class="v" id="ps-nas">0</div>
 							<div class="l">Sur NAS</div>
+						</div>
+					</div>
+
+					<!-- Scripts section -->
+					<div class="card" id="scripts-card" style="margin-bottom:14px">
+						<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+							<div class="card-h" style="margin:0">Scripts sur sessions sélectionnées</div>
+							<button class="btn sm" onclick="scriptsRefresh()" title="Recharger la liste des scripts">⟳</button>
+							<div style="flex:1"></div>
+							<button class="btn sm p" id="btn-scripts-run" onclick="scriptsRunSelected()" disabled>▶ Lancer scripts</button>
+						</div>
+						<div id="scripts-list" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px">
+							<span style="font-size:.75rem;color:var(--text3);padding:4px 0" id="scripts-empty">Chargement…</span>
 						</div>
 					</div>
 
@@ -4311,7 +4367,8 @@
 ══════════════════════════════════════════════════════ -->
 				<div class="page" id="page-stats">
 					<div class="ph">Statistiques</div>
-					<div class="ps">Répartition des sessions par scénario, heures générées et distribution temporelle.</div>
+					<div class="ps">Répartition des sessions par scénario, heures générées et distribution temporelle.
+					</div>
 
 					<!-- KPI bar -->
 					<div id="stats-kpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
@@ -4680,7 +4737,7 @@
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/mnt/storage/bronze" />
+								<input type="text" id="s-root" value="/mnt/inbox" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
@@ -5136,7 +5193,7 @@
 			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
 			cfg: {
-				root: '/mnt/storage/bronze', model: '_sync_ml_model', nas: '',
+				root: '/mnt/inbox', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5328,7 +5385,7 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze';
+			const root = S.cfg.root || ge('s-root').value || '/mnt/inbox';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -5371,9 +5428,9 @@
 			// Le scan inclut déjà pipeline_steps/pipeline_done — pas d'appel HTTP supplémentaire.
 			if (!sess.pipeline_state && sess.pipeline_steps) {
 				sess.pipeline_state = {
-					steps:    sess.pipeline_steps,
+					steps: sess.pipeline_steps,
 					finished: sess.pipeline_done || false,
-					success:  sess.pipeline_done || false,
+					success: sess.pipeline_done || false,
 				};
 			}
 			return sess;
@@ -5497,6 +5554,74 @@
 
 		async function runAll() {
 			openStepsModal('all');
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Scripts personnalisés
+		// ══════════════════════════════════════════════════════════════════
+		let _allScripts = [];       // [{ path, name, label }]
+		let _selectedScripts = new Set();
+
+		async function scriptsRefresh() {
+			const emEl = ge('scripts-empty');
+			const listEl = ge('scripts-list');
+			try {
+				const { scripts } = await api('GET', '/api/scripts/list');
+				_allScripts = scripts || [];
+				_selectedScripts = new Set();
+				_renderScriptChips();
+			} catch (e) {
+				if (emEl) emEl.textContent = 'Erreur chargement scripts';
+			}
+		}
+
+		function _renderScriptChips() {
+			const listEl = ge('scripts-list');
+			if (!listEl) return;
+			if (!_allScripts.length) {
+				listEl.innerHTML = '<span style="font-size:.75rem;color:var(--text3);padding:4px 0">Aucun script trouvé</span>';
+				return;
+			}
+			listEl.innerHTML = _allScripts.map((s, i) => {
+				const sel = _selectedScripts.has(s.path) ? ' selected' : '';
+				const title = s.path;
+				return `<span class="script-chip${sel}" title="${title}" onclick="scriptToggle(${i})">
+					<span class="sc-ico">📄</span>${s.label}
+				</span>`;
+			}).join('');
+			_updateScriptRunBtn();
+		}
+
+		function scriptToggle(i) {
+			const s = _allScripts[i];
+			if (!s) return;
+			if (_selectedScripts.has(s.path)) _selectedScripts.delete(s.path);
+			else _selectedScripts.add(s.path);
+			_renderScriptChips();
+		}
+
+		function _updateScriptRunBtn() {
+			const btn = ge('btn-scripts-run');
+			if (!btn) return;
+			const hasSel = S.selected.size > 0 && _selectedScripts.size > 0;
+			btn.disabled = !hasSel;
+			btn.title = hasSel
+				? `Lancer ${_selectedScripts.size} script(s) sur ${S.selected.size} session(s)`
+				: 'Sélectionnez des sessions ET des scripts';
+		}
+
+		async function scriptsRunSelected() {
+			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }
+			if (!_selectedScripts.size) { alert('Sélectionnez au moins un script.'); return; }
+			const sessions = [...S.selected];
+			const scripts  = [..._selectedScripts];
+			log(`Lancement de ${scripts.length} script(s) sur ${sessions.length} session(s)…`, 'INFO');
+			try {
+				const { job_id } = await api('POST', '/api/scripts/run', { sessions, scripts });
+				log(`Job scripts lancé : ${job_id}`, 'OK');
+			} catch (e) {
+				log(`Erreur lancement scripts : ${e.message}`, 'ERROR');
+			}
 		}
 
 		async function rollbackSelected() {
@@ -5668,6 +5793,7 @@
 
 			ge('btn-run-selected').disabled = S.selected.size === 0;
 			_updateSessActions();
+			_updateScriptRunBtn();
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -8449,7 +8575,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/bronze				';
+				const root = S.cfg.root || ge('s-root').value || '/mnt/inbox				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -8502,7 +8628,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/storage/bronze';
+			S.cfg.root = ge('s-root').value || '/mnt/inbox';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -8520,7 +8646,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/storage/bronze';
+				const root = c.root || '/mnt/inbox';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -9799,7 +9925,7 @@
 			try {
 				const s = await api('GET', '/api/inbox/service/status');
 				const badge = ge('svc-badge');
-				const live  = ge('svc-status-live');
+				const live = ge('svc-status-live');
 				if (s.active) {
 					badge.textContent = `● actif  PID ${s.pid || '?'}`;
 					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--green)18;color:var(--green);border:1px solid var(--green)44';
@@ -9811,7 +9937,7 @@
 					badge.style.cssText = 'font-size:.72rem;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text3);border:1px solid var(--border)';
 				}
 				live.textContent = s.status_output || (s.unit_exists ? `${s.service_file}  enabled: ${s.enabled}` : '');
-			} catch(e) {
+			} catch (e) {
 				ge('svc-status-live').textContent = `Erreur statut : ${e.message}`;
 			}
 		}
@@ -9823,21 +9949,21 @@
 			btn.disabled = true;
 			try {
 				const body = {
-					inbox_dir:  ge('svc-inbox').value.trim()  || '/mnt/inbox',
-					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/storage/bronze',
-					host:       ge('svc-host').value.trim()   || '0.0.0.0',
-					port:       parseInt(ge('svc-port').value) || 8000,
+					inbox_dir: ge('svc-inbox').value.trim() || '/mnt/inbox',
+					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/inbox',
+					host: ge('svc-host').value.trim() || '0.0.0.0',
+					port: parseInt(ge('svc-port').value) || 8000,
 				};
 				const py = ge('svc-python').value.trim();
 				const sc = ge('svc-script').value.trim();
-				if (py) body.python_bin    = py;
+				if (py) body.python_bin = py;
 				if (sc) body.server_script = sc;
 				const r = await api('POST', '/api/inbox/service/install', body);
 				ge('svc-status-out').textContent = r.shell_cmd || '';
 				ge('svc-cmd-box').style.display = 'block';
 				log(r.message, 'WARN');
 				await svcRefresh();
-			} catch(e) {
+			} catch (e) {
 				log(`Erreur génération service : ${e.message}`, 'ERROR');
 				ge('svc-status-out').textContent = e.message;
 			} finally {
@@ -9853,7 +9979,7 @@
 				ge('svc-cmd-box').style.display = 'block';
 				log(r.message, 'WARN');
 				await svcRefresh();
-			} catch(e) {
+			} catch (e) {
 				log(`Erreur génération désinstall : ${e.message}`, 'ERROR');
 			}
 		}
@@ -9887,6 +10013,7 @@
 			if (name === 'jobs') refreshPoolStatus();
 			if (name === 's3browser') s3bInit();
 			if (name === 'pipelineconfig') { pcLoad(); pcRenderGlobal(); }
+			if (name === 'pipeline') { if (!_allScripts.length) scriptsRefresh(); }
 			if (name === 'inbox') { ibLoadConfig(); inboxRender(); svcRefresh(); }
 			if (name === 'stats') renderStats();
 		}
@@ -9895,9 +10022,9 @@
 		// Statistiques ECharts — job toutes les 5 s
 		// ══════════════════════════════════════════════════════════════════
 		const _ecInst = {};
-		let _statsTimer   = null;
-		let _statsActive  = false;
-		let _statsJobId   = null;
+		let _statsTimer = null;
+		let _statsActive = false;
+		let _statsJobId = null;
 		let _statsPolling = false;
 
 		function _ecInit(id) {
@@ -9924,7 +10051,7 @@
 				const { job_id } = await api('POST', '/api/stats');
 				_statsJobId = job_id;
 				_statsPollJob(job_id);
-			} catch(e) {
+			} catch (e) {
 				_statsPolling = false;
 			}
 		}
@@ -9941,7 +10068,7 @@
 						clearInterval(t);
 						_statsPolling = false;
 					}
-				} catch(e) {
+				} catch (e) {
 					clearInterval(t);
 					_statsPolling = false;
 				}
@@ -9950,10 +10077,10 @@
 
 		function _statsRender(data) {
 			// ── Palette ──────────────────────────────────────────────────────
-			const PAL = ['#5b7df5','#8b5cf6','#06b6d4','#22d386','#f59e0b','#f04444','#ec4899','#84cc16','#14b8a6','#a78bfa'];
+			const PAL = ['#5b7df5', '#8b5cf6', '#06b6d4', '#22d386', '#f59e0b', '#f04444', '#ec4899', '#84cc16', '#14b8a6', '#a78bfa'];
 			const color = i => PAL[i % PAL.length];
 
-			const TIERS = ['bronze','silver','gold','rejected'];
+			const TIERS = ['bronze', 'silver', 'gold', 'rejected'];
 			const TIER_COLORS = { bronze: '#f59e0b', silver: '#8b8fb8', gold: '#eab308', rejected: '#f04444' };
 
 			// ── Collecte toutes les scénarios distincts ───────────────────────
@@ -9974,14 +10101,14 @@
 				return `<div style="${kpiStyle};border-top:3px solid ${TIER_COLORS[t]}">
 					<div style="font-size:1.3rem;font-weight:700;color:${TIER_COLORS[t]}">${d.total_count ?? 0}</div>
 					<div style="font-size:.68rem;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.06em">${t}</div>
-					<div style="font-size:.75rem;color:var(--text2);margin-top:2px">${((d.total_seconds||0)/3600).toFixed(2)} h</div>
+					<div style="font-size:.75rem;color:var(--text2);margin-top:2px">${((d.total_seconds || 0) / 3600).toFixed(2)} h</div>
 				</div>`;
 			}).join('');
 			ge('stats-kpis').innerHTML = `
 				<div style="${kpiStyle};border-top:3px solid var(--accent)">
 					<div style="font-size:1.5rem;font-weight:700;color:var(--accent)">${grandCount}</div>
 					<div style="font-size:.68rem;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.06em">Total sessions</div>
-					<div style="font-size:.75rem;color:var(--text2);margin-top:2px">${(grandSec/3600).toFixed(2)} h</div>
+					<div style="font-size:.75rem;color:var(--text2);margin-top:2px">${(grandSec / 3600).toFixed(2)} h</div>
 				</div>
 				<div style="${kpiStyle};border-top:3px solid var(--accent3)">
 					<div style="font-size:1.5rem;font-weight:700;color:var(--accent3)">${scenarios.length}</div>
@@ -9999,8 +10126,10 @@
 					grid: { left: 55, right: 16, top: 36, bottom: 70, containLabel: false },
 					xAxis: {
 						type: 'category', data: cats,
-						axisLabel: { color: '#8b8fb8', fontSize: 10, rotate: cats.length > 5 ? 28 : 0,
-							overflow: 'truncate', width: 80 },
+						axisLabel: {
+							color: '#8b8fb8', fontSize: 10, rotate: cats.length > 5 ? 28 : 0,
+							overflow: 'truncate', width: 80
+						},
 						axisLine: { lineStyle: { color: '#252545' } },
 						splitLine: { show: false },
 					},
@@ -10022,13 +10151,15 @@
 			// ── Bar : heures par scénario, empilées par tier ─────────────────
 			const ecBarH = _ecInit('ec-bar-hours');
 			ecBarH.setOption(Object.assign({}, baseBarOpts(scenarios), {
-				tooltip: { trigger: 'axis', backgroundColor: '#13132a', borderColor: '#252545',
+				tooltip: {
+					trigger: 'axis', backgroundColor: '#13132a', borderColor: '#252545',
 					textStyle: { color: '#dde0f5' },
 					formatter: params => {
 						let s = `<b>${params[0].axisValue}</b><br/>`;
 						params.forEach(p => { s += `${p.marker}${p.seriesName}: ${p.value} h<br/>`; });
 						return s;
-					}},
+					}
+				},
 				series: TIERS.map(t => ({
 					name: t, type: 'bar', stack: 'total', barMaxWidth: 50,
 					itemStyle: { color: TIER_COLORS[t] },
@@ -10040,11 +10171,15 @@
 			const ecPieS = _ecInit('ec-pie-sessions');
 			ecPieS.setOption({
 				backgroundColor: 'transparent',
-				tooltip: { trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
+				tooltip: {
+					trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
 					textStyle: { color: '#dde0f5' },
-					formatter: p => `${p.name}<br/><b>${p.value} session(s)</b> (${p.percent}%)` },
-				legend: { orient: 'vertical', right: 8, top: 'center',
-					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12 },
+					formatter: p => `${p.name}<br/><b>${p.value} session(s)</b> (${p.percent}%)`
+				},
+				legend: {
+					orient: 'vertical', right: 8, top: 'center',
+					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12
+				},
 				series: [{
 					type: 'pie', radius: ['38%', '68%'], center: ['38%', '50%'],
 					data: TIERS.map(t => ({ name: t, value: data[t]?.total_count || 0, itemStyle: { color: TIER_COLORS[t] } })),
@@ -10057,21 +10192,25 @@
 			const ecPieH = _ecInit('ec-pie-hours');
 			ecPieH.setOption({
 				backgroundColor: 'transparent',
-				tooltip: { trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
+				tooltip: {
+					trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
 					textStyle: { color: '#dde0f5' },
-					formatter: p => `${p.name}<br/><b>${p.value} h</b> (${p.percent}%)` },
-				legend: { orient: 'vertical', right: 8, top: 'center',
-					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12 },
+					formatter: p => `${p.name}<br/><b>${p.value} h</b> (${p.percent}%)`
+				},
+				legend: {
+					orient: 'vertical', right: 8, top: 'center',
+					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12
+				},
 				series: [{
 					type: 'pie', radius: ['38%', '68%'], center: ['38%', '50%'],
-					data: TIERS.map(t => ({ name: t, value: +((data[t]?.total_seconds||0)/3600).toFixed(3), itemStyle: { color: TIER_COLORS[t] } })),
+					data: TIERS.map(t => ({ name: t, value: +((data[t]?.total_seconds || 0) / 3600).toFixed(3), itemStyle: { color: TIER_COLORS[t] } })),
 					label: { show: false },
 					emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,.5)' } },
 				}],
 			});
 
 			setTimeout(() => {
-				['ec-bar-sessions','ec-bar-hours','ec-pie-sessions','ec-pie-hours']
+				['ec-bar-sessions', 'ec-bar-hours', 'ec-pie-sessions', 'ec-pie-hours']
 					.forEach(id => _ecInst[id]?.resize());
 			}, 50);
 		}
@@ -10169,6 +10308,7 @@
 			connectWS();
 			loadHealth();
 			loadWatcherStatus();
+			scriptsRefresh();
 			log('SyncML Studio démarré', 'OK');
 			log('Étapes: scan → tracker → vidéo → flux CSV → IA sync → validation → NAS', 'DIM');
 		});

@@ -4,7 +4,7 @@
 Pipeline Inbox → Bronze
 
 Scanne /mnt/inbox, applique 6 vérifications, puis déplace les sessions valides
-vers /mnt/storage/bronze/{scenario}.
+vers /mnt/inbox/{scenario}.
 
 Étapes :
   1. STRUCTURE   — intégrité des fichiers/dossiers requis
@@ -12,7 +12,7 @@ vers /mnt/storage/bronze/{scenario}.
   3. CSV         — validité des CSV + assurance que la pince n'est jamais bloquée à 0
   4. COMPLETUDE  — pas de tracker manquant, pas de JSONL manquant
   5. TRAKEUR     — vérification géométrique via trakeur.py (head/left/right)
-  6. MOVE        — déplacement vers /mnt/storage/bronze/{scenario}
+  6. MOVE        — déplacement vers /mnt/inbox/{scenario}
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import pandas as pd
 
 # ── Chemins ───────────────────────────────────────────────────────────────────
 INBOX_DIR  = Path("/mnt/inbox")
-BRONZE_DIR = Path("/mnt/storage/bronze")
+BRONZE_DIR = Path("/mnt/inbox")
 
 
 # ── Concurrence ───────────────────────────────────────────────────────────────

@@ -139,7 +139,7 @@ INFER_MAX_LAG_MS   = 1000.0
 MODEL_DIRNAME      = "_sync_ml_model"
 RESULTS_JSON       = "sync_ml_advanced_results.json"
 
-ROOT_DIR = Path("/mnt/storage/bronze/")
+ROOT_DIR = Path("/mnt/inbox/")
 
 # Constantes validation déterministe
 MIN_MAJOR_SCORE_TO_APPLY  = 45.0

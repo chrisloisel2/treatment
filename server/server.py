@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /mnt/storage/bronze  → source brute, lecture seule
-  /mnt/storage/bronze/    → espace de travail (copie de travail)
+  /mnt/inbox  → source brute, lecture seule
+  /mnt/inbox/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/storage/bronze")
+    INGEST_DIR = Path("/mnt/inbox")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/storage/bronze"
+DEFAULT_WATCH_DIR = "/mnt/inbox"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -294,7 +294,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /mnt/storage/bronze/ (sessions déposées par l'opérateur)
+        # Découverte dans /mnt/inbox/ (sessions déposées par l'opérateur)
         # Exclus : dossiers cachés (.) et dossiers internes (_)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
@@ -851,7 +851,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /mnt/storage/bronze/
+    session:       str        # chemin dans /mnt/inbox/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -860,7 +860,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /mnt/storage/bronze/
+    session:              str          # nom ou chemin de session dans /mnt/inbox/
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1166,7 +1166,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/bronze/."""
+    """Lance un entraînement asynchrone sur les sessions de /mnt/inbox/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1187,7 +1187,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /mnt/storage/bronze/."""
+    """Lance une inférence asynchrone sur une session de /mnt/inbox/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1231,13 +1231,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/bronze/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /mnt/inbox/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/storage/bronze/
+    # req.session peut être un nom ou un chemin complet dans /mnt/inbox/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1253,7 +1253,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /mnt/storage/bronze/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /mnt/inbox/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -3894,7 +3894,7 @@ async def inbox_service_install(req: dict):
     import shutil as _sh
 
     inbox_dir     = req.get("inbox_dir",     "/mnt/inbox")
-    bronze_dir    = req.get("bronze_dir",    "/mnt/storage/bronze")
+    bronze_dir    = req.get("bronze_dir",    "/mnt/inbox")
     host          = req.get("host",          "0.0.0.0")
     port          = int(req.get("port",      8000))
     python_bin    = req.get("python_bin")    or _sh.which("python3") or sys.executable
@@ -3933,6 +3933,83 @@ async def inbox_service_uninstall():
         "shell_cmd": shell_cmd,
         "message":   "Exécutez ces commandes en root pour désinstaller le service.",
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Scripts personnalisés
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/scripts/list")
+async def scripts_list():
+    """Liste les scripts .py disponibles à la racine du projet (hors .venv, __pycache__)."""
+    scripts = []
+    for p in sorted(_ROOT.rglob("*.py")):
+        # Exclure .venv, __pycache__, server/, et fichiers __init__
+        parts = p.relative_to(_ROOT).parts
+        if any(part in (".venv", "__pycache__", ".git") for part in parts):
+            continue
+        if p.name == "__init__.py":
+            continue
+        rel = str(p.relative_to(_ROOT))
+        scripts.append({
+            "path": rel,
+            "name": p.stem,
+            "label": rel,
+        })
+    return {"scripts": scripts}
+
+
+@app.post("/api/scripts/run")
+async def scripts_run(req: dict):
+    """
+    Lance un ou plusieurs scripts sur une liste de sessions.
+    body: { sessions: [str], scripts: [str] }
+    """
+    import subprocess as _sp
+    import importlib.util as _ilu
+
+    session_paths = req.get("sessions", [])
+    script_rels   = req.get("scripts", [])
+
+    if not session_paths or not script_rels:
+        raise HTTPException(400, "sessions et scripts requis")
+
+    job_id = str(uuid.uuid4())[:8]
+    job    = Job(id=job_id, kind="scripts")
+    with _jobs_lock:
+        _jobs[job_id] = job
+
+    def _run():
+        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=5)
+        total = len(session_paths) * len(script_rels)
+        done  = 0
+        for sess in session_paths:
+            for rel in script_rels:
+                script_path = _ROOT / rel
+                if not script_path.exists():
+                    _log_job(job, f"Script introuvable : {rel}", level="ERROR")
+                    done += 1
+                    continue
+                try:
+                    _log_job(job, f"[{Path(sess).name}] → {rel}")
+                    result = _sp.run(
+                        [sys.executable, str(script_path), sess],
+                        capture_output=True, text=True, timeout=300
+                    )
+                    if result.stdout:
+                        _log_job(job, result.stdout.strip()[:500])
+                    if result.returncode != 0:
+                        _log_job(job, result.stderr.strip()[:300] or "Erreur", level="ERROR")
+                    else:
+                        _log_job(job, f"OK : {rel}", level="OK")
+                except Exception as e:
+                    _log_job(job, f"Exception: {e}", level="ERROR")
+                done += 1
+                _update_job(job, progress=5 + 90 * done // total)
+        _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

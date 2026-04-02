@@ -135,7 +135,7 @@ MODEL_DIRNAME = "_sync_ml_model"
 RESULTS_JSON  = "sync_ml_advanced_results.json"
 
 # Espace de travail fixe — toutes les sessions sont dans ce répertoire
-ROOT_DIR = Path("/mnt/storage/bronze")
+ROOT_DIR = Path("/mnt/inbox")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

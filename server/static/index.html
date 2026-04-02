@@ -7,6 +7,7 @@
 	<title>SyncML Studio</title>
 	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 	<style>
 		/* ══ Reset ══════════════════════════════════════════════════════════ */
 		*,
@@ -3237,6 +3238,9 @@
 				<button class="nav-btn" onclick="nav('viz',this)">
 					<span class="ico">◑</span>IA Scores
 				</button>
+				<button class="nav-btn" onclick="nav('stats',this)">
+					<span class="ico">◈</span>Statistiques
+				</button>
 				<button class="nav-btn" onclick="nav('annotator',this)">
 					<span class="ico">✎</span>Annotateur
 				</button>
@@ -4298,6 +4302,43 @@
 								<div class="card-h">Peak margin</div>
 								<div class="cw lg"><canvas id="ch-margin"></canvas></div>
 							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- ══════════════════════════════════════════════════════
+  PAGE : STATISTIQUES
+══════════════════════════════════════════════════════ -->
+				<div class="page" id="page-stats">
+					<div class="ph">Statistiques</div>
+					<div class="ps">Répartition des sessions par scénario, heures générées et distribution temporelle.</div>
+
+					<!-- KPI bar -->
+					<div id="stats-kpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
+
+					<!-- Grille graphiques -->
+					<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+						<!-- Sessions par scénario (barres) -->
+						<div class="card">
+							<div class="card-h">Sessions par scénario</div>
+							<div id="ec-bar-sessions" style="height:280px"></div>
+						</div>
+						<!-- Heures par scénario (barres) -->
+						<div class="card">
+							<div class="card-h">Heures générées par scénario</div>
+							<div id="ec-bar-hours" style="height:280px"></div>
+						</div>
+					</div>
+					<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+						<!-- Répartition sessions — camembert -->
+						<div class="card">
+							<div class="card-h">Répartition sessions (pie)</div>
+							<div id="ec-pie-sessions" style="height:300px"></div>
+						</div>
+						<!-- Répartition heures — camembert -->
+						<div class="card">
+							<div class="card-h">Répartition heures (pie)</div>
+							<div id="ec-pie-hours" style="height:300px"></div>
 						</div>
 					</div>
 				</div>
@@ -9846,6 +9887,136 @@
 			if (name === 's3browser') s3bInit();
 			if (name === 'pipelineconfig') { pcLoad(); pcRenderGlobal(); }
 			if (name === 'inbox') { ibLoadConfig(); inboxRender(); svcRefresh(); }
+			if (name === 'stats') renderStats();
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Statistiques ECharts
+		// ══════════════════════════════════════════════════════════════════
+		const _ecInst = {};
+
+		function _ecInit(id) {
+			if (_ecInst[id]) { _ecInst[id].dispose(); }
+			_ecInst[id] = echarts.init(ge(id), null, { renderer: 'canvas' });
+			return _ecInst[id];
+		}
+
+		function renderStats() {
+			if (!S.sessions || S.sessions.length === 0) {
+				['ec-bar-sessions','ec-bar-hours','ec-pie-sessions','ec-pie-hours'].forEach(id => {
+					const el = ge(id);
+					if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:.85rem">Aucune session chargée</div>';
+				});
+				ge('stats-kpis').innerHTML = '';
+				return;
+			}
+
+			// ── Agréger par scénario ────────────────────────────────────────
+			const byScenario = {};
+			let totalSec = 0;
+			for (const s of S.sessions) {
+				const sc = s.meta?.scenario || '(sans scénario)';
+				const dur = s.meta?.duration_seconds ?? 0;
+				if (!byScenario[sc]) byScenario[sc] = { count: 0, seconds: 0 };
+				byScenario[sc].count++;
+				byScenario[sc].seconds += dur;
+				totalSec += dur;
+			}
+			const scenarios = Object.keys(byScenario).sort();
+			const counts = scenarios.map(sc => byScenario[sc].count);
+			const hours  = scenarios.map(sc => +(byScenario[sc].seconds / 3600).toFixed(3));
+			const totalH = totalSec / 3600;
+
+			// ── KPI bar ─────────────────────────────────────────────────────
+			const kpiStyle = `background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+				padding:12px 20px;min-width:140px;flex:1;text-align:center`;
+			ge('stats-kpis').innerHTML = [
+				{ label: 'Sessions totales', value: S.sessions.length },
+				{ label: 'Scénarios',         value: scenarios.length },
+				{ label: 'Heures générées',   value: totalH.toFixed(2) + ' h' },
+				{ label: 'Durée moyenne',     value: (S.sessions.length ? (totalSec / S.sessions.length).toFixed(1) : 0) + ' s' },
+			].map(k => `<div style="${kpiStyle}">
+				<div style="font-size:1.5rem;font-weight:700;color:var(--accent)">${k.value}</div>
+				<div style="font-size:.72rem;color:var(--text3);margin-top:4px;text-transform:uppercase;letter-spacing:.06em">${k.label}</div>
+			</div>`).join('');
+
+			// ── Palette ──────────────────────────────────────────────────────
+			const PAL = ['#5b7df5','#8b5cf6','#06b6d4','#22d386','#f59e0b','#f04444','#ec4899','#84cc16','#14b8a6','#a78bfa'];
+			const color = i => PAL[i % PAL.length];
+			const baseOpts = {
+				backgroundColor: 'transparent',
+				textStyle: { color: '#dde0f5' },
+				tooltip: { trigger: 'axis', backgroundColor: '#13132a', borderColor: '#252545', textStyle: { color: '#dde0f5' } },
+				grid: { left: 60, right: 20, top: 20, bottom: 80, containLabel: false },
+				xAxis: {
+					type: 'category', data: scenarios,
+					axisLabel: { color: '#8b8fb8', fontSize: 11, rotate: scenarios.length > 6 ? 30 : 0,
+						overflow: 'truncate', width: 90 },
+					axisLine: { lineStyle: { color: '#252545' } },
+					splitLine: { show: false },
+				},
+				yAxis: { axisLabel: { color: '#8b8fb8', fontSize: 11 }, splitLine: { lineStyle: { color: '#1a1a36' } } },
+			};
+
+			// ── Bar : sessions ───────────────────────────────────────────────
+			const ecBarS = _ecInit('ec-bar-sessions');
+			ecBarS.setOption(Object.assign({}, baseOpts, {
+				tooltip: Object.assign({}, baseOpts.tooltip, { formatter: p => `${p[0].name}<br/><b>${p[0].value} session(s)</b>` }),
+				series: [{
+					type: 'bar', data: counts.map((v, i) => ({ value: v, itemStyle: { color: color(i) } })),
+					barMaxWidth: 50,
+					label: { show: true, position: 'top', color: '#dde0f5', fontSize: 11 },
+				}],
+			}));
+
+			// ── Bar : heures ─────────────────────────────────────────────────
+			const ecBarH = _ecInit('ec-bar-hours');
+			ecBarH.setOption(Object.assign({}, baseOpts, {
+				tooltip: Object.assign({}, baseOpts.tooltip, { formatter: p => `${p[0].name}<br/><b>${p[0].value} h</b>` }),
+				series: [{
+					type: 'bar', data: hours.map((v, i) => ({ value: v, itemStyle: { color: color(i) } })),
+					barMaxWidth: 50,
+					label: { show: true, position: 'top', color: '#dde0f5', fontSize: 11,
+						formatter: p => p.value > 0 ? p.value + ' h' : '' },
+				}],
+			}));
+
+			// ── Pie : sessions ───────────────────────────────────────────────
+			const ecPieS = _ecInit('ec-pie-sessions');
+			ecPieS.setOption({
+				backgroundColor: 'transparent',
+				tooltip: { trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
+					textStyle: { color: '#dde0f5' },
+					formatter: p => `${p.name}<br/><b>${p.value} session(s)</b> (${p.percent}%)` },
+				legend: { orient: 'vertical', right: 10, top: 'center',
+					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12 },
+				series: [{
+					type: 'pie', radius: ['38%', '68%'], center: ['40%', '50%'],
+					data: scenarios.map((sc, i) => ({ name: sc, value: byScenario[sc].count, itemStyle: { color: color(i) } })),
+					label: { show: false },
+					emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,.5)' } },
+				}],
+			});
+
+			// ── Pie : heures ─────────────────────────────────────────────────
+			const ecPieH = _ecInit('ec-pie-hours');
+			ecPieH.setOption({
+				backgroundColor: 'transparent',
+				tooltip: { trigger: 'item', backgroundColor: '#13132a', borderColor: '#252545',
+					textStyle: { color: '#dde0f5' },
+					formatter: p => `${p.name}<br/><b>${(byScenario[p.name].seconds/3600).toFixed(3)} h</b> (${p.percent}%)` },
+				legend: { orient: 'vertical', right: 10, top: 'center',
+					textStyle: { color: '#8b8fb8', fontSize: 11 }, itemWidth: 12, itemHeight: 12 },
+				series: [{
+					type: 'pie', radius: ['38%', '68%'], center: ['40%', '50%'],
+					data: scenarios.map((sc, i) => ({ name: sc, value: +(byScenario[sc].seconds/3600).toFixed(3), itemStyle: { color: color(i) } })),
+					label: { show: false },
+					emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,.5)' } },
+				}],
+			});
+
+			// Resize observer pour les containers
+			setTimeout(() => { ecBarS.resize(); ecBarH.resize(); ecPieS.resize(); ecPieH.resize(); }, 50);
 		}
 
 		function vtab(name, el) {

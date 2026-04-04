@@ -3160,26 +3160,32 @@ def _worker_export(job: Job, req: ExportRequest):
                 continue
 
             sess_name = sess.name
+            # Chemin relatif depuis INGEST_DIR pour préserver la hiérarchie Silver
+            # ex: /mnt/storage/silver/Balls/do/session_X → Balls/do/session_X
+            try:
+                sess_rel = str(sess.relative_to(INGEST_DIR))
+            except ValueError:
+                sess_rel = sess.name
             # Log allégé : seulement tous les 50 pour les gros jobs
             if total <= 200 or (i % 50 == 0):
-                _log_job(job, f"[{i+1}/{total}] Export {sess_name}…", "INFO")
+                _log_job(job, f"[{i+1}/{total}] Export {sess_rel}…", "INFO")
             try:
                 if req.dest_type == "local":
-                    _export_local(job, sess, req.dest_local, sess_name)
+                    _export_local(job, sess, req.dest_local, sess_rel)
                 elif req.dest_type == "s3":
-                    _export_s3(job, sess, req.dest_s3, sess_name)
+                    _export_s3(job, sess, req.dest_s3, sess_rel)
                 elif req.dest_type == "sftp":
-                    _export_sftp(job, sess, req.dest_sftp, sess_name)
+                    _export_sftp(job, sess, req.dest_sftp, sess_rel)
                 else:
                     raise ValueError(f"dest_type inconnu: {req.dest_type}")
                 exported_count += 1
             except Exception as e:
                 # Limiter la taille de la liste d'erreurs pour éviter l'OOM
                 if len(errors) < 500:
-                    errors.append(f"{sess_name}: {e}")
+                    errors.append(f"{sess_rel}: {e}")
                 elif len(errors) == 500:
                     errors.append("... (trop d'erreurs, liste tronquée)")
-                _log_job(job, f"[{i+1}/{total}] ✗ {sess_name}: {e}", "ERROR")
+                _log_job(job, f"[{i+1}/{total}] ✗ {sess_rel}: {e}", "ERROR")
             _update_job(job, progress=round((i + 1) / total * 100, 1))
 
     result = {"errors": errors, "error_count": len(errors), "total": total, "exported": exported_count}

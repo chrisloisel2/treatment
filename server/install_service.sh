@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SERVICE_NAME="treatment"
-USER_NAME="spool"
-GROUP_NAME="spool"
+USER_NAME="root"
+GROUP_NAME="root"
 
 APP_DIR="/home/spool/treatment"
 WORK_DIR="/mnt/storage/silver"
@@ -22,7 +22,6 @@ fi
 if [ ! -d "$WORK_DIR" ]; then
   echo "Création du dossier de travail: $WORK_DIR"
   mkdir -p "$WORK_DIR"
-  chown "$USER_NAME:$GROUP_NAME" "$WORK_DIR"
 fi
 
 if [ ! -x "$PYTHON_BIN" ]; then
@@ -47,9 +46,6 @@ Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
-# Sécurité minimale
-NoNewPrivileges=true
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

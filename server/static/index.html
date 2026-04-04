@@ -9363,11 +9363,13 @@
 		function rejectModalClose(e) {
 			if (!e || e.target === ge('reject-modal-backdrop')) {
 				ge('reject-modal-backdrop').classList.remove('open');
+				_rejectOverrideSessions = null;
 			}
 		}
 
 		async function doReject() {
-			const sessions = [...S.selected];
+			const sessions = _rejectOverrideSessions !== null ? [..._rejectOverrideSessions] : [...S.selected];
+			_rejectOverrideSessions = null;
 			if (!sessions.length) return;
 			const cfg = getExportCfg();
 			if (!cfg.reject_path) {
@@ -9431,14 +9433,20 @@
 			ge('export-modal-backdrop').classList.add('open');
 		}
 
+		// Sessions à utiliser pour le prochain export/reject depuis le viewer (null = S.selected)
+		let _exportOverrideSessions = null;
+		let _rejectOverrideSessions = null;
+
 		function exportModalClose(e) {
 			if (!e || e.target === ge('export-modal-backdrop')) {
 				ge('export-modal-backdrop').classList.remove('open');
+				_exportOverrideSessions = null;
 			}
 		}
 
 		async function doExport() {
-			const sessions = [...S.selected];
+			const sessions = _exportOverrideSessions !== null ? [..._exportOverrideSessions] : [...S.selected];
+			_exportOverrideSessions = null;
 			if (!sessions.length) return;
 			const cfg = getExportCfg();
 
@@ -9496,36 +9504,8 @@
 		// ── Export / Reject depuis le viewer ────────────────────────────
 		function tvViewerExport() {
 			if (!TV.sessPath) return;
-			const prev = [...S.selected];
-			S.selected = new Set([TV.sessPath]);
+			_exportOverrideSessions = [TV.sessPath];
 			openExportModal();
-			// Restaurer la sélection d'origine après fermeture de la modal
-			const orig_doExport = window._tvViewerExportOrig;
-			if (!orig_doExport) {
-				window._tvViewerExportOrig = doExport;
-				window.doExport = async function () {
-					await window._tvViewerExportOrig();
-					S.selected = new Set(prev);
-					window.doExport = window._tvViewerExportOrig;
-					delete window._tvViewerExportOrig;
-				};
-			}
-			const orig_close = window._tvViewerExportCloseOrig;
-			if (!orig_close) {
-				window._tvViewerExportCloseOrig = exportModalClose;
-				window.exportModalClose = function (e) {
-					window._tvViewerExportCloseOrig(e);
-					if (!ge('export-modal-backdrop').classList.contains('open')) {
-						S.selected = new Set(prev);
-						window.exportModalClose = window._tvViewerExportCloseOrig;
-						if (window.doExport !== window._tvViewerExportOrig) {
-							window.doExport = window._tvViewerExportOrig;
-						}
-						delete window._tvViewerExportOrig;
-						delete window._tvViewerExportCloseOrig;
-					}
-				};
-			}
 		}
 
 
@@ -9739,7 +9719,6 @@
 		async function tvViewerRotate() {
 			if (!TV.sessPath) return;
 			const btn = ge('tv-rp-btn-rotate');
-			if (!confirm('↻ Rotation 180°\n\nToutes les vidéos (head, left, right) seront retournées à 180°.\nLes originaux sont conservés en .bak_rotate.\n\nConfirmer ?')) return;
 			btn.disabled = true;
 			btn.textContent = '⏳ Rotation…';
 			try {
@@ -9780,35 +9759,8 @@
 
 		function tvViewerReject() {
 			if (!TV.sessPath) return;
-			const prev = [...S.selected];
-			S.selected = new Set([TV.sessPath]);
+			_rejectOverrideSessions = [TV.sessPath];
 			openRejectModal();
-			const orig_doReject = window._tvViewerRejectOrig;
-			if (!orig_doReject) {
-				window._tvViewerRejectOrig = doReject;
-				window.doReject = async function () {
-					await window._tvViewerRejectOrig();
-					S.selected = new Set(prev);
-					window.doReject = window._tvViewerRejectOrig;
-					delete window._tvViewerRejectOrig;
-				};
-			}
-			const orig_close = window._tvViewerRejectCloseOrig;
-			if (!orig_close) {
-				window._tvViewerRejectCloseOrig = rejectModalClose;
-				window.rejectModalClose = function (e) {
-					window._tvViewerRejectCloseOrig(e);
-					if (!ge('reject-modal-backdrop').classList.contains('open')) {
-						S.selected = new Set(prev);
-						window.rejectModalClose = window._tvViewerRejectCloseOrig;
-						if (window.doReject !== window._tvViewerRejectOrig) {
-							window.doReject = window._tvViewerRejectOrig;
-						}
-						delete window._tvViewerRejectOrig;
-						delete window._tvViewerRejectCloseOrig;
-					}
-				};
-			}
 		}
 
 		// ══════════════════════════════════════════════════════════════════

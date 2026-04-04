@@ -613,6 +613,8 @@ def rotate_session_videos(
     skipped = []
     errors  = []
 
+    # Préparer les backups d'abord (séquentiel, rapide)
+    sides_to_rotate = []
     for side in sides:
         mp4 = vid_dir / f"{side}.mp4"
         bak = vid_dir / f"{side}.mp4.bak_rotate"
@@ -622,25 +624,38 @@ def rotate_session_videos(
             continue
         if not bak.exists():
             _log(f"Backup : {mp4.name} → {bak.name}")
-            shutil.copyfile(mp4, bak)  # données uniquement, pas de métadonnées/ACL NAS
+            shutil.copyfile(mp4, bak)
             try:
                 os.chmod(bak, 0o644)
             except OSError:
-                pass  # certains montages NAS n'acceptent pas chmod
+                pass
         else:
             _log(f"Backup existant conservé : {bak.name}", "INFO")
             try:
                 os.chmod(bak, 0o644)
             except OSError:
                 pass
+        sides_to_rotate.append(side)
 
+    # Rotation en parallèle (une vidéo par thread)
+    def _rotate_one(side):
+        mp4 = vid_dir / f"{side}.mp4"
+        bak = vid_dir / f"{side}.mp4.bak_rotate"
         ok = rotate_video_180(ffmpeg, bak, mp4, log=log)
-        if ok:
-            rotated.append(side)
-        else:
-            errors.append(side)
+        if not ok:
             shutil.copyfile(bak, mp4)
             _log(f"Restauration backup {side}.mp4 après échec", "WARN")
+        return side, ok
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=len(sides_to_rotate) or 1) as pool:
+        futures = {pool.submit(_rotate_one, s): s for s in sides_to_rotate}
+        for fut in as_completed(futures):
+            side, ok = fut.result()
+            if ok:
+                rotated.append(side)
+            else:
+                errors.append(side)
 
     if not errors:
         marker.write_text(

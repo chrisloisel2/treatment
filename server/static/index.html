@@ -39,8 +39,8 @@
 			--color-head: #5b7df5;
 			--color-left: #22d386;
 			--color-right: #f59e0b;
-			--color-grip-left: #8b5cf6;
-			--color-grip-right: #f04444;
+			--color-grip-left: var(--color-left);
+			--color-grip-right: var(--color-right);
 			--yellow: #eab308;
 			--r: 6px;
 			--rs: 4px;
@@ -7106,8 +7106,8 @@
 
 		const TV_COLORS = {
 			...SLOT_COLORS,
-			grip_left: '#8b5cf6',
-			grip_right: '#f04444',
+			grip_left: SLOT_COLORS.left,
+			grip_right: SLOT_COLORS.right,
 			flux_head: SLOT_COLORS.head,
 			flux_left: SLOT_COLORS.left,
 			flux_right: SLOT_COLORS.right,

@@ -9490,6 +9490,15 @@
 				const res = await api('POST', '/api/export', body);
 				const n = sessions.length;
 				log(`Export lancé — job ${res.job_id}`, 'OK');
+				// Retirer immédiatement les sessions exportées de la liste
+				const exportedSet = new Set(sessions);
+				S.sessions = S.sessions.filter(s => !exportedSet.has(s.path));
+				exportedSet.forEach(p => S.selected.delete(p));
+				_saveSelection();
+				renderSessionsList();
+				renderPipelineBoard();
+				refreshExportBtn();
+				updateNavBadges();
 				const banner = ge('sess-export-banner');
 				if (banner) {
 					ge('sess-export-banner-text').textContent = `Export lancé en arrière-plan — ${n} session${n > 1 ? 's' : ''} (job ${res.job_id.slice(0, 8)}…)`;

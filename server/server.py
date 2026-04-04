@@ -3477,6 +3477,89 @@ async def apply_gripper_offset(req: ApplyGripperOffsetRequest):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Vérification alignement pinces (timestamps absolus)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CheckPincesRequest(BaseModel):
+    session: str
+
+
+def _worker_check_pinces(job: Job, req: CheckPincesRequest):
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        from utils.sync import (
+            _PincesThresholds, _process_side_pinces,
+        )
+        sess_path = Path(req.session)
+        thr       = _PincesThresholds()
+        results   = {}
+
+        for i, side in enumerate(("left", "right"), 1):
+            _log_job(job, f"Analyse côté {side}…", "INFO")
+            r = _process_side_pinces(sess_path, side, thr)
+            _update_job(job, progress=i * 50.0)
+
+            if not r.success:
+                results[side] = {"status": "FAILED", "error": r.error}
+                _log_job(job, f"  {side}: FAILED — {r.error[:120]}", "ERROR")
+                continue
+
+            alerts_list = [
+                {"code": a.code, "level": a.level, "message": a.message,
+                 "value": round(a.value, 3), "threshold": round(a.threshold, 3)}
+                for a in r.alerts
+            ]
+            aln = r.alignment
+            results[side] = {
+                "status":            r.status,
+                "n_errors":          r.n_errors,
+                "n_warnings":        r.n_warnings,
+                "alerts":            alerts_list,
+                "offset_start_ms":   round(aln.offset_start_ms, 2),
+                "latency_max_ms":    round(aln.latency_max_abs_ms, 2) if aln.latency_max_abs_ms == aln.latency_max_abs_ms else None,
+                "latency_p95_ms":    round(aln.latency_p95_abs_ms, 2) if aln.latency_p95_abs_ms == aln.latency_p95_abs_ms else None,
+                "sensor_gap_max_ms": round(aln.sensor_gap_max_ms, 1) if aln.sensor_gap_max_ms != float("inf") else None,
+                "sensor_gap_count":  aln.sensor_gap_count,
+                "overlap_s":         round(aln.overlap_s, 2),
+                "frame_drops":       r.video.frame_drops,
+                "jitter_std_ms":     round(r.video.jitter_std_ms, 3),
+                "neg_dt_count":      r.sensor.neg_dt_count,
+            }
+            sym = {"OK": "✓", "WARNING": "⚠", "ERROR": "✗"}.get(r.status, "?")
+            _log_job(job, f"  {side}: {sym} {r.status}  off={aln.offset_start_ms:+.1f}ms  "
+                          f"lat_max={aln.latency_max_abs_ms:.1f}ms  "
+                          f"errs={r.n_errors}  warn={r.n_warnings}",
+                     "OK" if r.status == "OK" else ("WARN" if r.status == "WARNING" else "ERROR"))
+
+        overall = "OK"
+        for s in results.values():
+            st = s.get("status", "FAILED")
+            if st == "FAILED" or st == "ERROR":
+                overall = "ERROR"; break
+            if st == "WARNING":
+                overall = "WARNING"
+
+        _log_job(job, f"Vérification pinces terminée — {overall}", "OK" if overall == "OK" else "WARN")
+        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(),
+                    result={"overall": overall, "sides": results})
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur check_pinces : {e}", "ERROR")
+
+
+@app.post("/api/session/check_pinces")
+async def check_pinces(req: CheckPincesRequest):
+    """Vérifie l'alignement pince/vidéo d'une session par comparaison des timestamps absolus."""
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    if not Path(req.session).exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    job = _new_job("check_pinces")
+    threading.Thread(target=_worker_check_pinces, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # S3 Input Source — browse / stream / move
 # ──────────────────────────────────────────────────────────────────────────────
 

@@ -2182,19 +2182,23 @@ def _cmd_score(args) -> int:
         return 1
 
     if args.session:
-        session_dirs = [root / args.session]
-        if not session_dirs[0].is_dir():
-            print(f"Erreur : session introuvable : {session_dirs[0]}", file=sys.stderr)
+        matches = [p.parent for p in root.rglob("metadata.json")
+                   if p.parent.name == args.session]
+        if not matches:
+            print(f"Erreur : session introuvable : {args.session}", file=sys.stderr)
             return 1
+        session_dirs = matches
     else:
-        session_dirs = sorted([d for d in root.iterdir()
-                                if d.is_dir() and d.name.startswith("session_")])
+        session_dirs = sorted(
+            p.parent for p in root.rglob("metadata.json")
+            if p.parent.name.startswith("session_") and "__FAILED" not in str(p.parent)
+        )
 
     print(f"  → {len(session_dirs)} session(s) détectées dans {root}", file=sys.stderr)
 
     results = []
     for i, sd in enumerate(session_dirs, 1):
-        print(f"  [{i:2d}/{len(session_dirs)}] {sd.name} ...", end=" ", flush=True, file=sys.stderr)
+        print(f"  [{i:2d}/{len(session_dirs)}] [{_session_action(sd)}] {sd.name} ...", end=" ", flush=True, file=sys.stderr)
         r = score_session(sd)
         results.append(r)
         score_str = f"{r['session_score']:.1f}" if r["session_score"] is not None else "N/A"
@@ -2215,6 +2219,11 @@ def _cmd_score(args) -> int:
         print(f"  JSON sauvegardé → {args.json_out}")
 
     return 0
+
+
+def _session_action(session_path: Path) -> str:
+    """Retourne l'action (do/undo/reset/...) = nom du dossier parent de la session."""
+    return session_path.parent.name
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2312,6 +2321,7 @@ class _SideResult:
     session_name: str
     side:         str
     success:      bool
+    action:       str = ""
     error:        str = ""
     video:        Optional[_VidTsMetrics]       = None
     sensor:       Optional[_SensorMetricsPinces] = None
@@ -2632,6 +2642,7 @@ def _generate_pinces_alerts(vid, sen, aln, phy, thr) -> List[_PincesAlert]:
 
 def _process_side_pinces(session_path: Path, side: str, thr: _PincesThresholds) -> _SideResult:
     session_name = session_path.name
+    action       = _session_action(session_path)
     jsonl_path   = session_path / "videos" / f"{side}.jsonl"
     sensor_path  = session_path / f"gripper_{side}_data.csv"
 
@@ -2639,7 +2650,7 @@ def _process_side_pinces(session_path: Path, side: str, thr: _PincesThresholds) 
     if missing:
         names = [p.name for p in missing]
         return _SideResult(session_name=session_name, side=side, success=False,
-                           error=f"Fichiers absents : {names}")
+                           action=action, error=f"Fichiers absents : {names}")
     try:
         indices, ts_ns = _load_jsonl_timestamps_pinces(jsonl_path)
         sensor_df      = _load_sensor_pinces(sensor_path)
@@ -2653,7 +2664,7 @@ def _process_side_pinces(session_path: Path, side: str, thr: _PincesThresholds) 
         als = _generate_pinces_alerts(vid, sen, aln, phy, thr)
 
         return _SideResult(
-            session_name=session_name, side=side, success=True,
+            session_name=session_name, side=side, success=True, action=action,
             video=vid, sensor=sen, alignment=aln, physical=phy,
             alerts=als, has_errors=any(a.level == "ERROR" for a in als),
             sensor_df=sensor_df,
@@ -2661,6 +2672,7 @@ def _process_side_pinces(session_path: Path, side: str, thr: _PincesThresholds) 
     except Exception as exc:
         import traceback
         return _SideResult(session_name=session_name, side=side, success=False,
+                           action=action,
                            error=f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
 
 
@@ -2699,9 +2711,9 @@ def _print_pinces_summary(all_results: List[_SideResult]) -> None:
     if err_list or fail_list:
         print("\nPROBLÈMES CRITIQUES :")
         for r in fail_list:
-            print(f"  [FAILED] {r.session_name}/{r.side} — {r.error[:100]}")
+            print(f"  [FAILED] {r.action}/{r.session_name}/{r.side} — {r.error[:100]}")
         for r in err_list:
-            print(f"  [ERROR]  {r.session_name}/{r.side}")
+            print(f"  [ERROR]  {r.action}/{r.session_name}/{r.side}")
             for a in r.alerts:
                 if a.level == "ERROR":
                     print(f"    [{a.code}] {a.message}")
@@ -2754,8 +2766,9 @@ def _cmd_pinces(args) -> int:
     all_results: List[_SideResult] = []
 
     for i, spath in enumerate(all_session_paths):
-        sname = spath.name
-        print(f"  [{i+1:02d}/{len(all_session_paths)}] {sname}", end="", flush=True)
+        sname  = spath.name
+        action = _session_action(spath)
+        print(f"  [{i+1:02d}/{len(all_session_paths)}] [{action}] {sname}", end="", flush=True)
 
         for side in ("left", "right"):
             r = _process_side_pinces(spath, side, thr)
@@ -2928,15 +2941,17 @@ def _fix_session_camera(session_path: Path, dry_run: bool = False, force: bool =
 def _print_fix_camera_report(report: dict) -> None:
     status  = report["status"]
     session = report["session"]
+    action  = report.get("action", "")
     reason  = report.get("reason", "")
+    prefix  = f"[{action}] " if action else ""
     if status in ("skipped", "ok"):
-        print(f"  [{status.upper()}] {session} — {reason}")
+        print(f"  [{status.upper()}] {prefix}{session} — {reason}")
         return
     if status == "error":
-        print(f"  [ERROR] {session} — {reason}")
+        print(f"  [ERROR] {prefix}{session} — {reason}")
         return
     trk_dur = report.get("tracker_duration_s", 0)
-    print(f"  [{status.upper()}] {session}  (tracker window={trk_dur:.1f}s)")
+    print(f"  [{status.upper()}] {prefix}{session}  (tracker window={trk_dur:.1f}s)")
     for c in report.get("cameras_fixed", []):
         cam     = c["camera"]
         off     = c["offset_ms"]
@@ -2987,6 +3002,7 @@ def _cmd_fix_camera(args) -> int:
     n_corrected = n_skipped = n_errors = 0
     for session_path in sessions:
         report = _fix_session_camera(session_path, dry_run=args.dry_run, force=args.force)
+        report["action"] = _session_action(session_path)
         _print_fix_camera_report(report)
         if report["status"] in ("corrected", "dry-run"):
             n_corrected += 1

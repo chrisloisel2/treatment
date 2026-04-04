@@ -4349,6 +4349,9 @@
 											<button class="tv-rp-btn" id="tv-rp-btn-check" onclick="tvViewerCheck()"
 												style="background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent);font-weight:600;margin-top:4px"
 												disabled>🔍 Vérifier</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-pinces" onclick="tvViewerCheckPinces()"
+												style="background:var(--orange)1a;border-color:var(--orange)55;color:var(--orange);font-weight:600;margin-top:4px"
+												disabled>🦾 Pinces</button>
 											<button class="tv-rp-btn" id="tv-rp-btn-repair" onclick="tvViewerRepair()"
 												style="background:var(--accent3)1a;border-color:var(--accent3)55;color:var(--accent3);font-weight:600;margin-top:4px"
 												disabled>🔧 Réparer</button>
@@ -7364,6 +7367,7 @@
 			ge('tv-grip-offset').value = 0;
 			ge('tv-rp-btn-export').disabled = false;
 			ge('tv-rp-btn-check').disabled = false;
+			ge('tv-rp-btn-pinces').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
 			ge('tv-rp-btn-reject').disabled = false;
 			tvTrackerSwapBuildPanel(path);
@@ -9530,6 +9534,61 @@
 						clearInterval(poll);
 						log('Diagnostic échoué : ' + (j.error || '?'), 'ERROR');
 						btn.textContent = '🔍 Vérifier';
+						btn.disabled = false;
+					}
+				} catch (_) { }
+			}, 1500);
+		}
+
+		// ── Vérification alignement pinces ───────────────────────────────────────
+		async function tvViewerCheckPinces() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-rp-btn-pinces');
+			btn.disabled = true;
+			btn.textContent = '⏳ Pinces…';
+			try {
+				const { job_id } = await api('POST', '/api/session/check_pinces', { session: TV.sessPath });
+				log('Vérification pinces lancée : ' + job_id, 'OK');
+				_tvPincesWatchJob(job_id, btn);
+			} catch (e) {
+				log('Pinces erreur : ' + e.message, 'ERROR');
+				btn.textContent = '🦾 Pinces';
+				btn.disabled = false;
+			}
+		}
+
+		function _tvPincesWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const res = j.result || {};
+						const overall = res.overall || '?';
+						const sides = res.sides || {};
+						const colorMap = { OK: 'var(--green)', WARNING: 'var(--orange)', ERROR: 'var(--red)', FAILED: 'var(--red)' };
+						const color = colorMap[overall] || 'var(--text2)';
+						btn.style.color = color;
+						btn.style.borderColor = color.replace(')', '55)').replace('var(', 'var(');
+						btn.textContent = overall === 'OK' ? '🦾 OK' : overall === 'WARNING' ? '🦾 ⚠' : '🦾 ✗';
+						btn.disabled = false;
+						for (const [side, s] of Object.entries(sides)) {
+							if (s.status === 'FAILED') {
+								log(`Pinces ${side}: FAILED — ${s.error || '?'}`, 'ERROR');
+								continue;
+							}
+							const lvl = s.status === 'OK' ? 'OK' : s.status === 'WARNING' ? 'WARN' : 'ERROR';
+							log(`Pinces ${side}: ${s.status}  off=${s.offset_start_ms != null ? s.offset_start_ms.toFixed(1) : '?'}ms  lat_max=${s.latency_max_ms != null ? s.latency_max_ms.toFixed(1) : '?'}ms  errs=${s.n_errors}  warn=${s.n_warnings}`, lvl);
+							if (s.alerts && s.alerts.length) {
+								for (const a of s.alerts) {
+									log(`  [${a.level}] [${a.code}] ${a.message}`, a.level === 'ERROR' ? 'ERROR' : 'WARN');
+								}
+							}
+						}
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						log('Pinces échoué : ' + (j.error || '?'), 'ERROR');
+						btn.textContent = '🦾 Pinces';
 						btn.disabled = false;
 					}
 				} catch (_) { }

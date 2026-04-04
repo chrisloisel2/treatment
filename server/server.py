@@ -3479,6 +3479,157 @@ async def apply_gripper_offset(req: ApplyGripperOffsetRequest):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Trim to SW — tronque tous les fichiers sur la fenêtre sw=ON → sw=OFF (gripper droit)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TrimToSwRequest(BaseModel):
+    session: str
+    force:   bool = False
+
+
+def _worker_trim_to_sw(job: Job, req: TrimToSwRequest):
+    import pandas as pd
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        sess = Path(req.session)
+        meta_path = sess / "metadata.json"
+
+        # Marqueur anti-double-application
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        if not req.force and meta.get("trim_to_sw_applied"):
+            _log_job(job, "Déjà tronqué (trim_to_sw_applied=true) — utilise --force pour ré-appliquer", "WARN")
+            _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(),
+                        result={"status": "skipped", "reason": "déjà appliqué"})
+            return
+
+        # ── 1. Lire gripper droit, trouver t0 (1er sw=ON) et t1 (dernier sw=OFF) ──
+        grip_right = sess / "gripper_right_data.csv"
+        if not grip_right.exists():
+            raise FileNotFoundError("gripper_right_data.csv introuvable")
+
+        df_gr = pd.read_csv(grip_right)
+        if "sw" not in df_gr.columns or "timestamp_ns" not in df_gr.columns:
+            raise ValueError("Colonnes 'sw' ou 'timestamp_ns' manquantes dans gripper_right_data.csv")
+
+        on_rows  = df_gr[df_gr["sw"] == "ON"]
+        off_rows = df_gr[df_gr["sw"] == "OFF"]
+        if on_rows.empty:
+            raise ValueError("Aucune ligne sw=ON dans gripper_right_data.csv")
+        if off_rows.empty:
+            raise ValueError("Aucune ligne sw=OFF dans gripper_right_data.csv")
+
+        t0_ns = int(on_rows["timestamp_ns"].iloc[0])
+        t1_ns = int(off_rows["timestamp_ns"].iloc[-1])
+        duration_s = (t1_ns - t0_ns) / 1e9
+
+        _log_job(job, f"Fenêtre sw : t0={t0_ns}  t1={t1_ns}  durée={duration_s:.2f}s", "INFO")
+        _update_job(job, progress=10.0)
+
+        report = {
+            "status":     "trimmed",
+            "t0_ns":      t0_ns,
+            "t1_ns":      t1_ns,
+            "duration_s": round(duration_s, 3),
+            "files":      [],
+        }
+
+        # ── helper : tronque un CSV sur [t0_ns, t1_ns] ──────────────────────────
+        def trim_csv(path: Path, ts_col: str):
+            if not path.exists():
+                return
+            df = pd.read_csv(path)
+            if ts_col not in df.columns:
+                _log_job(job, f"  {path.name} : colonne '{ts_col}' absente — ignoré", "WARN")
+                return
+            before = len(df)
+            df = df[(df[ts_col] >= t0_ns) & (df[ts_col] <= t1_ns)].reset_index(drop=True)
+            after = len(df)
+            tmp = path.with_name(f"__tmp_{path.name}")
+            df.to_csv(tmp, index=False)
+            tmp.replace(path)
+            report["files"].append({"file": path.name, "rows_before": before, "rows_after": after})
+            _log_job(job, f"  {path.name} : {before} → {after} lignes", "OK")
+
+        # ── 2. Tronquer gripper left et right ───────────────────────────────────
+        trim_csv(sess / "gripper_right_data.csv", "timestamp_ns")
+        _update_job(job, progress=30.0)
+        trim_csv(sess / "gripper_left_data.csv",  "timestamp_ns")
+        _update_job(job, progress=45.0)
+
+        # ── 3. Tronquer tracker ──────────────────────────────────────────────────
+        trim_csv(sess / "tracker_positions.csv", "timestamp_ns")
+        _update_job(job, progress=60.0)
+
+        # ── 4. Tronquer les JSONL caméras ────────────────────────────────────────
+        # capture_time est en ms → convertir t0/t1 en ms pour comparaison
+        t0_ms = t0_ns / 1_000_000
+        t1_ms = t1_ns / 1_000_000
+
+        def trim_jsonl(path: Path):
+            if not path.exists():
+                return
+            with open(path, "rb") as f:
+                raw = f.read()
+            frames_in = []
+            for line in raw.split(b"\r\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    frames_in.append(json.loads(line.decode("utf-8")))
+                except Exception:
+                    continue
+            frames_out = [fr for fr in frames_in if t0_ms <= fr.get("capture_time", 0) <= t1_ms]
+            lines = [json.dumps(fr, separators=(",", ":")) + "\r\n" for fr in frames_out]
+            tmp = path.with_suffix(".jsonl.tmp")
+            with open(tmp, "wb") as f:
+                f.write("".join(lines).encode("utf-8"))
+            tmp.replace(path)
+            report["files"].append({
+                "file": path.name,
+                "rows_before": len(frames_in),
+                "rows_after":  len(frames_out),
+            })
+            _log_job(job, f"  {path.name} : {len(frames_in)} → {len(frames_out)} frames", "OK")
+
+        videos_dir = sess / "videos"
+        for cam in ("head", "left", "right"):
+            trim_jsonl(videos_dir / f"{cam}.jsonl")
+        _update_job(job, progress=90.0)
+
+        # ── 5. Marquer dans metadata.json ────────────────────────────────────────
+        meta["trim_to_sw_applied"] = True
+        meta["trim_to_sw_t0_ns"]   = t0_ns
+        meta["trim_to_sw_t1_ns"]   = t1_ns
+        meta["trim_to_sw_duration_s"] = round(duration_s, 3)
+        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        _log_job(job, f"✓ Trim terminé — durée conservée : {duration_s:.2f}s", "OK")
+        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(), result=report)
+
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur trim_to_sw : {e}", "ERROR")
+
+
+@app.post("/api/session/trim_to_sw")
+async def trim_to_sw(req: TrimToSwRequest):
+    """Tronque tous les fichiers de la session sur la fenêtre sw=ON → sw=OFF du gripper droit."""
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    if not Path(req.session).exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    job = _new_job("trim_to_sw")
+    threading.Thread(target=_worker_trim_to_sw, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Vérification alignement pinces (timestamps absolus)
 # ──────────────────────────────────────────────────────────────────────────────
 

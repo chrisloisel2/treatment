@@ -2723,7 +2723,7 @@
 		}
 
 		.tv-rp-section {
-			padding: 10px 12px 6px;
+			padding: 10px 12px 20px;
 			border-bottom: 1px solid var(--border)66
 		}
 
@@ -4349,9 +4349,13 @@
 											<button class="tv-rp-btn" id="tv-rp-btn-check" onclick="tvViewerCheck()"
 												style="background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent);font-weight:600;margin-top:4px"
 												disabled>🔍 Vérifier</button>
-											<button class="tv-rp-btn" id="tv-rp-btn-pinces" onclick="tvViewerCheckPinces()"
+											<button class="tv-rp-btn" id="tv-rp-btn-pinces"
+												onclick="tvViewerCheckPinces()"
 												style="background:var(--orange)1a;border-color:var(--orange)55;color:var(--orange);font-weight:600;margin-top:4px"
 												disabled>🦾 Pinces</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-trim-sw" onclick="tvViewerTrimSW()"
+												style="background:var(--yellow)1a;border-color:var(--yellow)55;color:var(--yellow);font-weight:600;margin-top:4px"
+												disabled>✂ Trim SW</button>
 											<button class="tv-rp-btn" id="tv-rp-btn-repair" onclick="tvViewerRepair()"
 												style="background:var(--accent3)1a;border-color:var(--accent3)55;color:var(--accent3);font-weight:600;margin-top:4px"
 												disabled>🔧 Réparer</button>
@@ -7370,6 +7374,7 @@
 			ge('tv-rp-btn-export').disabled = false;
 			ge('tv-rp-btn-check').disabled = false;
 			ge('tv-rp-btn-pinces').disabled = false;
+			ge('tv-rp-btn-trim-sw').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
 			ge('tv-rp-btn-reject').disabled = false;
 			tvTrackerSwapBuildPanel(path);
@@ -9536,6 +9541,57 @@
 						clearInterval(poll);
 						log('Diagnostic échoué : ' + (j.error || '?'), 'ERROR');
 						btn.textContent = '🔍 Vérifier';
+						btn.disabled = false;
+					}
+				} catch (_) { }
+			}, 1500);
+		}
+
+		// ── Trim to SW (gripper droit ON→OFF) ─────────────────────────────
+		async function tvViewerTrimSW() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-rp-btn-trim-sw');
+			if (!confirm('\u26a0 Trim SW \u2014 op\xe9ration irr\xe9versible\n\nTous les fichiers de la session (gripper, tracker, cam\xe9ras) seront tronqu\xe9s sur la fen\xeatre sw=ON \u2192 sw=OFF du gripper droit.\n\nConfirmer ?')) return;
+			btn.disabled = true;
+			btn.textContent = '\u23f3 Trim\u2026';
+			try {
+				const { job_id } = await api('POST', '/api/session/trim_to_sw', { session: TV.sessPath });
+				log('Trim SW lanc\xe9 : ' + job_id, 'OK');
+				_tvTrimSwWatchJob(job_id, btn);
+			} catch (e) {
+				log('Trim SW erreur : ' + e.message, 'ERROR');
+				btn.textContent = '\u2702 Trim SW';
+				btn.disabled = false;
+			}
+		}
+
+		function _tvTrimSwWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const r = j.result || {};
+						if (r.status === 'skipped') {
+							log('Trim SW : ' + (r.reason || 'd\xe9j\xe0 appliqu\xe9'), 'WARN');
+							btn.textContent = '\u2702 Trim SW';
+							btn.disabled = false;
+							return;
+						}
+						const dur = r.duration_s != null ? r.duration_s.toFixed(2) + 's' : '?';
+						log('\u2702 Trim SW termin\xe9 \u2014 fen\xeatre conserv\xe9e : ' + dur, 'OK');
+						for (const f of (r.files || [])) {
+							log('  ' + f.file + ' : ' + f.rows_before + ' \u2192 ' + f.rows_after, 'INFO');
+						}
+						btn.style.color = 'var(--green)';
+						btn.style.borderColor = 'var(--green)55';
+						btn.textContent = '\u2702 ' + dur;
+						btn.disabled = false;
+						tvSelectSession(TV.sessPath);
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						log('Trim SW \xe9chou\xe9 : ' + (j.error || '?'), 'ERROR');
+						btn.textContent = '\u2702 Trim SW';
 						btn.disabled = false;
 					}
 				} catch (_) { }

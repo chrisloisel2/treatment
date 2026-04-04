@@ -294,13 +294,14 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /mnt/storage/silver/ (sessions déposées par l'opérateur)
-        # Exclus : dossiers cachés (.) et dossiers internes (_)
+        # Découverte récursive dans /mnt/storage/silver/ : sessions = dossiers
+        # contenant metadata.json, quel que soit le niveau d'imbrication.
+        # Exclus : dossiers __FAILED et dossiers cachés/internes.
         sessions = [
-            s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
-            if s.is_dir()
-            and not s.name.startswith("_")
-            and not s.name.startswith(".")
+            p.parent for p in (INGEST_DIR.rglob("metadata.json") if INGEST_DIR.exists() else [])
+            if not p.parent.name.startswith("_")
+            and not p.parent.name.startswith(".")
+            and "__FAILED" not in str(p.parent)
         ]
         model_exists = (MODEL_DIR / "model.pt").exists()
         result = []
@@ -349,6 +350,7 @@ def _worker_scan(job: Job):
             result.append({
                 "name":           s.name,
                 "path":           str(s),
+                "action":         s.parent.name,
                 "has_tracker":    has_tracker,
                 "has_gripper":    has_gripper,
                 "has_ux":         has_ux,

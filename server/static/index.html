@@ -6670,7 +6670,9 @@
 			const tdName = document.createElement('td');
 			tdName.className = 'st-name';
 			tdName.title = s.path;
-			tdName.textContent = s.name;
+			tdName.innerHTML = s.action
+				? `<span style="color:var(--text2);font-weight:400;font-size:.8em;margin-right:5px">[${s.action}]</span>${s.name}`
+				: s.name;
 			tr.appendChild(tdName);
 
 			// ── colonne fichiers ──

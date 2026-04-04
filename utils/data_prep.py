@@ -622,18 +622,24 @@ def rotate_session_videos(
             continue
         if not bak.exists():
             _log(f"Backup : {mp4.name} → {bak.name}")
-            shutil.copy2(mp4, bak)
-            os.chmod(bak, 0o644)
+            shutil.copyfile(mp4, bak)  # données uniquement, pas de métadonnées/ACL NAS
+            try:
+                os.chmod(bak, 0o644)
+            except OSError:
+                pass  # certains montages NAS n'acceptent pas chmod
         else:
             _log(f"Backup existant conservé : {bak.name}", "INFO")
-            os.chmod(bak, 0o644)
+            try:
+                os.chmod(bak, 0o644)
+            except OSError:
+                pass
 
         ok = rotate_video_180(ffmpeg, bak, mp4, log=log)
         if ok:
             rotated.append(side)
         else:
             errors.append(side)
-            shutil.copy2(bak, mp4)
+            shutil.copyfile(bak, mp4)
             _log(f"Restauration backup {side}.mp4 après échec", "WARN")
 
     if not errors:

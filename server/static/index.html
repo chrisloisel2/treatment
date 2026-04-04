@@ -9723,16 +9723,11 @@
 		async function tvViewerRotate() {
 			if (!TV.sessPath) return;
 			const btn = ge('tv-rp-btn-rotate');
-			const sess = S.sessions.find(s => s.path === TV.sessPath);
-			const alreadyDone = sess?.video_rotated;
-			const msg = alreadyDone
-				? '↻ Rotation 180°\n\nCette session est déjà marquée comme rotée.\nForcer la re-rotation ?'
-				: '↻ Rotation 180°\n\nToutes les vidéos (head, left, right) seront retournées à 180°.\nLes originaux sont conservés en .bak_rotate.\n\nConfirmer ?';
-			if (!confirm(msg)) return;
+			if (!confirm('↻ Rotation 180°\n\nToutes les vidéos (head, left, right) seront retournées à 180°.\nLes originaux sont conservés en .bak_rotate.\n\nConfirmer ?')) return;
 			btn.disabled = true;
 			btn.textContent = '⏳ Rotation…';
 			try {
-				const { job_id } = await api('POST', '/api/session/rotate_videos', { session: TV.sessPath, force: !!alreadyDone });
+				const { job_id } = await api('POST', '/api/session/rotate_videos', { session: TV.sessPath, force: true });
 				log('Rotation lancée : ' + job_id, 'OK');
 				_tvRotateWatchJob(job_id, btn);
 			} catch (e) {
@@ -9749,12 +9744,6 @@
 					if (j.status === 'done') {
 						clearInterval(poll);
 						const r = j.result || {};
-						if (r.already_done) {
-							log('Rotation : déjà effectuée (.rotate_done présent)', 'WARN');
-							btn.textContent = '↻ Rotate 180°';
-							btn.disabled = false;
-							return;
-						}
 						const n = (r.rotated || []).length;
 						log(`↻ Rotation terminée — ${n} vidéo(s) retournée(s)`, 'OK');
 						if (r.errors?.length) log(`  Erreurs : ${r.errors.join(', ')}`, 'ERROR');

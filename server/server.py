@@ -3225,16 +3225,9 @@ def _export_local_lerobot(job: Job, src: Path, dest: ExportDestLocal, dataset_na
 def _export_local(job: Job, src: Path, dest: ExportDestLocal, sess_name: str):
     import shutil
     out = Path(dest.path) / sess_name
-    out.mkdir(parents=True, exist_ok=True)
-    n = 0
-    for f in src.rglob("*"):
-        if f.is_file():
-            rel = f.relative_to(src)
-            dst = out / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, dst)
-            n += 1
-    _log_job(job, f"    → local: {out} ({n} fichiers)", "INFO")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(out))
+    _log_job(job, f"    → local (move): {out}", "INFO")
 
 
 def _export_s3(job: Job, src: Path, dest: ExportDestS3, sess_name: str):

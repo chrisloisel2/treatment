@@ -27,6 +27,7 @@ import argparse
 import copy
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -493,7 +494,11 @@ ROTATE_MARKER  = ".rotate_done"
 
 def _ffmpeg_available() -> Optional[str]:
     for candidate in ("ffmpeg", "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
-        if shutil.which(candidate):
+        # shutil.which fonctionne pour les noms simples ; pour les chemins absolus on vérifie l'existence
+        if os.path.isabs(candidate):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        elif shutil.which(candidate):
             return candidate
     return None
 
@@ -618,8 +623,10 @@ def rotate_session_videos(
         if not bak.exists():
             _log(f"Backup : {mp4.name} → {bak.name}")
             shutil.copy2(mp4, bak)
+            os.chmod(bak, 0o644)
         else:
             _log(f"Backup existant conservé : {bak.name}", "INFO")
+            os.chmod(bak, 0o644)
 
         ok = rotate_video_180(ffmpeg, bak, mp4, log=log)
         if ok:

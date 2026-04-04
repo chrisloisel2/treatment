@@ -20,7 +20,10 @@ const TV3D = {
 	initialized: false,
 };
 
-const TV3D_COLORS = { head: 0x5b7df5, left: 0x22d386, right: 0xf59e0b };
+// Dérivé de SLOT_COLORS (index.html) — même palette head/left/right
+const TV3D_COLORS = typeof SLOT_COLORS !== 'undefined'
+	? Object.fromEntries(Object.entries(SLOT_COLORS).map(([k, v]) => [k, parseInt(v.slice(1), 16)]))
+	: { head: 0x5b7df5, left: 0x22d386, right: 0xf59e0b };
 
 function tv3dInitIfNeeded() {
 	if (!TV3D.initialized) tv3dInit();

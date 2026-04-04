@@ -35,6 +35,12 @@
 			--green: #22d386;
 			--orange: #f59e0b;
 			--red: #f04444;
+			/* Couleurs canoniques head / left / right */
+			--color-head: #5b7df5;
+			--color-left: #22d386;
+			--color-right: #f59e0b;
+			--color-grip-left: #8b5cf6;
+			--color-grip-right: #f04444;
 			--yellow: #eab308;
 			--r: 6px;
 			--rs: 4px;
@@ -2672,6 +2678,7 @@
 
 		#tv-right-panel-inner {
 			display: flex;
+			padding-bottom: 40px;
 			flex-direction: column;
 			height: 100%;
 			min-width: 220px;
@@ -5373,6 +5380,9 @@
 			}
 		};
 
+		// Couleurs canoniques head / left / right (source unique de vérité)
+		const SLOT_COLORS = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+
 		// Steps dans l'ordre
 		const STEPS = ['detect', 'check_sync', 'verify', 'tracker', 'video', 'flux_csv', 'ia_sync', 'validate', 'store'];
 		const STEP_LABELS = {
@@ -6209,7 +6219,7 @@
 			const cameras = meta.cameras;
 			if (cameras && Object.keys(cameras).length) {
 				const slots = ['head', 'left', 'right'];
-				const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+				const slotColors = SLOT_COLORS;
 				// Build map position→serial from metadata.cameras
 				const serialByPos = {};
 				Object.values(cameras).forEach(c => { if (c.position) serialByPos[c.position] = c.serial || '?'; });
@@ -6252,7 +6262,7 @@
 			const trackers = meta.trackers;
 			if (trackers && Object.keys(trackers).length) {
 				const slots = ['head', 'left', 'right'];
-				const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+				const slotColors = SLOT_COLORS;
 				// Build map role→serial (si role présent), sinon afficher les serials dans l'ordre
 				const serialByRole = {};
 				Object.values(trackers).forEach(t => { if (t.role) serialByRole[t.role] = t.serial || '?'; });
@@ -7041,11 +7051,11 @@
 			const sm = gauss(losses, 1.5);
 			const ds = [
 				{
-					label: 'Loss', data: losses, borderColor: '#5b7df5', backgroundColor: '#5b7df518',
+					label: 'Loss', data: losses, borderColor: SLOT_COLORS.head, backgroundColor: SLOT_COLORS.head + '18',
 					fill: true, tension: .3, pointRadius: losses.length < 30 ? 3 : 0, borderWidth: 2
 				},
 				{
-					label: 'Lissée', data: sm, borderColor: '#22d386', borderWidth: 1.5,
+					label: 'Lissée', data: sm, borderColor: SLOT_COLORS.left, borderWidth: 1.5,
 					borderDash: [5, 3], fill: false, tension: .4, pointRadius: 0
 				},
 			];
@@ -7095,14 +7105,12 @@
 		};
 
 		const TV_COLORS = {
-			head: '#5b7df5',
-			left: '#22d386',
-			right: '#f59e0b',
+			...SLOT_COLORS,
 			grip_left: '#8b5cf6',
 			grip_right: '#f04444',
-			flux_head: '#5b7df5',
-			flux_left: '#22d386',
-			flux_right: '#f59e0b',
+			flux_head: SLOT_COLORS.head,
+			flux_left: SLOT_COLORS.left,
+			flux_right: SLOT_COLORS.right,
 		};
 
 		// ── Panneau latéral sessions ───────────────────────────────────────
@@ -7477,7 +7485,7 @@
 			const sess = S.sessions.find(s => s.path === sessPath);
 			const trackers = sess?.meta?.trackers;
 			const slots = ['head', 'left', 'right'];
-			const slotColors = { head: '#5b7df5', left: '#22d386', right: '#f59e0b' };
+			const slotColors = SLOT_COLORS;
 
 			// Construire map role → serial
 			const serialByRole = {};
@@ -7969,7 +7977,7 @@
 				ctx.beginPath();
 				ctx.moveTo(x, top);
 				ctx.lineTo(x, bottom);
-				ctx.strokeStyle = '#5b7df5cc';
+				ctx.strokeStyle = TV_COLORS.head + 'cc';
 				ctx.lineWidth = 1.5;
 				ctx.setLineDash([4, 3]);
 				ctx.stroke();
@@ -8118,7 +8126,7 @@
 				{ color: TV_COLORS.grip_right, label: 'Gripper droit' },
 			];
 			if (Object.keys(TV.data?.flux || {}).length) {
-				entries.push({ color: '#5b7df566', label: 'Flux optique' });
+				entries.push({ color: TV_COLORS.head + '66', label: 'Flux optique' });
 			}
 			leg.innerHTML = entries.map(e =>
 				`<div class="tv-legend-item">
@@ -8486,7 +8494,7 @@
 					const ds = [{
 						label: pair.name,
 						data: tvDownsample(tgt_t, tgt_v, 600),
-						borderColor: '#f59e0b', borderWidth: 1.8,
+						borderColor: TV_COLORS.right, borderWidth: 1.8,
 						pointRadius: 0, tension: .2, fill: false, parsing: false,
 						yAxisID: 'y',
 					}];
@@ -8502,7 +8510,7 @@
 						ds.push({
 							label: ref.name,
 							data: tvDownsample(ref.t_ms, refNorm, 600),
-							borderColor: '#5b7df588', borderWidth: 1.2, borderDash: [5, 3],
+							borderColor: TV_COLORS.head + '88', borderWidth: 1.2, borderDash: [5, 3],
 							pointRadius: 0, tension: .1, fill: false, parsing: false,
 							yAxisID: 'y',
 						});
@@ -8601,7 +8609,7 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Vizualisation IA
 		// ══════════════════════════════════════════════════════════════════
-		const P_COLORS = ['#5b7df5', '#22d386', '#f59e0b', '#f04444', '#8b5cf6'];
+		const P_COLORS = [SLOT_COLORS.head, SLOT_COLORS.left, SLOT_COLORS.right, '#f04444', '#8b5cf6'];
 
 		function cconf(c) {
 			return c >= .75 ? '#22d386' : c >= .62 ? '#f59e0b' : '#f04444';

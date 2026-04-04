@@ -3462,10 +3462,10 @@ async def apply_gripper_offset(req: ApplyGripperOffsetRequest):
         if ts_col is None:
             continue  # pas de colonne timestamp connue — ignorer
         df[ts_col] = df[ts_col] + offset_ns
-        tmp_path = grip_path.with_name(f"__tmp_gripper_{side}_data.csv")
+        tmp_path = Path("/tmp") / f"__tmp_gripper_{side}_data.csv"
         try:
             df.to_csv(tmp_path, index=False)
-            tmp_path.replace(grip_path)
+            shutil.move(str(tmp_path), str(grip_path))
             files_patched.append(grip_path.name)
         except Exception as e:
             if tmp_path.exists():
@@ -3549,9 +3549,9 @@ def _worker_trim_to_sw(job: Job, req: TrimToSwRequest):
             before = len(df)
             df = df[(df[ts_col] >= t0_ns) & (df[ts_col] <= t1_ns)].reset_index(drop=True)
             after = len(df)
-            tmp = path.with_name(f"__tmp_{path.name}")
+            tmp = Path("/tmp") / f"__trim_{path.name}"
             df.to_csv(tmp, index=False)
-            tmp.replace(path)
+            shutil.move(str(tmp), str(path))
             report["files"].append({"file": path.name, "rows_before": before, "rows_after": after})
             _log_job(job, f"  {path.name} : {before} → {after} lignes", "OK")
 
@@ -3586,10 +3586,10 @@ def _worker_trim_to_sw(job: Job, req: TrimToSwRequest):
                     continue
             frames_out = [fr for fr in frames_in if t0_ms <= fr.get("capture_time", 0) <= t1_ms]
             lines = [json.dumps(fr, separators=(",", ":")) + "\r\n" for fr in frames_out]
-            tmp = path.with_suffix(".jsonl.tmp")
+            tmp = Path("/tmp") / f"__trim_{path.name}"
             with open(tmp, "wb") as f:
                 f.write("".join(lines).encode("utf-8"))
-            tmp.replace(path)
+            shutil.move(str(tmp), str(path))
             report["files"].append({
                 "file": path.name,
                 "rows_before": len(frames_in),

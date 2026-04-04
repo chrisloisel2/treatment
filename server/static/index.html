@@ -7099,6 +7099,8 @@
 			annotations: {},
 			stream: null,    // EventSource SSE en cours (tracker/gripper uniquement)
 			streaming: false,   // true si playback SSE actif
+			_rafPending: false, // RAF en attente pour rendu cursor
+			_lastSSEFrame: null, // dernier payload SSE buffurisé
 			// Vidéo native
 			vidInfo: {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
 			vidReady: {},      // { head: bool, left: bool, right: bool }
@@ -8025,31 +8027,43 @@
 					return;
 				}
 
-				const t = +d.t_ms || 0;
-				TV.t_ms = t;
-				const pct = TV.duration_ms > 0 ? t / TV.duration_ms : 0;
-				ge('tv-scrub').value = Math.round(pct * 1000);
-				ge('tv-playhead-fill').style.width = (pct * 100).toFixed(2) + '%';
-				ge('tv-t-cur').textContent = (t / 1000).toFixed(3) + 's';
+				// Bufferiser : garder uniquement la frame la plus récente
+				TV._lastSSEFrame = d;
 
-				// Sync vidéos natives (doucement — évite les micro-sauts)
-				tvSyncVideos(t);
-				tvDrawCursorLine(t);
+				// Déclencher un seul rendu par frame d'affichage
+				if (!TV._rafPending) {
+					TV._rafPending = true;
+					requestAnimationFrame(() => {
+						TV._rafPending = false;
+						const frame = TV._lastSSEFrame;
+						if (!frame) return;
 
-				// 3D tracker
-				if (TV3D.initialized) {
-					tv3dUpdateCursor(t);
-					// Afficher coordonnées depuis données interpolées dans TV.data
-					if (d.tracker && Object.keys(d.tracker).length) {
-						const coordsEl = ge('tv3d-coords');
-						if (coordsEl) {
-							const parts = ['head', 'left', 'right'].map(r => {
-								const p = d.tracker[r];
-								return p ? `${r}: (${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)})` : null;
-							}).filter(Boolean);
-							if (parts.length) { coordsEl.style.display = ''; coordsEl.textContent = parts.join('  |  '); }
+						const t = +frame.t_ms || 0;
+						TV.t_ms = t;
+						const pct = TV.duration_ms > 0 ? t / TV.duration_ms : 0;
+						ge('tv-scrub').value = Math.round(pct * 1000);
+						ge('tv-playhead-fill').style.width = (pct * 100).toFixed(2) + '%';
+						ge('tv-t-cur').textContent = (t / 1000).toFixed(3) + 's';
+
+						// Sync vidéos natives (doucement — évite les micro-sauts)
+						tvSyncVideos(t);
+						tvDrawCursorLine(t);
+
+						// 3D tracker
+						if (TV3D.initialized) {
+							tv3dUpdateCursor(t);
+							if (frame.tracker && Object.keys(frame.tracker).length) {
+								const coordsEl = ge('tv3d-coords');
+								if (coordsEl) {
+									const parts = ['head', 'left', 'right'].map(r => {
+										const p = frame.tracker[r];
+										return p ? `${r}: (${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)})` : null;
+									}).filter(Boolean);
+									if (parts.length) { coordsEl.style.display = ''; coordsEl.textContent = parts.join('  |  '); }
+								}
+							}
 						}
-					}
+					});
 				}
 			};
 
@@ -8066,15 +8080,17 @@
 			TV.streaming = false;
 		}
 
-		// Sync douce des vidéos : ne seek que si dérive > seuil
+		// Sync douce des vidéos : ne seek que si dérive significative
 		function tvSyncVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
 				const v = ge(`tv-vid-${side}`);
 				if (!v || !TV.vidInfo[side]?.available || !TV.vidReady[side]) continue;
 				const t0 = TV.vidInfo[side].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
-				// Si dérive > 150ms on force le seek (sinon la vidéo suit le playback naturellement)
-				if (Math.abs(v.currentTime - targetSec) > 0.15) {
+				const drift = Math.abs(v.currentTime - targetSec);
+				// Seek seulement si dérive > 200ms (évite les micro-sauts pendant lecture normale)
+				// ou si la vidéo est en pause et trop loin
+				if (drift > 0.2 || (v.paused && drift > 0.01)) {
 					v.currentTime = targetSec;
 				}
 				ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';

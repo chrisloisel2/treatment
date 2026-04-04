@@ -2663,7 +2663,10 @@ async def session_stream(session_path: str, fps: float = 30.0, t_start: float = 
         return float(v0 + alpha * (v1 - v0))
 
     async def _generate():
+        import time as _time
         t_ms = t_start
+        loop_start = _time.perf_counter()
+        frame = 0
         while True:
             tracker_pos = {}
             if trk_t is not None:
@@ -2686,12 +2689,17 @@ async def session_stream(session_path: str, fps: float = 30.0, t_start: float = 
             }
             yield f"data: {json.dumps(payload)}\n\n"
 
-            t_ms += interval * 1000.0
+            frame += 1
+            t_ms = t_start + frame * interval * 1000.0
             if t_ms >= duration_ms:
                 yield f"data: {json.dumps({'done': True, 't_ms': duration_ms})}\n\n"
                 return
 
-            await asyncio.sleep(interval)
+            # Sleep précis : compense le temps pris par le calcul/sérialisation
+            next_wake = loop_start + frame * interval
+            delay = next_wake - _time.perf_counter()
+            if delay > 0:
+                await asyncio.sleep(delay)
 
     return StreamingResponse(
         _generate(),

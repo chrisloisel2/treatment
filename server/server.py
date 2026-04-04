@@ -3617,6 +3617,44 @@ def _worker_trim_to_sw(job: Job, req: TrimToSwRequest):
         _log_job(job, f"Erreur trim_to_sw : {e}", "ERROR")
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Rotation 180° des vidéos (depuis le viewer)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class RotateVideosRequest(BaseModel):
+    session: str
+    force: bool = False
+
+
+def _worker_rotate_videos(job: Job, req: RotateVideosRequest):
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        from utils.data_prep import rotate_session_videos
+        sess_path = Path(req.session)
+
+        def _log(msg, level="INFO"):
+            _log_job(job, msg, level)
+
+        result = rotate_session_videos(sess_path, force=req.force, log=_log)
+        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(), result=result)
+
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur rotate_videos : {e}", "ERROR")
+
+
+@app.post("/api/session/rotate_videos")
+async def rotate_videos(req: RotateVideosRequest):
+    """Applique la rotation 180° à toutes les vidéos d'une session."""
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    if not Path(req.session).exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    job = _new_job("rotate_videos")
+    threading.Thread(target=_worker_rotate_videos, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
 @app.post("/api/session/trim_to_sw")
 async def trim_to_sw(req: TrimToSwRequest):
     """Tronque tous les fichiers de la session sur la fenêtre sw=ON → sw=OFF du gripper droit."""

@@ -4363,6 +4363,9 @@
 											<button class="tv-rp-btn" id="tv-rp-btn-trim-sw" onclick="tvViewerTrimSW()"
 												style="background:var(--yellow)1a;border-color:var(--yellow)55;color:var(--yellow);font-weight:600;margin-top:4px"
 												disabled>✂ Trim SW</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-rotate" onclick="tvViewerRotate()"
+												style="background:var(--accent2)1a;border-color:var(--accent2)55;color:var(--accent2);font-weight:600;margin-top:4px"
+												disabled>↻ Rotate 180°</button>
 											<button class="tv-rp-btn" id="tv-rp-btn-repair" onclick="tvViewerRepair()"
 												style="background:var(--accent3)1a;border-color:var(--accent3)55;color:var(--accent3);font-weight:600;margin-top:4px"
 												disabled>🔧 Réparer</button>
@@ -4376,9 +4379,7 @@
 
 							</div>
 
-							<!-- Bouton Sync flottant -->
-							<button id="tv-sync-btn" onclick="tvActionSync()"
-								title="Resynchroniser les données de cette session">⟳ Sync</button>
+
 
 						</div><!-- /tv-tc-live -->
 
@@ -7383,6 +7384,7 @@
 			ge('tv-rp-btn-check').disabled = false;
 			ge('tv-rp-btn-pinces').disabled = false;
 			ge('tv-rp-btn-trim-sw').disabled = false;
+			ge('tv-rp-btn-rotate').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
 			ge('tv-rp-btn-reject').disabled = false;
 			tvTrackerSwapBuildPanel(path);
@@ -9711,6 +9713,60 @@
 						clearInterval(poll);
 						log('R�paration �chou�e\u00a0: ' + (j.error || '?'), 'ERROR');
 						btn.textContent = '\U0001f527 R�parer';
+						btn.disabled = false;
+					}
+				} catch (_) { }
+			}, 1500);
+		}
+
+		// ── Rotation 180° des vidéos ─────────────────────────────────────────
+		async function tvViewerRotate() {
+			if (!TV.sessPath) return;
+			const btn = ge('tv-rp-btn-rotate');
+			const sess = S.sessions.find(s => s.path === TV.sessPath);
+			const alreadyDone = sess?.video_rotated;
+			const msg = alreadyDone
+				? '↻ Rotation 180°\n\nCette session est déjà marquée comme rotée.\nForcer la re-rotation ?'
+				: '↻ Rotation 180°\n\nToutes les vidéos (head, left, right) seront retournées à 180°.\nLes originaux sont conservés en .bak_rotate.\n\nConfirmer ?';
+			if (!confirm(msg)) return;
+			btn.disabled = true;
+			btn.textContent = '⏳ Rotation…';
+			try {
+				const { job_id } = await api('POST', '/api/session/rotate_videos', { session: TV.sessPath, force: !!alreadyDone });
+				log('Rotation lancée : ' + job_id, 'OK');
+				_tvRotateWatchJob(job_id, btn);
+			} catch (e) {
+				log('Rotation erreur : ' + e.message, 'ERROR');
+				btn.textContent = '↻ Rotate 180°';
+				btn.disabled = false;
+			}
+		}
+
+		function _tvRotateWatchJob(job_id, btn) {
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const r = j.result || {};
+						if (r.already_done) {
+							log('Rotation : déjà effectuée (.rotate_done présent)', 'WARN');
+							btn.textContent = '↻ Rotate 180°';
+							btn.disabled = false;
+							return;
+						}
+						const n = (r.rotated || []).length;
+						log(`↻ Rotation terminée — ${n} vidéo(s) retournée(s)`, 'OK');
+						if (r.errors?.length) log(`  Erreurs : ${r.errors.join(', ')}`, 'ERROR');
+						btn.style.color = 'var(--green)';
+						btn.style.borderColor = 'var(--green)55';
+						btn.textContent = `↻ ${n} vid.`;
+						btn.disabled = false;
+						tvSelectSession(TV.sessPath);
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						log('Rotation échouée : ' + (j.error || '?'), 'ERROR');
+						btn.textContent = '↻ Rotate 180°';
 						btn.disabled = false;
 					}
 				} catch (_) { }

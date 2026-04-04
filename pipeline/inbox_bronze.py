@@ -3,16 +3,17 @@
 """
 Pipeline Inbox → Bronze
 
-Scanne /mnt/inbox, applique 6 vérifications, puis déplace les sessions valides
-vers /mnt/inbox/{scenario}.
+Scanne /Users/christopher/Downloads/sync_test_1/treatment/data, applique 6 vérifications, puis déplace les sessions valides
+vers /Users/christopher/Downloads/sync_test_1/treatment/data/{scenario}.
 
 Étapes :
-  1. STRUCTURE   — intégrité des fichiers/dossiers requis
-  2. TRACKERS    — placement des trackers (head/left/right détectables dans le CSV)
-  3. CSV         — validité des CSV + assurance que la pince n'est jamais bloquée à 0
-  4. COMPLETUDE  — pas de tracker manquant, pas de JSONL manquant
-  5. TRAKEUR     — vérification géométrique via trakeur.py (head/left/right)
-  6. MOVE        — déplacement vers /mnt/inbox/{scenario}
+  1. STRUCTURE        — intégrité des fichiers/dossiers requis
+  2. TRACKERS         — placement des trackers (head/left/right détectables dans le CSV)
+  3. CSV              — validité des CSV + assurance que la pince n'est jamais bloquée à 0
+  4. COMPLETUDE       — pas de tracker manquant, pas de JSONL manquant
+  5. CONTINUITÉ       — timestamps capteurs triés, gaps détectés et classifiés (fixable/non)
+  6. TRAKEUR          — vérification géométrique via trakeur.py (head/left/right)
+  7. MOVE             — déplacement vers /Users/christopher/Downloads/sync_test_1/treatment/data/{scenario}
 """
 
 from __future__ import annotations
@@ -31,8 +32,8 @@ import numpy as np
 import pandas as pd
 
 # ── Chemins ───────────────────────────────────────────────────────────────────
-INBOX_DIR  = Path("/mnt/inbox")
-BRONZE_DIR = Path("/mnt/inbox")
+INBOX_DIR  = Path("/Users/christopher/Downloads/sync_test_1/treatment/data")
+BRONZE_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/data")
 
 
 # ── Concurrence ───────────────────────────────────────────────────────────────
@@ -347,7 +348,7 @@ def _trakeur_worker(csv_path_str: str) -> dict:
     if str(_root) not in _sys.path:
         _sys.path.insert(0, str(_root))
 
-    import trakeur
+    import script.trakeur as trakeur
 
     csv_path = _Path(csv_path_str)
     df       = _pd.read_csv(csv_path)
@@ -366,7 +367,7 @@ def _trakeur_worker(csv_path_str: str) -> dict:
                 "message": f"Head mal identifié : prédit={pred_head}, attendu={truth['head']}",
                 "details": details}
 
-    quat_mode, axis, sign = "xyzw", 0, -1
+    quat_mode, axis, sign = "wxyz", 0, 1
     try:
         pred_left, pred_right = trakeur.predict_hands_with_rule(
             blocks, pred_head, quat_mode, axis, sign
@@ -379,6 +380,113 @@ def _trakeur_worker(csv_path_str: str) -> dict:
         details.append(f"Prédiction mains ignorée : {he}")
 
     return {"ok": True, "message": "Trackers validés géométriquement", "details": details}
+
+
+def check_sensor_continuity(session_path: Path) -> CheckResult:
+    """
+    Vérifie la continuité temporelle des CSV capteurs (gripper_*_data.csv).
+
+    Pour chaque côté :
+    - Tri des timestamps (bug systémique : premiers ~12 enregistrements arrivent
+      en retard car le buffer de démarrage est vidé après le reste du flux)
+    - Détection des gaps > 4 × dt_nominal
+    - Classification : gap fixable (pince immobile, Δopening ≤ 2 mm) ou non
+
+    Un gap fixable ne bloque pas la session — il sera interpolé lors du
+    traitement aval (verify.py / session_pinces.py).
+    Un gap non fixable (signal dynamique ou durée > 1 500 ms) génère un WARNING.
+    """
+    GAP_FACTOR         = 4.0    # seuils gaps en multiples de dt_nominal
+    MAX_OPENING_CHANGE = 2.0    # mm — au-delà, gap considéré dynamique
+    MAX_GAP_MS         = 1500.0 # ms — au-delà, gap non interpolable
+
+    details = []
+    ok = True
+
+    for side in GRIPPER_SIDES:
+        grip_path = session_path / f"gripper_{side}_data.csv"
+        if not grip_path.exists():
+            details.append(f"gripper_{side} : absent (optionnel)")
+            continue
+
+        try:
+            gdf = pd.read_csv(grip_path)
+            if "timestamp_ns" not in gdf.columns or "opening_mm" not in gdf.columns:
+                details.append(f"gripper_{side} : colonnes timestamp_ns/opening_mm absentes — skip")
+                continue
+
+            gdf = (gdf[["timestamp_ns", "opening_mm"]]
+                   .apply(pd.to_numeric, errors="coerce")
+                   .dropna()
+                   .sort_values("timestamp_ns")
+                   .reset_index(drop=True))
+
+            if len(gdf) < 3:
+                details.append(f"gripper_{side} : moins de 3 échantillons — skip")
+                continue
+
+            ts   = gdf["timestamp_ns"].values.astype(np.int64)
+            op   = gdf["opening_mm"].values.astype(float)
+            dts  = np.diff(ts) / 1e6   # ms
+            dt_nominal_ms = float(np.median(dts))
+
+            if dt_nominal_ms <= 0:
+                details.append(f"gripper_{side} : dt_nominal invalide ({dt_nominal_ms:.2f}ms) — skip")
+                continue
+
+            gap_thresh = GAP_FACTOR * dt_nominal_ms
+            gap_mask   = dts > gap_thresh
+            n_gaps     = int(gap_mask.sum())
+
+            if n_gaps == 0:
+                details.append(
+                    f"gripper_{side} : {len(ts)} échant., dt_nom={dt_nominal_ms:.1f}ms, "
+                    f"aucun gap — OK"
+                )
+                continue
+
+            n_fixable   = 0
+            n_unfixable = 0
+            worst_gap   = 0.0
+
+            for i in np.where(gap_mask)[0]:
+                gap_ms    = float(dts[i])
+                delta_op  = abs(float(op[i + 1]) - float(op[i]))
+                worst_gap = max(worst_gap, gap_ms)
+
+                if gap_ms <= MAX_GAP_MS and delta_op <= MAX_OPENING_CHANGE:
+                    n_fixable += 1
+                else:
+                    n_unfixable += 1
+
+            msg = (
+                f"gripper_{side} : {n_gaps} gap(s) détecté(s) "
+                f"[fixables={n_fixable}, non-fixables={n_unfixable}] "
+                f"pire={worst_gap:.0f}ms, dt_nom={dt_nominal_ms:.1f}ms"
+            )
+
+            if n_unfixable > 0:
+                ok = False
+                details.append(f"[WARN] {msg}")
+            else:
+                details.append(f"[INFO] {msg} → interpolation possible")
+
+        except Exception as e:
+            details.append(f"gripper_{side} : erreur lecture ({e})")
+
+    if ok:
+        return CheckResult(
+            name="sensor_continuity",
+            ok=True,
+            message="Continuité capteurs OK (gaps fixables ou absents)",
+            details=details,
+        )
+    return CheckResult(
+        name="sensor_continuity",
+        ok=False,
+        message="Gap(s) capteur non interpolable(s) détecté(s)",
+        details=details,
+    )
 
 
 def check_trakeur(session_path: Path, n_processes: int = 1) -> CheckResult:
@@ -456,7 +564,7 @@ def promote_to_bronze(session_path: Path, bronze_dir: Path = BRONZE_DIR) -> str:
 def run_checks(session_path: Path,
                config: Optional[InboxConfig] = None) -> SessionReport:
     """
-    Exécute les 5 checks de vérification (sans le move).
+    Exécute les 6 checks de vérification (sans le move).
     Le check trakeur est délégué en sous-processus si config.n_processes > 1.
     """
     cfg = config or _INBOX_CONFIG
@@ -465,12 +573,13 @@ def run_checks(session_path: Path,
         session_path=str(session_path),
     )
 
-    # Checks séquentiels (les 4 premiers sont I/O-bound et rapides)
+    # Checks séquentiels (les 5 premiers sont I/O-bound et rapides)
     for label, fn in [
-        ("1 · Structure",          check_structure),
-        ("2 · Placement trackers", check_tracker_placement),
-        ("3 · Validité CSV",       check_csv_validity),
-        ("4 · Complétude",         check_completude),
+        ("1 · Structure",           check_structure),
+        ("2 · Placement trackers",  check_tracker_placement),
+        ("3 · Validité CSV",        check_csv_validity),
+        ("4 · Complétude",          check_completude),
+        ("5 · Continuité capteur",  check_sensor_continuity),
     ]:
         result = fn(session_path)
         result.name = label
@@ -478,7 +587,7 @@ def run_checks(session_path: Path,
 
     # Check trakeur — peut utiliser un sous-processus dédié
     trak_result = check_trakeur(session_path, n_processes=cfg.n_processes)
-    trak_result.name = "5 · Trakeur"
+    trak_result.name = "6 · Trakeur"
     report.checks.append(trak_result)
 
     return report

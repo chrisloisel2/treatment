@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /mnt/inbox  → source brute, lecture seule
-  /mnt/inbox/    → espace de travail (copie de travail)
+  /Users/christopher/Downloads/sync_test_1/treatment/data  → source brute, lecture seule
+  /Users/christopher/Downloads/sync_test_1/treatment/data/    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/inbox")
+    INGEST_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/data")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/inbox"
+DEFAULT_WATCH_DIR = "/Users/christopher/Downloads/sync_test_1/treatment/data"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR / "_server_jobs"
@@ -294,7 +294,7 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte dans /mnt/inbox/ (sessions déposées par l'opérateur)
+        # Découverte dans /Users/christopher/Downloads/sync_test_1/treatment/data/ (sessions déposées par l'opérateur)
         # Exclus : dossiers cachés (.) et dossiers internes (_)
         sessions = [
             s for s in (INGEST_DIR.iterdir() if INGEST_DIR.exists() else [])
@@ -851,7 +851,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /mnt/inbox/
+    session:       str        # chemin dans /Users/christopher/Downloads/sync_test_1/treatment/data/
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -860,7 +860,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /mnt/inbox/
+    session:              str          # nom ou chemin de session dans /Users/christopher/Downloads/sync_test_1/treatment/data/
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1166,7 +1166,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /mnt/inbox/."""
+    """Lance un entraînement asynchrone sur les sessions de /Users/christopher/Downloads/sync_test_1/treatment/data/."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1187,7 +1187,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /mnt/inbox/."""
+    """Lance une inférence asynchrone sur une session de /Users/christopher/Downloads/sync_test_1/treatment/data/."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1231,13 +1231,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/inbox/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /Users/christopher/Downloads/sync_test_1/treatment/data/."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/inbox/
+    # req.session peut être un nom ou un chemin complet dans /Users/christopher/Downloads/sync_test_1/treatment/data/
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1253,7 +1253,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /mnt/inbox/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /Users/christopher/Downloads/sync_test_1/treatment/data/ en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -3714,7 +3714,7 @@ def _worker_inbox_promote(job: Job, session_path: str, bronze_dir: Optional[str]
 @app.get("/api/inbox/scan")
 async def inbox_scan(inbox_dir: Optional[str] = None):
     """
-    Scanne /mnt/inbox (ou inbox_dir si fourni) et retourne le rapport de vérification
+    Scanne /Users/christopher/Downloads/sync_test_1/treatment/data (ou inbox_dir si fourni) et retourne le rapport de vérification
     de chaque session trouvée. Parallélisé selon _INBOX_CONFIG.
     """
     try:
@@ -3736,7 +3736,7 @@ async def inbox_scan(inbox_dir: Optional[str] = None):
 async def inbox_check(req: dict):
     """
     Exécute les 5 checks sur une session précise (sans la déplacer).
-    body: { "session_path": "/mnt/inbox/session_xxx" }
+    body: { "session_path": "/Users/christopher/Downloads/sync_test_1/treatment/data/session_xxx" }
     """
     try:
         from pipeline.inbox_bronze import run_checks, _INBOX_CONFIG
@@ -3893,8 +3893,8 @@ async def inbox_service_install(req: dict):
     """
     import shutil as _sh
 
-    inbox_dir     = req.get("inbox_dir",     "/mnt/inbox")
-    bronze_dir    = req.get("bronze_dir",    "/mnt/inbox")
+    inbox_dir     = req.get("inbox_dir",     "/Users/christopher/Downloads/sync_test_1/treatment/data")
+    bronze_dir    = req.get("bronze_dir",    "/Users/christopher/Downloads/sync_test_1/treatment/data")
     host          = req.get("host",          "0.0.0.0")
     port          = int(req.get("port",      8000))
     python_bin    = req.get("python_bin")    or _sh.which("python3") or sys.executable

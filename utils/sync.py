@@ -47,7 +47,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
-from scipy.stats import entropy as scipy_entropy
+from scipy.stats import entropy as scipy_entropy, linregress
+from scipy.interpolate import interp1d as _interp1d
 
 try:
     from sklearn.ensemble import RandomForestClassifier
@@ -139,7 +140,7 @@ INFER_MAX_LAG_MS   = 1000.0
 MODEL_DIRNAME      = "_sync_ml_model"
 RESULTS_JSON       = "sync_ml_advanced_results.json"
 
-ROOT_DIR = Path("/mnt/inbox/")
+ROOT_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/data/")
 
 # Constantes validation déterministe
 MIN_MAJOR_SCORE_TO_APPLY  = 45.0
@@ -1652,9 +1653,9 @@ def apply_shift_gripper(session_copy: Path, side: str, shift_ms: float, dry_run:
 
 def find_sessions(dataset_dir: Path, only_session: Optional[str]) -> List[Path]:
     return sorted(
-        p for p in dataset_dir.iterdir()
-        if p.is_dir() and not p.name.startswith("_") and "__FAILED" not in p.name
-        and (only_session is None or p.name == only_session)
+        p.parent for p in dataset_dir.rglob("metadata.json")
+        if p.parent.name.startswith("session_") and "__FAILED" not in str(p.parent)
+        and (only_session is None or p.parent.name == only_session)
     )
 
 
@@ -2216,6 +2217,790 @@ def _cmd_score(args) -> int:
     return 0
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# PARTIE 7 — Vérification alignement pinces (session_pinces.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_NOMINAL_FPS_PINCES      = 30.0
+_NOMINAL_PERIOD_S_PINCES = 1.0 / _NOMINAL_FPS_PINCES
+_DROP_THRESHOLD_S_PINCES = 2.5 * _NOMINAL_PERIOD_S_PINCES
+
+
+@dataclass
+class _PincesThresholds:
+    offset_ms:      float = 200.0
+    latency_max_ms: float = 25.0
+    jitter_std_ms:  float = 15.0
+    max_drops:      int   = 5
+    max_vel_mm_s:   float = 2000.0
+    min_overlap_s:  float = 3.0
+
+
+@dataclass
+class _VidTsMetrics:
+    n_frames:        int
+    duration_s:      float
+    dt_mean_ms:      float
+    dt_std_ms:       float
+    dt_min_ms:       float
+    dt_max_ms:       float
+    frame_drops:     int
+    missing_indices: int
+    jitter_std_ms:   float
+    ts_ns:           np.ndarray
+    indices:         np.ndarray
+
+
+@dataclass
+class _SensorMetricsPinces:
+    n_samples:      int
+    duration_s:     float
+    dt_mean_ms:     float
+    dt_std_ms:      float
+    neg_dt_count:   int
+    neg_dt_details: list
+    vel_max_mm_s:   float
+    vel_p99_mm_s:   float
+    vel_anomalies:  int
+    opening_range:  tuple
+
+
+@dataclass
+class _AlignMetrics:
+    dur_vid_s:               float
+    dur_sensor_s:            float
+    overlap_s:               float
+    offset_start_ms:         float
+    latency_mean_ms:         float
+    latency_std_ms:          float
+    latency_max_abs_ms:      float
+    latency_p95_abs_ms:      float
+    frames_no_sensor:        int
+    sensor_gap_max_ms:       float
+    sensor_gap_count:        int
+    linfit_slope:            float
+    linfit_r2:               float
+    linfit_residual_std_ms:  float
+    linfit_residual_max_ms:  float
+    opening_at_frames:       np.ndarray
+    frame_ts_ns:             np.ndarray
+
+
+@dataclass
+class _PhysCoherence:
+    n_frames_with_sensor: int
+    n_frames_no_sensor:   int
+    opening_mean_mm:      float
+    opening_std_mm:       float
+    opening_range:        tuple
+    d_opening_max_mm_s:   float
+    d_opening_p99_mm_s:   float
+    impossible_jumps:     int
+
+
+@dataclass
+class _PincesAlert:
+    code:      str
+    level:     str
+    message:   str
+    value:     float
+    threshold: float
+
+
+@dataclass
+class _SideResult:
+    session_name: str
+    side:         str
+    success:      bool
+    error:        str = ""
+    video:        Optional[_VidTsMetrics]       = None
+    sensor:       Optional[_SensorMetricsPinces] = None
+    alignment:    Optional[_AlignMetrics]        = None
+    physical:     Optional[_PhysCoherence]       = None
+    alerts:       List[_PincesAlert] = None
+    has_errors:   bool = False
+    sensor_df:    Optional[pd.DataFrame] = None
+
+    def __post_init__(self):
+        if self.alerts is None:
+            self.alerts = []
+
+    @property
+    def status(self) -> str:
+        if not self.success:
+            return "FAILED"
+        if self.has_errors:
+            return "ERROR"
+        if self.alerts:
+            return "WARNING"
+        return "OK"
+
+    @property
+    def n_errors(self) -> int:
+        return sum(1 for a in self.alerts if a.level == "ERROR")
+
+    @property
+    def n_warnings(self) -> int:
+        return sum(1 for a in self.alerts if a.level == "WARNING")
+
+
+def _load_jsonl_timestamps_pinces(path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    raw = open(path, "rb").read()
+    indices, ts_ns = [], []
+    for line in raw.split(b"\r\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line.decode("utf-8"))
+            indices.append(int(obj["index"]))
+            ts_ns.append(int(obj["capture_time"]) * 1_000_000)
+        except Exception:
+            continue
+    if not indices:
+        raise RuntimeError(f"Aucune entrée valide dans {path}")
+    indices = np.array(indices, dtype=np.int32)
+    ts_ns   = np.array(ts_ns,   dtype=np.int64)
+    order   = np.argsort(indices)
+    return indices[order], ts_ns[order]
+
+
+def _load_sensor_pinces(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    for col in ("timestamp_ns", "opening_mm"):
+        if col not in df.columns:
+            raise RuntimeError(f"Colonne manquante '{col}' dans {path}")
+    df = df[["timestamp_ns", "opening_mm"]].copy()
+    df["timestamp_ns"] = pd.to_numeric(df["timestamp_ns"], errors="coerce")
+    df["opening_mm"]   = pd.to_numeric(df["opening_mm"],   errors="coerce")
+    df = df.dropna().sort_values("timestamp_ns").reset_index(drop=True)
+    if df.empty:
+        raise RuntimeError(f"Capteur vide après nettoyage : {path}")
+    dt = np.diff(df["timestamp_ns"].values, prepend=df["timestamp_ns"].values[0]) / 1e6
+    df["dt_ms"] = dt
+    return df
+
+
+def _fill_sensor_gaps_pinces(ts_ns, opening_mm, dt_nominal_ms=17.0, max_gap_ms=1500.0):
+    if len(ts_ns) < 2:
+        return ts_ns.copy(), opening_mm.copy()
+    gap_thresh_ns = 4.0 * dt_nominal_ms * 1e6
+    max_gap_ns    = max_gap_ms * 1e6
+    filled_ts = list(ts_ns)
+    filled_op = list(opening_mm.astype(float))
+    diffs_ns  = np.diff(ts_ns)
+    for i, gap_ns in enumerate(diffs_ns):
+        if gap_ns <= gap_thresh_ns:
+            continue
+        gap_ms        = gap_ns / 1e6
+        op_before     = float(opening_mm[i])
+        op_after      = float(opening_mm[i + 1])
+        delta_opening = abs(op_after - op_before)
+        if gap_ms > max_gap_ms or delta_opening > 2.0:
+            continue
+        n = max(1, int(round(gap_ms / dt_nominal_ms)) - 1)
+        synth_ts = np.linspace(ts_ns[i] + dt_nominal_ms * 1e6,
+                               ts_ns[i+1] - dt_nominal_ms * 1e6, n, dtype=np.int64)
+        synth_op = np.linspace(op_before, op_after, n)
+        filled_ts.extend(synth_ts.tolist())
+        filled_op.extend(synth_op.tolist())
+    order = np.argsort(filled_ts)
+    return np.array(filled_ts, dtype=np.int64)[order], np.array(filled_op)[order]
+
+
+def _extend_sensor_backward_pinces(ts_ns, opening_mm, vid_start_ns, dt_nominal_ms=17.0):
+    gap_ms = (ts_ns[0] - vid_start_ns) / 1e6
+    if gap_ms <= 0 or gap_ms > 200.0:
+        return ts_ns, opening_mm
+    dt_ns    = int(dt_nominal_ms * 1e6)
+    synth_ts = np.arange(vid_start_ns, ts_ns[0], dt_ns, dtype=np.int64)
+    if len(synth_ts) == 0:
+        return ts_ns, opening_mm
+    synth_op = np.full(len(synth_ts), float(opening_mm[0]))
+    return np.concatenate([synth_ts, ts_ns]), np.concatenate([synth_op, opening_mm.astype(float)])
+
+
+def _apply_sensor_fixes_pinces(sensor_df: pd.DataFrame, vid_start_ns: int, dt_nominal_ms: float) -> pd.DataFrame:
+    ts = sensor_df["timestamp_ns"].values.astype(np.int64)
+    op = sensor_df["opening_mm"].values.astype(np.float64)
+    ts, op = _fill_sensor_gaps_pinces(ts, op, dt_nominal_ms=dt_nominal_ms)
+    ts, op = _extend_sensor_backward_pinces(ts, op, vid_start_ns, dt_nominal_ms=dt_nominal_ms)
+    dt = np.diff(ts, prepend=ts[0]).astype(float) / 1e6
+    return pd.DataFrame({"timestamp_ns": ts, "opening_mm": op, "dt_ms": dt})
+
+
+def _analyze_vid_ts(indices, ts_ns) -> _VidTsMetrics:
+    dt_ms = np.diff(ts_ns) / 1e6
+    drops = int((dt_ms > _DROP_THRESHOLD_S_PINCES * 1000).sum())
+    expected = np.arange(indices[0], indices[-1] + 1)
+    missing  = int(len(expected) - len(indices))
+    residuals = dt_ms - np.median(dt_ms)
+    mad  = np.median(np.abs(residuals))
+    return _VidTsMetrics(
+        n_frames=len(ts_ns), duration_s=float((ts_ns[-1]-ts_ns[0])/1e9),
+        dt_mean_ms=float(dt_ms.mean()), dt_std_ms=float(dt_ms.std()),
+        dt_min_ms=float(dt_ms.min()), dt_max_ms=float(dt_ms.max()),
+        frame_drops=drops, missing_indices=missing,
+        jitter_std_ms=float(mad * 1.4826), ts_ns=ts_ns, indices=indices,
+    )
+
+
+def _analyze_sensor_pinces(df: pd.DataFrame, max_vel: float) -> _SensorMetricsPinces:
+    ts  = df["timestamp_ns"].values
+    op  = df["opening_mm"].values
+    dt  = df["dt_ms"].values[1:]
+    neg_idx = np.where(dt < 0)[0]
+    neg_details = [{"idx": int(i), "dt_ms": float(dt[i]),
+                    "opening_before": float(op[i]), "opening_after": float(op[i+1])}
+                   for i in neg_idx]
+    safe_dt_s = np.maximum(dt, 1.0) / 1000.0
+    vel = np.abs(np.diff(op)) / safe_dt_s
+    return _SensorMetricsPinces(
+        n_samples=len(df), duration_s=float((ts[-1]-ts[0])/1e9),
+        dt_mean_ms=float(np.median(dt[dt > 0])) if (dt > 0).any() else 0.0,
+        dt_std_ms=float(dt[dt > 0].std()) if (dt > 0).sum() > 1 else 0.0,
+        neg_dt_count=len(neg_idx), neg_dt_details=neg_details,
+        vel_max_mm_s=float(vel.max()) if len(vel) else 0.0,
+        vel_p99_mm_s=float(np.percentile(vel, 99)) if len(vel) else 0.0,
+        vel_anomalies=int((vel > max_vel).sum()),
+        opening_range=(float(op.min()), float(op.max())),
+    )
+
+
+def _compute_alignment_pinces(vid: _VidTsMetrics, sensor_df: pd.DataFrame) -> _AlignMetrics:
+    tv = vid.ts_ns.astype(np.float64)
+    ts = sensor_df["timestamp_ns"].values.astype(np.float64)
+    opening = sensor_df["opening_mm"].values
+
+    dur_vid_s    = float((tv[-1] - tv[0]) / 1e9)
+    dur_sensor_s = float((ts[-1] - ts[0]) / 1e9)
+    t_ov0 = max(tv[0], ts[0]);  t_ov1 = min(tv[-1], ts[-1])
+    overlap_s = float((t_ov1 - t_ov0) / 1e9) if t_ov1 > t_ov0 else 0.0
+    offset_start_ms = float((tv[0] - ts[0]) / 1e6)
+
+    nearest_hi = np.clip(np.searchsorted(ts, tv), 0, len(ts)-1)
+    nearest_lo = np.clip(nearest_hi - 1, 0, len(ts)-1)
+    d_hi = np.abs(tv - ts[nearest_hi]);  d_lo = np.abs(tv - ts[nearest_lo])
+    nearest_ts = np.where(d_hi <= d_lo, ts[nearest_hi], ts[nearest_lo])
+    latency_ms = (tv - nearest_ts) / 1e6
+
+    in_range = (tv >= ts[0]) & (tv <= ts[-1])
+    n_no_sensor = int((~in_range).sum())
+    lat_valid = latency_ms[in_range]
+    if len(lat_valid) > 0:
+        lat_mean = float(lat_valid.mean());  lat_std = float(lat_valid.std())
+        lat_max  = float(np.abs(lat_valid).max())
+        lat_p95  = float(np.percentile(np.abs(lat_valid), 95))
+    else:
+        lat_mean = lat_std = lat_max = lat_p95 = np.nan
+
+    mask_sen = (ts >= tv[0]) & (ts <= tv[-1])
+    ts_in_vid = ts[mask_sen]
+    dt_nom_ms = float(np.median(np.diff(ts)) / 1e6)
+    if len(ts_in_vid) > 1:
+        gaps_ms = np.diff(ts_in_vid) / 1e6
+        sensor_gap_max_ms = float(gaps_ms.max())
+        sensor_gap_count  = int((gaps_ms > 4.0 * dt_nom_ms).sum())
+    else:
+        sensor_gap_max_ms = float('inf');  sensor_gap_count = 0
+
+    if len(tv) > 10:
+        idx = np.arange(len(tv), dtype=np.float64)
+        slope_ns, intercept_ns, r, _, _ = linregress(idx, tv)
+        r2 = r ** 2
+        fitted = slope_ns * idx + intercept_ns
+        residuals_ms = (tv - fitted) / 1e6
+        lf_std = float(residuals_ms.std());  lf_max = float(np.abs(residuals_ms).max())
+    else:
+        slope_ns = (tv[-1] - tv[0]) / max(len(tv)-1, 1)
+        r2 = np.nan;  lf_std = lf_max = np.nan
+
+    f_opening = _interp1d(ts, opening, kind="linear", bounds_error=False, fill_value=np.nan)
+    opening_at_frames = f_opening(tv)
+
+    return _AlignMetrics(
+        dur_vid_s=dur_vid_s, dur_sensor_s=dur_sensor_s, overlap_s=overlap_s,
+        offset_start_ms=offset_start_ms,
+        latency_mean_ms=lat_mean, latency_std_ms=lat_std,
+        latency_max_abs_ms=lat_max, latency_p95_abs_ms=lat_p95,
+        frames_no_sensor=n_no_sensor,
+        sensor_gap_max_ms=sensor_gap_max_ms, sensor_gap_count=sensor_gap_count,
+        linfit_slope=float(slope_ns), linfit_r2=float(r2),
+        linfit_residual_std_ms=lf_std, linfit_residual_max_ms=lf_max,
+        opening_at_frames=opening_at_frames, frame_ts_ns=vid.ts_ns,
+    )
+
+
+def _compute_phys_coherence_pinces(aln: _AlignMetrics, max_vel: float) -> _PhysCoherence:
+    op    = aln.opening_at_frames
+    ts_ns = aln.frame_ts_ns.astype(np.float64)
+    valid = np.isfinite(op)
+    n_ok  = int(valid.sum());  n_miss = int((~valid).sum())
+    if n_ok < 2:
+        return _PhysCoherence(n_ok, n_miss, np.nan, np.nan, (np.nan, np.nan), np.nan, np.nan, 0)
+    op_v = op[valid];  ts_v = ts_ns[valid]
+    dt_s = np.diff(ts_v) / 1e9
+    vel  = np.abs(np.diff(op_v)) / np.maximum(dt_s, 1e-6)
+    return _PhysCoherence(
+        n_frames_with_sensor=n_ok, n_frames_no_sensor=n_miss,
+        opening_mean_mm=float(op_v.mean()), opening_std_mm=float(op_v.std()),
+        opening_range=(float(op_v.min()), float(op_v.max())),
+        d_opening_max_mm_s=float(vel.max()), d_opening_p99_mm_s=float(np.percentile(vel, 99)),
+        impossible_jumps=int((vel > max_vel).sum()),
+    )
+
+
+def _generate_pinces_alerts(vid, sen, aln, phy, thr) -> List[_PincesAlert]:
+    alerts = []
+
+    def add(code, level, msg, value, threshold):
+        alerts.append(_PincesAlert(code=code, level=level, message=msg,
+                                   value=value, threshold=threshold))
+
+    ONE_FRAME_MS = 1000.0 / _NOMINAL_FPS_PINCES
+    abs_offset = abs(aln.offset_start_ms)
+    if aln.offset_start_ms < -ONE_FRAME_MS:
+        add("OFFSET_START", "ERROR",
+            f"Vidéo démarre {aln.offset_start_ms:+.1f}ms avant le capteur — capteur manquant au début",
+            abs_offset, ONE_FRAME_MS)
+    elif abs_offset > thr.offset_ms:
+        add("OFFSET_START", "ERROR",
+            f"Offset démarrage {aln.offset_start_ms:+.1f}ms > seuil {thr.offset_ms:.0f}ms",
+            abs_offset, thr.offset_ms)
+
+    if np.isfinite(aln.latency_max_abs_ms) and aln.latency_max_abs_ms > thr.latency_max_ms:
+        has_gap = aln.sensor_gap_count > 0
+        level = "WARNING" if has_gap else ("ERROR" if aln.latency_max_abs_ms > thr.latency_max_ms * 2 else "WARNING")
+        note  = f"  (causée par gap capteur {aln.sensor_gap_max_ms:.0f}ms)" if has_gap else ""
+        add("LATENCY_MAX", level,
+            f"Latence max frame→capteur {aln.latency_max_abs_ms:.1f}ms > seuil {thr.latency_max_ms:.0f}ms"
+            f"  (P95={aln.latency_p95_abs_ms:.1f}ms){note}",
+            aln.latency_max_abs_ms, thr.latency_max_ms)
+
+    if aln.frames_no_sensor > 1:
+        frac  = aln.frames_no_sensor / max(vid.n_frames, 1)
+        level = "ERROR" if frac > 0.05 else "WARNING"
+        add("FRAMES_NO_SENSOR", level,
+            f"{aln.frames_no_sensor}/{vid.n_frames} frames ({frac*100:.1f}%) hors plage capteur",
+            aln.frames_no_sensor, 0.0)
+
+    if aln.sensor_gap_count > 0:
+        level = "ERROR" if aln.sensor_gap_max_ms > 100.0 else "WARNING"
+        add("SENSOR_GAP", level,
+            f"{aln.sensor_gap_count} trou(s) capteur — gap max={aln.sensor_gap_max_ms:.1f}ms",
+            aln.sensor_gap_max_ms, 0.0)
+
+    if aln.overlap_s < thr.min_overlap_s:
+        add("OVERLAP_SHORT", "ERROR",
+            f"Recouvrement {aln.overlap_s:.1f}s < minimum {thr.min_overlap_s:.0f}s",
+            aln.overlap_s, thr.min_overlap_s)
+
+    if vid.jitter_std_ms > thr.jitter_std_ms:
+        add("JITTER", "WARNING",
+            f"Jitter timestamps vidéo {vid.jitter_std_ms:.2f}ms > seuil {thr.jitter_std_ms:.0f}ms",
+            vid.jitter_std_ms, thr.jitter_std_ms)
+
+    if vid.frame_drops > thr.max_drops:
+        level = "ERROR" if vid.frame_drops > thr.max_drops * 3 else "WARNING"
+        add("FRAME_DROPS", level,
+            f"{vid.frame_drops} frame drops > seuil {thr.max_drops}",
+            vid.frame_drops, thr.max_drops)
+
+    if vid.missing_indices > 0:
+        add("MISSING_FRAMES", "WARNING",
+            f"{vid.missing_indices} indices manquants dans le flux JSONL",
+            vid.missing_indices, 0.0)
+
+    if sen.neg_dt_count > 0:
+        level = "ERROR" if sen.neg_dt_count > 2 else "WARNING"
+        add("SENSOR_NEG_DT", level,
+            f"{sen.neg_dt_count} saut(s) temporel(s) négatif(s) dans le capteur",
+            sen.neg_dt_count, 0.0)
+
+    if sen.vel_anomalies > 0:
+        add("SENSOR_VEL_ANOMALY", "WARNING",
+            f"{sen.vel_anomalies} saut(s) impossible(s) dans capteur (vel > {thr.max_vel_mm_s:.0f}mm/s)",
+            sen.vel_max_mm_s, thr.max_vel_mm_s)
+
+    if phy.impossible_jumps > 0:
+        add("INTERP_VEL_ANOMALY", "WARNING",
+            f"{phy.impossible_jumps} saut(s) impossible(s) dans le capteur interpolé aux frames",
+            phy.impossible_jumps, 0.0)
+
+    return alerts
+
+
+def _process_side_pinces(session_path: Path, side: str, thr: _PincesThresholds) -> _SideResult:
+    session_name = session_path.name
+    jsonl_path   = session_path / "videos" / f"{side}.jsonl"
+    sensor_path  = session_path / f"gripper_{side}_data.csv"
+
+    missing = [p for p in [jsonl_path, sensor_path] if not p.exists()]
+    if missing:
+        names = [p.name for p in missing]
+        return _SideResult(session_name=session_name, side=side, success=False,
+                           error=f"Fichiers absents : {names}")
+    try:
+        indices, ts_ns = _load_jsonl_timestamps_pinces(jsonl_path)
+        sensor_df      = _load_sensor_pinces(sensor_path)
+        dt_nominal_ms  = float(np.median(np.diff(sensor_df["timestamp_ns"].values)) / 1e6)
+        sensor_df      = _apply_sensor_fixes_pinces(sensor_df, int(ts_ns[0]), dt_nominal_ms)
+
+        vid = _analyze_vid_ts(indices, ts_ns)
+        sen = _analyze_sensor_pinces(sensor_df, thr.max_vel_mm_s)
+        aln = _compute_alignment_pinces(vid, sensor_df)
+        phy = _compute_phys_coherence_pinces(aln, thr.max_vel_mm_s)
+        als = _generate_pinces_alerts(vid, sen, aln, phy, thr)
+
+        return _SideResult(
+            session_name=session_name, side=side, success=True,
+            video=vid, sensor=sen, alignment=aln, physical=phy,
+            alerts=als, has_errors=any(a.level == "ERROR" for a in als),
+            sensor_df=sensor_df,
+        )
+    except Exception as exc:
+        import traceback
+        return _SideResult(session_name=session_name, side=side, success=False,
+                           error=f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+
+
+def _print_pinces_summary(all_results: List[_SideResult]) -> None:
+    ok_list   = [r for r in all_results if r.success and r.status == "OK"]
+    warn_list = [r for r in all_results if r.success and r.status == "WARNING"]
+    err_list  = [r for r in all_results if r.success and r.status == "ERROR"]
+    fail_list = [r for r in all_results if not r.success]
+
+    print()
+    print("═" * 64)
+    print(f"  Total    : {len(all_results):4d}")
+    print(f"  OK       : {len(ok_list):4d}")
+    print(f"  WARNING  : {len(warn_list):4d}")
+    print(f"  ERROR    : {len(err_list):4d}")
+    print(f"  FAILED   : {len(fail_list):4d}")
+
+    success_list = [r for r in all_results if r.success and r.alignment]
+    if success_list:
+        offsets = np.array([r.alignment.offset_start_ms for r in success_list])
+        lats    = np.array([r.alignment.latency_max_abs_ms for r in success_list
+                            if np.isfinite(r.alignment.latency_max_abs_ms)])
+        drops   = np.array([r.video.frame_drops for r in success_list])
+        neg_dts = np.array([r.sensor.neg_dt_count for r in success_list])
+        print()
+        print(f"  Offset démarrage (ms)    : moy={offsets.mean():+.1f}  "
+              f"med={np.median(offsets):+.1f}  max|.|={np.abs(offsets).max():.1f}")
+        if len(lats):
+            print(f"  Latence max frame→capteur: moy={lats.mean():.1f}ms  "
+                  f"P95={np.percentile(lats, 95):.1f}ms  max={lats.max():.1f}ms")
+        print(f"  Frame drops total        : {drops.sum():.0f}")
+        print(f"  Sensor neg_dt total      : {neg_dts.sum():.0f}")
+
+    print("═" * 64)
+
+    if err_list or fail_list:
+        print("\nPROBLÈMES CRITIQUES :")
+        for r in fail_list:
+            print(f"  [FAILED] {r.session_name}/{r.side} — {r.error[:100]}")
+        for r in err_list:
+            print(f"  [ERROR]  {r.session_name}/{r.side}")
+            for a in r.alerts:
+                if a.level == "ERROR":
+                    print(f"    [{a.code}] {a.message}")
+
+
+def _build_pinces_parser(sub) -> None:
+    p = sub.add_parser(
+        "pinces",
+        help="Vérifier l'alignement pince/vidéo (timestamps absolus) sur toutes les sessions",
+    )
+    p.add_argument("root", type=Path,
+                   help="Répertoire racine (les sessions session_* sont cherchées récursivement)")
+    p.add_argument("--session", default=None,
+                   help="Limiter à une seule session (nom du dossier)")
+    p.add_argument("--tolerance-offset-ms",  type=float, default=200.0)
+    p.add_argument("--tolerance-latency-ms", type=float, default=25.0)
+    p.add_argument("--tolerance-jitter-ms",  type=float, default=15.0)
+    p.add_argument("--max-frame-drops",      type=int,   default=5)
+    p.add_argument("--max-vel-mm-s",         type=float, default=2000.0)
+    p.add_argument("--min-overlap-s",        type=float, default=3.0)
+
+
+def _cmd_pinces(args) -> int:
+    root = Path(args.root).resolve()
+    if not root.is_dir():
+        print(f"[ERREUR] Répertoire introuvable : {root}", file=sys.stderr)
+        return 1
+
+    thr = _PincesThresholds(
+        offset_ms      = args.tolerance_offset_ms,
+        latency_max_ms = args.tolerance_latency_ms,
+        jitter_std_ms  = args.tolerance_jitter_ms,
+        max_drops      = args.max_frame_drops,
+        max_vel_mm_s   = args.max_vel_mm_s,
+        min_overlap_s  = args.min_overlap_s,
+    )
+
+    # Découverte récursive
+    all_session_paths = sorted(
+        p.parent for p in root.rglob("metadata.json")
+        if p.parent.name.startswith("session_") and "__FAILED" not in str(p.parent)
+        and (args.session is None or p.parent.name == args.session)
+    )
+
+    if not all_session_paths:
+        print(f"[ERREUR] Aucune session trouvée dans {root}", file=sys.stderr)
+        return 1
+
+    print(f"Sessions trouvées : {len(all_session_paths)}")
+    all_results: List[_SideResult] = []
+
+    for i, spath in enumerate(all_session_paths):
+        sname = spath.name
+        print(f"  [{i+1:02d}/{len(all_session_paths)}] {sname}", end="", flush=True)
+
+        for side in ("left", "right"):
+            r = _process_side_pinces(spath, side, thr)
+            all_results.append(r)
+
+            if r.success:
+                aln = r.alignment
+                sym = {"OK": "✓", "WARNING": "⚠", "ERROR": "✗"}.get(r.status, "?")
+                lat_str = f"{aln.latency_max_abs_ms:.1f}" if np.isfinite(aln.latency_max_abs_ms) else "N/A"
+                print(f"  {side}:{sym} off={aln.offset_start_ms:+.0f}ms lat_max={lat_str}ms", end="")
+                if r.alerts:
+                    codes = " ".join(a.code for a in r.alerts[:2])
+                    print(f" [{codes}]", end="")
+            else:
+                print(f"  {side}:FAILED", end="")
+
+        print()
+
+    _print_pinces_summary(all_results)
+
+    err_list  = [r for r in all_results if r.success and r.status == "ERROR"]
+    fail_list = [r for r in all_results if not r.success]
+    warn_list = [r for r in all_results if r.success and r.status == "WARNING"]
+    if err_list or fail_list:
+        return 2
+    if warn_list:
+        return 1
+    return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PARTIE 8 — Fix camera offset (fix_camera_offset.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_CAMERAS_FIX         = ["head", "left", "right"]
+_CAM_SYNC_MARKER_KEY = "camera_tracker_sync_applied"
+_CAM_OFFSET_THRESHOLD_MS = 500.0
+
+
+def _read_jsonl_cam(path: Path) -> list:
+    with open(path, "rb") as f:
+        raw = f.read()
+    frames = []
+    for part in raw.split(b"\r\n"):
+        part = part.strip()
+        if len(part) > 5:
+            try:
+                frames.append(json.loads(part))
+            except json.JSONDecodeError:
+                pass
+    return frames
+
+
+def _write_jsonl_cam(path: Path, frames: list) -> None:
+    lines = [json.dumps(frame, separators=(",", ":")) + "\r\n" for frame in frames]
+    with open(path, "wb") as f:
+        f.write("".join(lines).encode("utf-8"))
+
+
+def _read_tracker_window_ms(session_path: Path) -> Tuple[Optional[float], Optional[float]]:
+    import csv as _csv
+    tracker_path = session_path / "tracker_positions.csv"
+    if not tracker_path.exists():
+        return None, None
+    t_first = t_last = None
+    with open(tracker_path, newline="", encoding="utf-8") as f:
+        reader = _csv.DictReader(f)
+        for row in reader:
+            ns_str = row.get("timestamp_ns", "").strip()
+            if not ns_str:
+                continue
+            try:
+                t_ms = int(ns_str) / 1_000_000
+            except ValueError:
+                continue
+            if t_first is None:
+                t_first = t_ms
+            t_last = t_ms
+    return t_first, t_last
+
+
+def _fix_session_camera(session_path: Path, dry_run: bool = False, force: bool = False) -> dict:
+    session_name = session_path.name
+    meta_path    = session_path / "metadata.json"
+
+    if not meta_path.exists():
+        return {"session": session_name, "status": "skipped", "reason": "metadata.json absent"}
+
+    with open(meta_path, "rb") as f:
+        meta = json.loads(f.read())
+
+    if not force and meta.get(_CAM_SYNC_MARKER_KEY):
+        return {"session": session_name, "status": "skipped",
+                "reason": f"déjà corrigée ({_CAM_SYNC_MARKER_KEY}=true)"}
+
+    trk_t0, trk_t1 = _read_tracker_window_ms(session_path)
+    if trk_t0 is None:
+        return {"session": session_name, "status": "error",
+                "reason": "tracker_positions.csv introuvable ou sans timestamp_ns valide"}
+
+    offsets: Dict[str, float] = {}
+    cam_frames: Dict[str, list] = {}
+
+    for cam in _CAMERAS_FIX:
+        jsonl_path = session_path / "videos" / f"{cam}.jsonl"
+        if not jsonl_path.exists():
+            continue
+        frames = _read_jsonl_cam(jsonl_path)
+        if not frames:
+            continue
+        cam_frames[cam] = frames
+        offsets[cam]    = frames[0]["capture_time"] - trk_t0
+
+    if not offsets:
+        return {"session": session_name, "status": "error",
+                "reason": "aucun fichier .jsonl trouvé"}
+
+    max_offset = max(abs(v) for v in offsets.values())
+    if max_offset < _CAM_OFFSET_THRESHOLD_MS and not force:
+        return {
+            "session": session_name, "status": "ok",
+            "reason": f"offset max={max_offset:.1f}ms < seuil {_CAM_OFFSET_THRESHOLD_MS}ms — déjà alignées",
+            "offsets_ms": offsets, "tracker_t0_ms": trk_t0, "tracker_t1_ms": trk_t1,
+        }
+
+    report = {
+        "session": session_name,
+        "status": "dry-run" if dry_run else "corrected",
+        "tracker_t0_ms": trk_t0, "tracker_t1_ms": trk_t1,
+        "tracker_duration_s": (trk_t1 - trk_t0) / 1000,
+        "offsets_ms": offsets, "cameras_fixed": [],
+    }
+
+    for cam, offset_ms in offsets.items():
+        jsonl_path  = session_path / "videos" / f"{cam}.jsonl"
+        frames      = cam_frames[cam]
+        offset_int  = round(offset_ms)
+        recaled     = [{**fr, "capture_time": fr["capture_time"] - offset_int} for fr in frames]
+        truncated   = [fr for fr in recaled if trk_t0 <= fr["capture_time"] <= trk_t1]
+        n_removed   = len(recaled) - len(truncated)
+        overlap_s   = ((truncated[-1]["capture_time"] - truncated[0]["capture_time"]) / 1000
+                       if truncated else 0)
+
+        report["cameras_fixed"].append({
+            "camera": cam, "offset_ms": offset_ms, "offset_applied_ms": offset_int,
+            "frames_original": len(frames), "frames_kept": len(truncated),
+            "frames_removed": n_removed, "overlap_s": round(overlap_s, 2),
+            "first_original_ms": frames[0]["capture_time"],
+            "first_corrected_ms": truncated[0]["capture_time"] if truncated else None,
+            "last_corrected_ms":  truncated[-1]["capture_time"] if truncated else None,
+        })
+
+        if not dry_run and truncated:
+            bak_path = jsonl_path.with_suffix(".jsonl.bak")
+            if not bak_path.exists():
+                shutil.copy2(jsonl_path, bak_path)
+            _write_jsonl_cam(jsonl_path, truncated)
+
+    if not dry_run:
+        meta[_CAM_SYNC_MARKER_KEY]                        = True
+        meta["camera_tracker_sync_offsets_ms"]            = offsets
+        meta["camera_tracker_sync_tracker_t0_ms"]         = trk_t0
+        meta["camera_tracker_sync_tracker_t1_ms"]         = trk_t1
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+
+    return report
+
+
+def _print_fix_camera_report(report: dict) -> None:
+    status  = report["status"]
+    session = report["session"]
+    reason  = report.get("reason", "")
+    if status in ("skipped", "ok"):
+        print(f"  [{status.upper()}] {session} — {reason}")
+        return
+    if status == "error":
+        print(f"  [ERROR] {session} — {reason}")
+        return
+    trk_dur = report.get("tracker_duration_s", 0)
+    print(f"  [{status.upper()}] {session}  (tracker window={trk_dur:.1f}s)")
+    for c in report.get("cameras_fixed", []):
+        cam     = c["camera"]
+        off     = c["offset_ms"]
+        kept    = c["frames_kept"]
+        removed = c["frames_removed"]
+        total   = c["frames_original"]
+        overlap = c["overlap_s"]
+        pct     = kept / total * 100 if total else 0
+        print(f"    {cam}: offset={off:+.0f}ms  "
+              f"kept={kept}/{total} ({pct:.0f}%)  "
+              f"removed={removed}  overlap={overlap:.1f}s")
+
+
+def _build_fix_camera_parser(sub) -> None:
+    p = sub.add_parser(
+        "fix-camera",
+        help="Recaler et tronquer les capture_time caméras sur la fenêtre tracker",
+    )
+    p.add_argument("root", type=Path,
+                   help="Répertoire racine (sessions cherchées récursivement)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Afficher les corrections sans modifier les fichiers")
+    p.add_argument("--force", action="store_true",
+                   help="Forcer la correction même si déjà appliquée")
+    p.add_argument("--session", default=None,
+                   help="Limiter à une seule session (nom du dossier)")
+
+
+def _cmd_fix_camera(args) -> int:
+    root = Path(args.root).resolve()
+    if not root.is_dir():
+        print(f"[ERREUR] Répertoire introuvable : {root}", file=sys.stderr)
+        return 1
+
+    sessions = sorted(
+        p.parent for p in root.rglob("metadata.json")
+        if (p.parent / "videos").exists()
+        and (args.session is None or p.parent.name == args.session)
+    )
+
+    if not sessions:
+        print(f"[ERREUR] Aucune session trouvée dans {root}", file=sys.stderr)
+        return 1
+
+    prefix = "[DRY-RUN] " if args.dry_run else ""
+    print(f"{prefix}Traitement de {len(sessions)} session(s)...\n")
+
+    n_corrected = n_skipped = n_errors = 0
+    for session_path in sessions:
+        report = _fix_session_camera(session_path, dry_run=args.dry_run, force=args.force)
+        _print_fix_camera_report(report)
+        if report["status"] in ("corrected", "dry-run"):
+            n_corrected += 1
+        elif report["status"] == "error":
+            n_errors += 1
+        else:
+            n_skipped += 1
+
+    print(f"\n  Corrigées : {n_corrected}  Ignorées : {n_skipped}  Erreurs : {n_errors}")
+    if args.dry_run:
+        print("  Mode dry-run : aucun fichier modifié.")
+    return 0 if n_errors == 0 else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="sync.py — moteur de synchronisation temporelle complet",
@@ -2226,6 +3011,8 @@ def main() -> int:
     _build_train_parser(sub)
     _build_apply_parser(sub)
     _build_score_parser(sub)
+    _build_pinces_parser(sub)
+    _build_fix_camera_parser(sub)
 
     args = parser.parse_args()
     if args.cmd == "heuristic":
@@ -2236,6 +3023,10 @@ def main() -> int:
         return _cmd_apply(args)
     elif args.cmd == "score":
         return _cmd_score(args)
+    elif args.cmd == "pinces":
+        return _cmd_pinces(args)
+    elif args.cmd == "fix-camera":
+        return _cmd_fix_camera(args)
     return 1
 
 

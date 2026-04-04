@@ -6,7 +6,7 @@ USER_NAME="spool"
 GROUP_NAME="spool"
 
 APP_DIR="/home/spool/treatment"
-WORK_DIR="/mnt/inbox"
+WORK_DIR="/Users/christopher/Downloads/sync_test_1/treatment/data"
 PYTHON_BIN="/usr/bin/python3"
 PORT="8000"
 HOST="0.0.0.0"

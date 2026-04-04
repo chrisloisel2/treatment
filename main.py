@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── run (pipeline CLI) ────────────────────────────────────────────────────
     rp = sub.add_parser("run", help="Lance la pipeline en ligne de commande")
-    rp.add_argument("--bronze-dir",          default="/mnt/inbox")
+    rp.add_argument("--bronze-dir",          default="/Users/christopher/Downloads/sync_test_1/treatment/data")
     rp.add_argument("--silver-dir",          default=str(Path.home() / "silver"))
     rp.add_argument("--session",             default=None,  help="Traiter une session spécifique")
     rp.add_argument("--all",                 action="store_true", help="Traiter toutes les sessions non traitées")

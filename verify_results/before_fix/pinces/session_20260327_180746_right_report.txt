@@ -1,0 +1,61 @@
+======================================================================
+RAPPORT ALIGNEMENT PINCE
+Session : session_20260327_180746
+Côté    : RIGHT
+Statut  : OK
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+TIMESTAMPS VIDÉO
+──────────────────────────────────────────────────────────────────────
+  Frames analysées       : 211
+  Durée couverte         : 7.014 s
+  Intervalle inter-frames: moy=33.40ms  std=7.42ms  [6.0ms – 96.0ms]
+  Jitter robuste (MAD)   : 0.000 ms
+  Frame drops (>83ms)    : 1
+  Indices manquants      : 0
+
+──────────────────────────────────────────────────────────────────────
+SIGNAL CAPTEUR
+──────────────────────────────────────────────────────────────────────
+  Échantillons           : 477
+  Durée couverte         : 7.640 s
+  Fréquence médiane      : 61.4 Hz  (dt médian = 16.30 ms)
+  Sauts dt négatifs      : 0
+  Ouverture plage        : [2.8, 25.7] mm
+  Vitesse max            : 170 mm/s  (P99 = 125 mm/s)
+  Anomalies vitesse      : 0
+
+──────────────────────────────────────────────────────────────────────
+ALIGNEMENT HORLOGE
+──────────────────────────────────────────────────────────────────────
+  Durée vidéo            : 7.014 s
+  Durée capteur          : 7.640 s
+  Recouvrement           : 7.014 s
+
+  Offset démarrage       : +152.418 ms
+  Latence frame→capteur  :
+    moy                  : -1.524 ms
+    std                  : 5.026 ms
+    max |latence|        : 10.313 ms
+    P95 |latence|        : 8.641 ms
+    frames hors capteur  : 0
+
+  Continuité capteur :
+    gap max              : 26.0 ms
+    nb gaps >4×dt_nom    : 0
+
+  Modèle linéaire vidéo :
+    slope                : 33393002.155 ns/frame
+    R²                   : 0.999989
+    résidus std          : 6.821 ms
+    résidus max          : 56.007 ms
+
+──────────────────────────────────────────────────────────────────────
+COHÉRENCE PHYSIQUE
+──────────────────────────────────────────────────────────────────────
+  Frames avec capteur    : 211
+  Frames sans capteur    : 0
+  Ouverture moy/std      : 6.25 ± 6.04 mm
+  Vitesse max inter-fr.  : 151 mm/s
+  Sauts impossibles      : 0

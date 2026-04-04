@@ -1,0 +1,782 @@
+[
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_180728",
+    "session_id": "20260327_180728",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=34 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.997
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.0774,
+      "tracker_left|cam_left": 0.7588,
+      "tracker_right|cam_right": 0.0756
+    },
+    "ia_score": 0.3039,
+    "score": 30.4,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "FAIL"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_201214",
+    "session_id": "20260327_201214",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=22 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 99%",
+        "value": 0.995
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7971,
+      "tracker_left|cam_left": 0.756,
+      "tracker_right|cam_right": 0.805
+    },
+    "ia_score": 0.786,
+    "score": 78.6,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_201636",
+    "session_id": "20260327_201636",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=26 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.998
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.3069,
+      "tracker_left|cam_left": 0.063,
+      "tracker_right|cam_right": 0.0518
+    },
+    "ia_score": 0.1406,
+    "score": 14.1,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "FAIL"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_201847",
+    "session_id": "20260327_201847",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=25 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.996
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.744,
+      "tracker_left|cam_left": 0.7677,
+      "tracker_right|cam_right": 0.6993
+    },
+    "ia_score": 0.737,
+    "score": 73.7,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202003",
+    "session_id": "20260327_202003",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=32 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.996
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.0883,
+      "tracker_left|cam_left": 0.7535,
+      "tracker_right|cam_right": 0.7539
+    },
+    "ia_score": 0.5319,
+    "score": 53.2,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202157",
+    "session_id": "20260327_202157",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=21 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.998
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7561,
+      "tracker_left|cam_left": 0.7465,
+      "tracker_right|cam_right": 0.7378
+    },
+    "ia_score": 0.7468,
+    "score": 74.7,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202244",
+    "session_id": "20260327_202244",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=24 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.998
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.3114,
+      "tracker_left|cam_left": 0.7588,
+      "tracker_right|cam_right": 0.2908
+    },
+    "ia_score": 0.4537,
+    "score": 45.4,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202338",
+    "session_id": "20260327_202338",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=25 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 99%",
+        "value": 0.994
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7603,
+      "tracker_left|cam_left": 0.515,
+      "tracker_right|cam_right": 0.6102
+    },
+    "ia_score": 0.6285,
+    "score": 62.6,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202846",
+    "session_id": "20260327_202846",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=25 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.997
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.0617,
+      "tracker_left|cam_left": 0.0547,
+      "tracker_right|cam_right": 0.0659
+    },
+    "ia_score": 0.0608,
+    "score": 6.1,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "FAIL"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_202958",
+    "session_id": "20260327_202958",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=22 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 99%",
+        "value": 0.995
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.8158,
+      "tracker_left|cam_left": 0.7681,
+      "tracker_right|cam_right": 0.8073
+    },
+    "ia_score": 0.7971,
+    "score": 79.7,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_203233",
+    "session_id": "20260327_203233",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=24 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.996
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7536,
+      "tracker_left|cam_left": 0.7561,
+      "tracker_right|cam_right": 0.7226
+    },
+    "ia_score": 0.7441,
+    "score": 74.4,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_203457",
+    "session_id": "20260327_203457",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=24 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.996
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.6781,
+      "tracker_left|cam_left": 0.6375,
+      "tracker_right|cam_right": 0.7494
+    },
+    "ia_score": 0.6883,
+    "score": 68.8,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_203620",
+    "session_id": "20260327_203620",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=22 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.997
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7532,
+      "tracker_left|cam_left": 0.766,
+      "tracker_right|cam_right": 0.7527
+    },
+    "ia_score": 0.7573,
+    "score": 75.7,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "PASS"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_204045",
+    "session_id": "20260327_204045",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=26 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.998
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.7779,
+      "tracker_left|cam_left": 0.3465,
+      "tracker_right|cam_right": 0.7776
+    },
+    "ia_score": 0.634,
+    "score": 63.4,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  },
+  {
+    "session_path": "/Users/christopher/Downloads/sync_test_1/rendu/pants/do/session_20260327_213047",
+    "session_id": "20260327_213047",
+    "gates": [
+      {
+        "name": "structure",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "metadata",
+        "passed": true,
+        "message": "",
+        "value": null
+      },
+      {
+        "name": "quaternions",
+        "passed": true,
+        "message": "0.0% invalides",
+        "value": 0.0
+      },
+      {
+        "name": "tracker_continuity",
+        "passed": true,
+        "message": "0 gaps (max=25 ms)",
+        "value": 0.0
+      },
+      {
+        "name": "camera_continuity",
+        "passed": true,
+        "message": "max 0 gaps",
+        "value": 0.0
+      },
+      {
+        "name": "camera_coverage",
+        "passed": true,
+        "message": "min 100%",
+        "value": 0.997
+      }
+    ],
+    "ia_scores": {
+      "tracker_head|cam_head": 0.4758,
+      "tracker_left|cam_left": 0.7138,
+      "tracker_right|cam_right": 0.0492
+    },
+    "ia_score": 0.4129,
+    "score": 41.3,
+    "blocking_reason": "",
+    "errors": [],
+    "verdict": "WARN"
+  }
+]

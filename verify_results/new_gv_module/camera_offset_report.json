@@ -1,0 +1,182 @@
+[
+  {
+    "session": "session_20260327_180728",
+    "status": "ok",
+    "reason": "offset max=70.9 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 70.890625,
+      "left": 44.890625,
+      "right": 69.890625
+    },
+    "tracker_t0_ms": 1774631248271.1094,
+    "tracker_t1_ms": 1774631279372.1443
+  },
+  {
+    "session": "session_20260327_201214",
+    "status": "ok",
+    "reason": "offset max=92.1 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 52.143798828125,
+      "left": 92.143798828125,
+      "right": 33.143798828125
+    },
+    "tracker_t0_ms": 1774631534519.8562,
+    "tracker_t1_ms": 1774631555155.5593
+  },
+  {
+    "session": "session_20260327_201636",
+    "status": "ok",
+    "reason": "offset max=71.8 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 53.823974609375,
+      "left": 70.823974609375,
+      "right": 71.823974609375
+    },
+    "tracker_t0_ms": 1774638996142.176,
+    "tracker_t1_ms": 1774639031710.8945
+  },
+  {
+    "session": "session_20260327_201847",
+    "status": "ok",
+    "reason": "offset max=84.0 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 50.992431640625,
+      "left": 46.992431640625,
+      "right": 83.992431640625
+    },
+    "tracker_t0_ms": 1774631927312.0076,
+    "tracker_t1_ms": 1774631948128.9434
+  },
+  {
+    "session": "session_20260327_202003",
+    "status": "ok",
+    "reason": "offset max=76.5 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 69.5439453125,
+      "left": 76.5439453125,
+      "right": 63.5439453125
+    },
+    "tracker_t0_ms": 1774632003422.456,
+    "tracker_t1_ms": 1774632028305.9583
+  },
+  {
+    "session": "session_20260327_202157",
+    "status": "ok",
+    "reason": "offset max=92.5 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 92.498779296875,
+      "left": 68.498779296875,
+      "right": 55.498779296875
+    },
+    "tracker_t0_ms": 1774639317056.5012,
+    "tracker_t1_ms": 1774639355369.6306
+  },
+  {
+    "session": "session_20260327_202244",
+    "status": "ok",
+    "reason": "offset max=52.9 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 46.88916015625,
+      "left": 42.88916015625,
+      "right": 52.88916015625
+    },
+    "tracker_t0_ms": 1774632164085.1108,
+    "tracker_t1_ms": 1774632185813.313
+  },
+  {
+    "session": "session_20260327_202338",
+    "status": "ok",
+    "reason": "offset max=265.0 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 265.037353515625,
+      "left": 91.037353515625,
+      "right": 154.037353515625
+    },
+    "tracker_t0_ms": 1774639418626.9626,
+    "tracker_t1_ms": 1774639465932.3674
+  },
+  {
+    "session": "session_20260327_202846",
+    "status": "ok",
+    "reason": "offset max=78.8 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 57.849365234375,
+      "left": 54.849365234375,
+      "right": 78.849365234375
+    },
+    "tracker_t0_ms": 1774639726351.1506,
+    "tracker_t1_ms": 1774639756685.1567
+  },
+  {
+    "session": "session_20260327_202958",
+    "status": "ok",
+    "reason": "offset max=68.0 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 48.990234375,
+      "left": 67.990234375,
+      "right": 57.990234375
+    },
+    "tracker_t0_ms": 1774632598294.0098,
+    "tracker_t1_ms": 1774632620951.3496
+  },
+  {
+    "session": "session_20260327_203233",
+    "status": "ok",
+    "reason": "offset max=59.7 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 32.7080078125,
+      "left": 59.7080078125,
+      "right": 41.7080078125
+    },
+    "tracker_t0_ms": 1774632753852.292,
+    "tracker_t1_ms": 1774632775579.5906
+  },
+  {
+    "session": "session_20260327_203457",
+    "status": "ok",
+    "reason": "offset max=67.0 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 66.011474609375,
+      "left": 67.011474609375,
+      "right": 44.011474609375
+    },
+    "tracker_t0_ms": 1774632897491.9885,
+    "tracker_t1_ms": 1774632923883.5034
+  },
+  {
+    "session": "session_20260327_203620",
+    "status": "ok",
+    "reason": "offset max=73.6 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 46.58349609375,
+      "left": 73.58349609375,
+      "right": 71.58349609375
+    },
+    "tracker_t0_ms": 1774632980980.4165,
+    "tracker_t1_ms": 1774633007974.3508
+  },
+  {
+    "session": "session_20260327_204045",
+    "status": "ok",
+    "reason": "offset max=64.6 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 60.610107421875,
+      "left": 64.610107421875,
+      "right": 48.610107421875
+    },
+    "tracker_t0_ms": 1774633245097.39,
+    "tracker_t1_ms": 1774633272470.4978
+  },
+  {
+    "session": "session_20260327_213047",
+    "status": "ok",
+    "reason": "offset max=74.6 ms < seuil 500.0 ms — caméras déjà alignées sur le tracker",
+    "offsets_ms": {
+      "head": 74.63671875,
+      "left": 61.63671875,
+      "right": 64.63671875
+    },
+    "tracker_t0_ms": 1774643447647.3633,
+    "tracker_t1_ms": 1774643482613.6016
+  }
+]

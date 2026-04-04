@@ -1441,13 +1441,35 @@
 			user-select: none;
 		}
 
-		#sess-table thead th:first-child { width: 26px; }
-		#sess-table thead th.col-name  { width: auto; }
-		#sess-table thead th.col-files { width: 110px; }
-		#sess-table thead th.col-checks{ width: 190px; }
-		#sess-table thead th.col-score { width: 68px; text-align:center; }
-		#sess-table thead th.col-scen  { width: 110px; }
-		#sess-table thead th.col-rot   { width: 36px; text-align:center; }
+		#sess-table thead th:first-child {
+			width: 26px;
+		}
+
+		#sess-table thead th.col-name {
+			width: auto;
+		}
+
+		#sess-table thead th.col-files {
+			width: 110px;
+		}
+
+		#sess-table thead th.col-checks {
+			width: 190px;
+		}
+
+		#sess-table thead th.col-score {
+			width: 68px;
+			text-align: center;
+		}
+
+		#sess-table thead th.col-scen {
+			width: 110px;
+		}
+
+		#sess-table thead th.col-rot {
+			width: 36px;
+			text-align: center;
+		}
 
 		#sess-table tbody tr {
 			border-bottom: 1px solid var(--border);
@@ -1455,13 +1477,18 @@
 			transition: background .08s;
 		}
 
-		#sess-table tbody tr:last-child { border-bottom: none; }
+		#sess-table tbody tr:last-child {
+			border-bottom: none;
+		}
 
-		#sess-table tbody tr:hover { background: var(--bg3); }
+		#sess-table tbody tr:hover {
+			background: var(--bg3);
+		}
 
 		#sess-table tbody tr.st-selected {
 			background: var(--accent)15;
 		}
+
 		#sess-table tbody tr.st-selected td.st-cb-cell::after {
 			background: var(--accent);
 			box-shadow: 0 0 0 2px var(--accent)55;
@@ -1470,7 +1497,10 @@
 		#sess-table tbody tr.st-issues {
 			border-left: 3px solid var(--red);
 		}
-		#sess-table tbody tr.st-issues td.st-name { color: var(--red); }
+
+		#sess-table tbody tr.st-issues td.st-name {
+			color: var(--red);
+		}
 
 		#sess-table tbody td {
 			padding: 6px 10px;
@@ -1485,10 +1515,12 @@
 			width: 26px;
 			text-align: center;
 		}
+
 		td.st-cb-cell::after {
 			content: '';
 			display: inline-block;
-			width: 13px; height: 13px;
+			width: 13px;
+			height: 13px;
 			border-radius: 3px;
 			border: 1.5px solid var(--border2);
 			background: var(--bg3);
@@ -1504,7 +1536,11 @@
 		}
 
 		/* chips fichiers */
-		.st-chips { display:flex; gap:3px; }
+		.st-chips {
+			display: flex;
+			gap: 3px;
+		}
+
 		.st-chip {
 			font-size: .6rem;
 			padding: 1px 5px;
@@ -1512,11 +1548,26 @@
 			font-weight: 700;
 			letter-spacing: .02em;
 		}
-		.st-chip.ck { background:var(--green)18; color:var(--green); border:1px solid var(--green)33; }
-		.st-chip.cx { background:var(--red)15;   color:var(--red);   border:1px solid var(--red)33; }
+
+		.st-chip.ck {
+			background: var(--green)18;
+			color: var(--green);
+			border: 1px solid var(--green)33;
+		}
+
+		.st-chip.cx {
+			background: var(--red)15;
+			color: var(--red);
+			border: 1px solid var(--red)33;
+		}
 
 		/* dots statut checks */
-		.st-dots { display:flex; gap:4px; align-items:center; }
+		.st-dots {
+			display: flex;
+			gap: 4px;
+			align-items: center;
+		}
+
 		.st-dot {
 			display: inline-flex;
 			align-items: center;
@@ -1525,27 +1576,48 @@
 			color: var(--text3);
 			white-space: nowrap;
 		}
+
 		.st-dot::before {
 			content: '';
 			display: inline-block;
-			width: 6px; height: 6px;
+			width: 6px;
+			height: 6px;
 			border-radius: 50%;
 			background: var(--border2);
 			flex-shrink: 0;
 		}
-		.st-dot.ok  { color:var(--green); }
-		.st-dot.ok::before  { background:var(--green); }
-		.st-dot.err { color:var(--red); }
-		.st-dot.err::before { background:var(--red); }
-		.st-dot.wrn { color:var(--orange); }
-		.st-dot.wrn::before { background:var(--orange); }
+
+		.st-dot.ok {
+			color: var(--green);
+		}
+
+		.st-dot.ok::before {
+			background: var(--green);
+		}
+
+		.st-dot.err {
+			color: var(--red);
+		}
+
+		.st-dot.err::before {
+			background: var(--red);
+		}
+
+		.st-dot.wrn {
+			color: var(--orange);
+		}
+
+		.st-dot.wrn::before {
+			background: var(--orange);
+		}
 
 		/* score badge */
 		.st-grade {
 			display: inline-block;
 			font-size: .75rem;
 			font-weight: 900;
-			width: 22px; height: 22px;
+			width: 22px;
+			height: 22px;
 			line-height: 22px;
 			text-align: center;
 			border-radius: 4px;
@@ -1559,7 +1631,11 @@
 			display: block;
 			text-align: center;
 		}
-		.st-rot.on { color:var(--accent); opacity:1; }
+
+		.st-rot.on {
+			color: var(--accent);
+			opacity: 1;
+		}
 
 		/* group separator row */
 		#sess-table tbody tr.st-group-row {
@@ -1567,7 +1643,11 @@
 			border-bottom: 1px solid var(--border2);
 			cursor: default;
 		}
-		#sess-table tbody tr.st-group-row:hover { background: var(--bg4); }
+
+		#sess-table tbody tr.st-group-row:hover {
+			background: var(--bg4);
+		}
+
 		#sess-table tbody tr.st-group-row td {
 			padding: 5px 10px;
 			font-size: .65rem;
@@ -1576,6 +1656,7 @@
 			text-transform: uppercase;
 			letter-spacing: .07em;
 		}
+
 		.st-group-sel-btn {
 			font-size: .62rem;
 			padding: 1px 7px;
@@ -1586,7 +1667,12 @@
 			cursor: pointer;
 			margin-left: 8px;
 		}
-		.st-group-sel-btn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+		.st-group-sel-btn:hover {
+			background: var(--accent);
+			color: #fff;
+			border-color: var(--accent);
+		}
 
 		/* chip old */
 		.chip {
@@ -1597,11 +1683,13 @@
 			border: 1px solid var(--border);
 			color: var(--text3)
 		}
+
 		.chip.ok {
 			background: var(--green)15;
 			border-color: var(--green)44;
 			color: var(--green)
 		}
+
 		.chip.miss {
 			background: var(--red)15;
 			border-color: var(--red)44;
@@ -3372,13 +3460,15 @@
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Inbox :</span>
-							<input type="text" id="inbox-dir-input" placeholder="/mnt/inbox"
+							<input type="text" id="inbox-dir-input"
+								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/data"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Bronze :</span>
-							<input type="text" id="bronze-dir-input" placeholder="/mnt/inbox"
+							<input type="text" id="bronze-dir-input"
+								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/data"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<button class="btn p" id="inbox-scan-btn" onclick="inboxScan()">
@@ -3476,12 +3566,14 @@
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Inbox</label>
-								<input type="text" id="svc-inbox" value="/mnt/inbox"
+								<input type="text" id="svc-inbox"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/data"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Bronze</label>
-								<input type="text" id="svc-bronze" value="/mnt/inbox"
+								<input type="text" id="svc-bronze"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/data"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
@@ -3548,7 +3640,8 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
 									ok 2
 								</span>
-								<input type="hidden" id="cfg-root" value="/mnt/inbox" />
+								<input type="hidden" id="cfg-root"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/data" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3589,12 +3682,15 @@
 					<div class="card" id="scripts-card" style="margin-bottom:14px">
 						<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
 							<div class="card-h" style="margin:0">Scripts sur sessions sélectionnées</div>
-							<button class="btn sm" onclick="scriptsRefresh()" title="Recharger la liste des scripts">⟳</button>
+							<button class="btn sm" onclick="scriptsRefresh()"
+								title="Recharger la liste des scripts">⟳</button>
 							<div style="flex:1"></div>
-							<button class="btn sm p" id="btn-scripts-run" onclick="scriptsRunSelected()" disabled>▶ Lancer scripts</button>
+							<button class="btn sm p" id="btn-scripts-run" onclick="scriptsRunSelected()" disabled>▶
+								Lancer scripts</button>
 						</div>
 						<div id="scripts-list" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px">
-							<span style="font-size:.75rem;color:var(--text3);padding:4px 0" id="scripts-empty">Chargement…</span>
+							<span style="font-size:.75rem;color:var(--text3);padding:4px 0"
+								id="scripts-empty">Chargement…</span>
 						</div>
 					</div>
 
@@ -4813,7 +4909,8 @@
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/mnt/inbox" />
+								<input type="text" id="s-root"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/data" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
@@ -5269,7 +5366,7 @@
 			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
 			cfg: {
-				root: '/mnt/inbox', model: '_sync_ml_model', nas: '',
+				root: '/Users/christopher/Downloads/sync_test_1/treatment/data', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5461,7 +5558,7 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/mnt/inbox';
+			const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -5690,7 +5787,7 @@
 			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }
 			if (!_selectedScripts.size) { alert('Sélectionnez au moins un script.'); return; }
 			const sessions = [...S.selected];
-			const scripts  = [..._selectedScripts];
+			const scripts = [..._selectedScripts];
 			log(`Lancement de ${scripts.length} script(s) sur ${sessions.length} session(s)…`, 'INFO');
 			try {
 				const { job_id } = await api('POST', '/api/scripts/run', { sessions, scripts });
@@ -6561,11 +6658,11 @@
 				tvRefreshSessions();
 			});
 
-			const meta   = s.meta || {};
-			const ps     = s.pipeline_state;
-			const steps  = ps?.steps || {};
-			const verif  = meta.verification;
-			const lblV   = meta.camera_label_verification;
+			const meta = s.meta || {};
+			const ps = s.pipeline_state;
+			const steps = ps?.steps || {};
+			const verif = meta.verification;
+			const lblV = meta.camera_label_verification;
 
 			// ── colonne checkbox ──
 			const tdCb = document.createElement('td');
@@ -6582,7 +6679,7 @@
 			// ── colonne fichiers ──
 			const tdFiles = document.createElement('td');
 			const c = (ok, lbl) => `<span class="st-chip ${ok ? 'ck' : 'cx'}">${lbl}</span>`;
-			tdFiles.innerHTML = `<div class="st-chips">${c(s.has_tracker,'trk')}${c(s.has_gripper,'grp')}${c(s.has_ux,'ux')}${c(s.has_jsonl,'jsonl')}</div>`;
+			tdFiles.innerHTML = `<div class="st-chips">${c(s.has_tracker, 'trk')}${c(s.has_gripper, 'grp')}${c(s.has_ux, 'ux')}${c(s.has_jsonl, 'jsonl')}</div>`;
 			tr.appendChild(tdFiles);
 
 			// ── colonne checks ──
@@ -6591,7 +6688,7 @@
 			// sync
 			const chkScore = meta.check_score ?? null;
 			const vidDelay = verif?.stats?.video_max_delay_ms;
-			const syncSt   = steps['check_sync']?.status;
+			const syncSt = steps['check_sync']?.status;
 			let syncCls = 'pen';
 			if (chkScore != null) syncCls = chkScore >= 70 ? 'ok' : chkScore >= 40 ? 'wrn' : 'err';
 			else if (vidDelay != null) syncCls = vidDelay <= 500 ? 'ok' : 'err';
@@ -6604,14 +6701,14 @@
 			const gripCls = verif ? (gripIss ? 'err' : 'ok') : (steps['verify']?.status === 'done' ? 'ok' : steps['verify']?.status === 'failed' ? 'err' : 'pen');
 
 			// vidéo
-			const vidIss  = (verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
-			const vidCls  = verif ? (vidIss ? 'err' : 'ok') : (steps['video']?.status === 'done' ? 'ok' : steps['video']?.status === 'failed' ? 'err' : 'pen');
+			const vidIss = (verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
+			const vidCls = verif ? (vidIss ? 'err' : 'ok') : (steps['video']?.status === 'done' ? 'ok' : steps['video']?.status === 'failed' ? 'err' : 'pen');
 
 			// labels
-			const lblCls  = lblV != null ? (lblV.global_ok ? 'ok' : 'err') : (steps['verify_labels']?.status === 'done' ? 'ok' : steps['verify_labels']?.status === 'failed' ? 'err' : 'pen');
+			const lblCls = lblV != null ? (lblV.global_ok ? 'ok' : 'err') : (steps['verify_labels']?.status === 'done' ? 'ok' : steps['verify_labels']?.status === 'failed' ? 'err' : 'pen');
 
 			// ia_sync
-			const iaCls   = meta.ia_sync_validated ? 'ok' : (steps['validate']?.status === 'done' ? 'ok' : steps['validate']?.status === 'failed' ? 'err' : 'pen');
+			const iaCls = meta.ia_sync_validated ? 'ok' : (steps['validate']?.status === 'done' ? 'ok' : steps['validate']?.status === 'failed' ? 'err' : 'pen');
 
 			tdChk.innerHTML = `<div class="st-dots">
 				<span class="st-dot ${syncCls}" title="${syncLbl}">${syncLbl}</span>
@@ -6690,12 +6787,12 @@
 			refreshExportBtn();
 		}
 
-		function selAll()       { _applySelAndRefresh(s => S.selected.add(s.path)); }
-		function deselAll()     { _applySelAndRefresh(s => S.selected.delete(s.path)); }
-		function selValid()     { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); }
-		function selIssues()    { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); }
-		function selRotated()   { _applySelAndRefresh(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
-		function selNotRotated(){ _applySelAndRefresh(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selAll() { _applySelAndRefresh(s => S.selected.add(s.path)); }
+		function deselAll() { _applySelAndRefresh(s => S.selected.delete(s.path)); }
+		function selValid() { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); }
+		function selIssues() { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selRotated() { _applySelAndRefresh(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selNotRotated() { _applySelAndRefresh(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;
@@ -8711,7 +8808,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/inbox				';
+				const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -8764,7 +8861,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/inbox';
+			S.cfg.root = ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -8782,7 +8879,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/inbox';
+				const root = c.root || '/Users/christopher/Downloads/sync_test_1/treatment/data';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -10085,8 +10182,8 @@
 			btn.disabled = true;
 			try {
 				const body = {
-					inbox_dir: ge('svc-inbox').value.trim() || '/mnt/inbox',
-					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/inbox',
+					inbox_dir: ge('svc-inbox').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/data',
+					bronze_dir: ge('svc-bronze').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/data',
 					host: ge('svc-host').value.trim() || '0.0.0.0',
 					port: parseInt(ge('svc-port').value) || 8000,
 				};

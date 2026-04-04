@@ -1,0 +1,67 @@
+======================================================================
+RAPPORT ALIGNEMENT PINCE
+Session : session_20260327_175149
+Côté    : RIGHT
+Statut  : ERROR
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+ALERTES (1 erreur(s), 0 avertissement(s))
+──────────────────────────────────────────────────────────────────────
+  [ERROR  ] [OFFSET_START]
+           Offset démarrage +4069.8ms > seuil 200ms  [corrigeable par fix_camera_offset]
+
+──────────────────────────────────────────────────────────────────────
+TIMESTAMPS VIDÉO
+──────────────────────────────────────────────────────────────────────
+  Frames analysées       : 669
+  Durée couverte         : 22.275 s
+  Intervalle inter-frames: moy=33.35ms  std=7.88ms  [2.0ms – 64.0ms]
+  Jitter robuste (MAD)   : 1.483 ms
+  Frame drops (>83ms)    : 0
+  Indices manquants      : 0
+
+──────────────────────────────────────────────────────────────────────
+SIGNAL CAPTEUR
+──────────────────────────────────────────────────────────────────────
+  Échantillons           : 1646
+  Durée couverte         : 26.387 s
+  Fréquence médiane      : 61.1 Hz  (dt médian = 16.36 ms)
+  Sauts dt négatifs      : 0
+  Ouverture plage        : [3.1, 76.4] mm
+  Vitesse max            : 1152 mm/s  (P99 = 555 mm/s)
+  Anomalies vitesse      : 0
+
+──────────────────────────────────────────────────────────────────────
+ALIGNEMENT HORLOGE
+──────────────────────────────────────────────────────────────────────
+  Durée vidéo            : 22.275 s
+  Durée capteur          : 26.387 s
+  Recouvrement           : 22.275 s
+
+  Offset démarrage       : +4069.818 ms
+  Latence frame→capteur  :
+    moy                  : -0.014 ms
+    std                  : 4.718 ms
+    max |latence|        : 8.183 ms
+    P95 |latence|        : 7.582 ms
+    frames hors capteur  : 0
+
+  Continuité capteur :
+    gap max              : 29.8 ms
+    nb gaps >4×dt_nom    : 0
+
+  Modèle linéaire vidéo :
+    slope                : 33389035.639 ns/frame
+    R²                   : 0.999999
+    résidus std          : 6.671 ms
+    résidus max          : 46.166 ms
+
+──────────────────────────────────────────────────────────────────────
+COHÉRENCE PHYSIQUE
+──────────────────────────────────────────────────────────────────────
+  Frames avec capteur    : 669
+  Frames sans capteur    : 0
+  Ouverture moy/std      : 21.19 ± 22.00 mm
+  Vitesse max inter-fr.  : 1007 mm/s
+  Sauts impossibles      : 0

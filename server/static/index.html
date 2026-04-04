@@ -9309,6 +9309,17 @@
 				statusTxt.textContent = `Terminé — ${exportLabel}`;
 				statusTxt.style.color = totalFailed ? 'var(--orange)' : 'var(--green)';
 				log(`Vérif+Export — ${exportLabel}`, 'OK');
+				// Retirer les sessions exportées de la liste
+				if (totalExported > 0) {
+					const exportedSet = new Set([...allValidRotated, ...allValidRaw]);
+					S.sessions = S.sessions.filter(s => !exportedSet.has(s.path));
+					exportedSet.forEach(p => S.selected.delete(p));
+					_saveSelection();
+					renderSessionsList();
+					renderPipelineBoard();
+					refreshExportBtn();
+					updateNavBadges();
+				}
 				const banner = ge('sess-export-banner');
 				if (banner && totalExported > 0) {
 					ge('sess-export-banner-text').textContent = `Export lancé — ${exportLabel}`;

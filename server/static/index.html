@@ -3460,15 +3460,13 @@
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Inbox :</span>
-							<input type="text" id="inbox-dir-input"
-								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/data"
+							<input type="text" id="inbox-dir-input" placeholder="/mnt/storage/silver"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Bronze :</span>
-							<input type="text" id="bronze-dir-input"
-								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/data"
+							<input type="text" id="bronze-dir-input" placeholder="/mnt/storage/silver"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<button class="btn p" id="inbox-scan-btn" onclick="inboxScan()">
@@ -3566,14 +3564,12 @@
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Inbox</label>
-								<input type="text" id="svc-inbox"
-									value="/Users/christopher/Downloads/sync_test_1/treatment/data"
+								<input type="text" id="svc-inbox" value="/mnt/storage/silver"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Bronze</label>
-								<input type="text" id="svc-bronze"
-									value="/Users/christopher/Downloads/sync_test_1/treatment/data"
+								<input type="text" id="svc-bronze" value="/mnt/storage/silver"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
@@ -3640,8 +3636,7 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
 									ok 2
 								</span>
-								<input type="hidden" id="cfg-root"
-									value="/Users/christopher/Downloads/sync_test_1/treatment/data" />
+								<input type="hidden" id="cfg-root" value="/mnt/storage/silver" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -4909,8 +4904,7 @@
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root"
-									value="/Users/christopher/Downloads/sync_test_1/treatment/data" />
+								<input type="text" id="s-root" value="/mnt/storage/silver" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
@@ -5366,7 +5360,7 @@
 			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
 			cfg: {
-				root: '/Users/christopher/Downloads/sync_test_1/treatment/data', model: '_sync_ml_model', nas: '',
+				root: '/mnt/storage/silver', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5558,7 +5552,7 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data';
+			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -8808,7 +8802,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data				';
+				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -8861,7 +8855,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/data';
+			S.cfg.root = ge('s-root').value || '/mnt/storage/silver';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -8879,7 +8873,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/Users/christopher/Downloads/sync_test_1/treatment/data';
+				const root = c.root || '/mnt/storage/silver';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -10182,8 +10176,8 @@
 			btn.disabled = true;
 			try {
 				const body = {
-					inbox_dir: ge('svc-inbox').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/data',
-					bronze_dir: ge('svc-bronze').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/data',
+					inbox_dir: ge('svc-inbox').value.trim() || '/mnt/storage/silver',
+					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/storage/silver',
 					host: ge('svc-host').value.trim() || '0.0.0.0',
 					port: parseInt(ge('svc-port').value) || 8000,
 				};

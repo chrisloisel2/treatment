@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── Valeurs par défaut ────────────────────────────────────────────────────────
 PORT="${PORT:-8000}"
 HOST="${HOST:-127.0.0.1}"
-BRONZE_DIR="${BRONZE_DIR:-/Users/christopher/Downloads/sync_test_1/treatment/data}"
+BRONZE_DIR="${BRONZE_DIR:-/mnt/storage/silver}"
 SILVER_DIR="${SILVER_DIR:-${HOME}/silver}"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 OPEN_BROWSER="${OPEN_BROWSER:-true}"
@@ -29,14 +29,14 @@ Commandes :
 Options (server) :
   --host HOST          Adresse d'écoute       (défaut: 127.0.0.1)
   --port PORT          Port                   (défaut: 8000)
-  --bronze-dir DIR     Dossier de travail     (défaut: /Users/christopher/Downloads/sync_test_1/treatment/data)
+  --bronze-dir DIR     Dossier de travail     (défaut: /mnt/storage/silver)
   --silver-dir DIR     Dossier de sortie      (défaut: ~/silver)
   --no-browser         Ne pas ouvrir le navigateur
 
 Options (run) :
   --session NAME       Traiter une session spécifique
   --all                Traiter toutes les sessions non traitées
-  --bronze-dir DIR     Dossier de travail     (défaut: /Users/christopher/Downloads/sync_test_1/treatment/data)
+  --bronze-dir DIR     Dossier de travail     (défaut: /mnt/storage/silver)
   --write              Copier vers silver après validation
   --delete-after-store Supprimer de bronze après copie (requiert --write)
   Tout autre argument est transmis tel quel à pipeline.py.

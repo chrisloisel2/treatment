@@ -5225,7 +5225,7 @@
 				title="Supprime le .pipeline_lock">🔓</button>
 			<button class="btn sm" id="btn-drawer-verify" onclick="verifyDrawer()"
 				title="Lance check_sync + verify (trackers, désync, labels) et écrit les résultats dans metadata">⚙
-				Vérification</button>
+				Test</button>
 			<button class="btn sm p" id="btn-drawer-run" onclick="openStepsModal('drawer')">▶ Relancer</button>
 		</div>
 		<div id="sess-drawer-body"></div>
@@ -6476,7 +6476,7 @@
 						}
 					}
 					btn.disabled = false;
-					btn.textContent = '⚙ Vérification';
+					btn.textContent = '⚙ Test';
 					btn.style.color = '';
 					return;
 				}
@@ -6484,11 +6484,11 @@
 				btn.disabled = false;
 				btn.textContent = `⚙ ${scoreStr}`;
 				btn.style.color = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : 'var(--red)';
-				setTimeout(() => { btn.textContent = '⚙ Vérification'; btn.style.color = ''; }, 8000);
+				setTimeout(() => { btn.textContent = '⚙ Test'; btn.style.color = ''; }, 8000);
 			} catch (e) {
 				log('Check score: ' + e.message, 'ERROR');
 				btn.disabled = false;
-				btn.textContent = '⚙ Vérification';
+				btn.textContent = '⚙ Test';
 				btn.style.color = '';
 				return;
 			}

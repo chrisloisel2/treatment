@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /Users/christopher/Downloads/sync_test_1/treatment/  → source brute, lecture seule
-  /Users/christopher/Downloads/sync_test_1/treatment//    → espace de travail (copie de travail)
+  /mnt/storage/silver/  → source brute, lecture seule
+  /mnt/storage/silver//    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,11 +110,11 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/Balls/do")
+    INGEST_DIR = Path("/mnt/storage/silver/")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/Users/christopher/Downloads/sync_test_1/treatment/Balls/do"
+DEFAULT_WATCH_DIR = "/mnt/storage/silver/"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR.parent / "_server_jobs"
@@ -881,7 +881,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /Users/christopher/Downloads/sync_test_1/treatment//
+    session:       str        # chemin dans /mnt/storage/silver//
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -890,7 +890,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /Users/christopher/Downloads/sync_test_1/treatment//
+    session:              str          # nom ou chemin de session dans /mnt/storage/silver//
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1196,7 +1196,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /Users/christopher/Downloads/sync_test_1/treatment//."""
+    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/silver//."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1217,7 +1217,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /Users/christopher/Downloads/sync_test_1/treatment//."""
+    """Lance une inférence asynchrone sur une session de /mnt/storage/silver//."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1261,13 +1261,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /Users/christopher/Downloads/sync_test_1/treatment//."""
+    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/silver//."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /Users/christopher/Downloads/sync_test_1/treatment//
+    # req.session peut être un nom ou un chemin complet dans /mnt/storage/silver//
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1283,7 +1283,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /Users/christopher/Downloads/sync_test_1/treatment// en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /mnt/storage/silver// en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -3247,7 +3247,7 @@ def _worker_export(job: Job, req: ExportRequest):
 
             sess_name = sess.name
             # Chemin relatif depuis INGEST_DIR pour préserver la hiérarchie Silver
-            # ex: /Users/christopher/Downloads/sync_test_1/treatment//Balls/do/session_X → Balls/do/session_X
+            # ex: /mnt/storage/silver//Balls/do/session_X → Balls/do/session_X
             try:
                 sess_rel = str(sess.relative_to(INGEST_DIR))
             except ValueError:
@@ -4196,7 +4196,7 @@ def _worker_inbox_promote(job: Job, session_path: str, bronze_dir: Optional[str]
 @app.get("/api/inbox/scan")
 async def inbox_scan(inbox_dir: Optional[str] = None):
     """
-    Scanne /Users/christopher/Downloads/sync_test_1/treatment/ (ou inbox_dir si fourni) et retourne le rapport de vérification
+    Scanne /mnt/storage/silver/ (ou inbox_dir si fourni) et retourne le rapport de vérification
     de chaque session trouvée. Parallélisé selon _INBOX_CONFIG.
     """
     try:
@@ -4218,7 +4218,7 @@ async def inbox_scan(inbox_dir: Optional[str] = None):
 async def inbox_check(req: dict):
     """
     Exécute les 5 checks sur une session précise (sans la déplacer).
-    body: { "session_path": "/Users/christopher/Downloads/sync_test_1/treatment//session_xxx" }
+    body: { "session_path": "/mnt/storage/silver//session_xxx" }
     """
     try:
         from pipeline.inbox_bronze import run_checks, _INBOX_CONFIG
@@ -4375,8 +4375,8 @@ async def inbox_service_install(req: dict):
     """
     import shutil as _sh
 
-    inbox_dir     = req.get("inbox_dir",     "/Users/christopher/Downloads/sync_test_1/treatment/")
-    bronze_dir    = req.get("bronze_dir",    "/Users/christopher/Downloads/sync_test_1/treatment/")
+    inbox_dir     = req.get("inbox_dir",     "/mnt/storage/silver/")
+    bronze_dir    = req.get("bronze_dir",    "/mnt/storage/silver/")
     host          = req.get("host",          "0.0.0.0")
     port          = int(req.get("port",      8000))
     python_bin    = req.get("python_bin")    or _sh.which("python3") or sys.executable

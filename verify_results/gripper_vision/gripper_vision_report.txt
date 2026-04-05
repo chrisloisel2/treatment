@@ -954,10 +954,10 @@ session_20260327_194049 / right
           features: span_norm=0.369  body_gap=0.226  compactness=0.149
 
 session_20260327_194351 / left
-  FAILED  Fichier absent : /Users/christopher/Downloads/sync_test_1/treatment//session_20260327_194351/videos/left.mp4
+  FAILED  Fichier absent : /mnt/storage/silver//session_20260327_194351/videos/left.mp4
 
 session_20260327_194351 / right
-  FAILED  Fichier absent : /Users/christopher/Downloads/sync_test_1/treatment//session_20260327_194351/gripper_right_data.csv
+  FAILED  Fichier absent : /mnt/storage/silver//session_20260327_194351/gripper_right_data.csv
 
 session_20260327_195658 / left
   [OK  ]  score=65.2/100  conf=0.85  qual=1.00  thr=35

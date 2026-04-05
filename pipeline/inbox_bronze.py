@@ -3,8 +3,8 @@
 """
 Pipeline Inbox → Bronze
 
-Scanne /Users/christopher/Downloads/sync_test_1/treatment/, applique 6 vérifications, puis déplace les sessions valides
-vers /Users/christopher/Downloads/sync_test_1/treatment//{scenario}.
+Scanne /mnt/storage/silver/, applique 6 vérifications, puis déplace les sessions valides
+vers /mnt/storage/silver//{scenario}.
 
 Étapes :
   1. STRUCTURE        — intégrité des fichiers/dossiers requis
@@ -13,7 +13,7 @@ vers /Users/christopher/Downloads/sync_test_1/treatment//{scenario}.
   4. COMPLETUDE       — pas de tracker manquant, pas de JSONL manquant
   5. CONTINUITÉ       — timestamps capteurs triés, gaps détectés et classifiés (fixable/non)
   6. TRAKEUR          — vérification géométrique via trakeur.py (head/left/right)
-  7. MOVE             — déplacement vers /Users/christopher/Downloads/sync_test_1/treatment//{scenario}
+  7. MOVE             — déplacement vers /mnt/storage/silver//{scenario}
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ import numpy as np
 import pandas as pd
 
 # ── Chemins ───────────────────────────────────────────────────────────────────
-INBOX_DIR  = Path("/Users/christopher/Downloads/sync_test_1/treatment/")
-BRONZE_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/")
+INBOX_DIR  = Path("/mnt/storage/silver/")
+BRONZE_DIR = Path("/mnt/storage/silver/")
 
 
 # ── Concurrence ───────────────────────────────────────────────────────────────

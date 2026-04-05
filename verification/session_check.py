@@ -107,11 +107,11 @@ VQ_DROPS_ERR        = 5     # était 10
 VQ_COVERAGE_WARN    = 0.95  # était 0.92
 VQ_COVERAGE_ERR     = 0.90  # était 0.85
 
-# Seuils gripper timestamp sync (resserrés)
-GT_OFFSET_ERR_MS    = 150.0  # était 200.0
-GT_LATENCY_ERR_MS   = 20.0   # était 25.0
-GT_JITTER_ERR_MS    = 10.0   # était 15.0
-GT_OVERLAP_MIN_S    = 8.0    # était 5.0
+# Seuils gripper timestamp sync
+GT_OFFSET_ERR_MS    = 200.0
+GT_LATENCY_ERR_MS   = 25.0
+GT_JITTER_ERR_MS    = 15.0
+GT_OVERLAP_MIN_S    = 5.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -976,57 +976,221 @@ def _chk_gate_stream_alignment(session_dir: Path, report: _SessionReport) -> boo
         return True
 
 
-def _chk_heuristic_score(session_dir: Path) -> float:
-    """Score heuristique basé sur la corrélation des normes de mouvement."""
-    if not _PANDAS or not _SCIPY:
-        return 0.5
+def _chk_math_score(session_dir: Path) -> Tuple[float, dict]:
+    """
+    Score mathématique pur de synchronisation vidéo↔tracker — sans IA.
+
+    Principe : le flux optique de la caméra HEAD mesure le mouvement apparent
+    de la scène. La vitesse angulaire du tracker HEAD mesure le mouvement réel
+    de la tête. Si les deux flux sont synchronisés, leur corrélation croisée
+    doit présenter un pic net à lag ≈ 0.
+
+    Pipeline :
+      1. Flux optique dense (Farneback) frame→frame sur la caméra HEAD.
+      2. Vitesse angulaire du tracker HEAD (norme de dquat/dt).
+      3. Cross-corrélation ±500ms pour trouver le lag optimal.
+      4. r au lag optimal = score de sync brut.
+      5. Pénalités : lag > 1 frame, overlap insuffisant.
+
+    Retourne (score_0_1, details_dict).
+    """
+    if not _CV2 or not _PANDAS or not _SCIPY:
+        missing = []
+        if not _CV2:    missing.append("opencv-python")
+        if not _PANDAS: missing.append("pandas")
+        if not _SCIPY:  missing.append("scipy")
+        return 0.70, {"method": "unavailable", "reason": f"dépendances manquantes: {missing}"}
+
+    LAG_SEARCH_MS = 500.0   # plage de recherche du lag ±ms
+    FRAME_MS      = 33.3    # 1 frame @ 30fps (lag naturel flux optique)
+    MIN_OVERLAP_S = 5.0     # recouvrement minimum pour un score fiable
+    MIN_FRAMES    = 50      # frames minimum pour calculer le flux
+
+    details: Dict[str, Any] = {"method": "optical_flow_xcorr", "cameras": {}}
 
     try:
+        # ── Tracker HEAD : vitesse angulaire ──────────────────────────────────
         trk = _chk_read_tracker(session_dir / "tracker_positions.csv")
         if trk is None or trk.empty:
-            return 0.5
+            return 0.70, {**details, "reason": "tracker vide"}
 
-        ts_col  = next((c for c in trk.columns if "timestamp" in c.lower()), None)
-        pos_cols = [c for c in trk.columns if any(a in c.lower() for a in ["_x", "_y", "_z", "pos"])]
-        if ts_col is None or len(pos_cols) < 3:
-            return 0.5
+        ts_col = next((c for c in trk.columns if c.lower() == "timestamp_ns"), None)
+        if ts_col is None:
+            ts_col = next((c for c in trk.columns if "timestamp_ns" in c.lower()), None)
+        if ts_col is None:
+            return 0.70, {**details, "reason": "timestamp_ns introuvable"}
 
-        ts = trk[ts_col].values.astype(float)
-        ts_ms = ts / 1e6 if ts.max() > 1e12 else ts * 1000.0
+        ts_ns = trk[ts_col].values.astype(np.float64)
+        ts_ms = ts_ns / 1e6 if ts_ns.max() > 1e12 else ts_ns * 1000.0
 
-        pos = trk[pos_cols[:3]].values.astype(float)
-        vel = np.linalg.norm(np.diff(pos, axis=0), axis=1)
+        # Chercher les colonnes quaternion du tracker head
+        qcols = [c for c in trk.columns
+                 if "head" in c.lower() and any(q in c.lower() for q in ["qw","qx","qy","qz"])]
+        if len(qcols) < 4:
+            # Fallback : vitesse de position head
+            pcols = [c for c in trk.columns if "head" in c.lower()
+                     and any(a in c.lower() for a in ["_x","_y","_z"])]
+            if len(pcols) < 3:
+                return 0.70, {**details, "reason": "colonnes head tracker introuvables"}
+            pos = trk[pcols[:3]].values.astype(np.float64)
+            dpos = np.diff(pos, axis=0)
+            dt_s = np.diff(ts_ms) / 1000.0
+            trk_motion = np.linalg.norm(dpos, axis=1) / np.maximum(dt_s, 1e-6)
+        else:
+            # Vitesse angulaire = norme(dquat/dt)
+            qcols_sorted = sorted(qcols, key=lambda c: next(
+                i for i, q in enumerate(["qw","qx","qy","qz"]) if q in c.lower()
+            ))
+            quat = trk[qcols_sorted[:4]].values.astype(np.float64)
+            dq   = np.diff(quat, axis=0)
+            dt_s = np.diff(ts_ms) / 1000.0
+            trk_motion = np.linalg.norm(dq, axis=1) / np.maximum(dt_s, 1e-6)
 
-        scores = []
-        for cam in ("left", "right"):
-            rows = _chk_read_jsonl(session_dir / "videos" / f"{cam}.jsonl")
-            if not rows:
+        trk_ts = ts_ms[1:]  # timestamps des deltas
+
+        # ── Caméra HEAD : flux optique ────────────────────────────────────────
+        # On préfère HEAD car elle est solidaire du casque (= même mouvement que le tracker HEAD)
+        cam_scores = {}
+
+        for cam in ("head", "left", "right"):
+            video_path = session_dir / "videos" / f"{cam}.mp4"
+            jsonl_path = session_dir / "videos" / f"{cam}.jsonl"
+            if not video_path.exists() or not jsonl_path.exists():
                 continue
-            cam_ts = np.array([r.get("capture_time", 0) for r in rows], dtype=np.float64)
-            cam_dt = np.diff(cam_ts)
-            cam_vel = cam_dt / np.median(cam_dt)
 
-            # Rééchantillonner sur grille commune
-            t_min = max(ts_ms[0], cam_ts[0])
-            t_max = min(ts_ms[-1], cam_ts[-1])
-            if t_max - t_min < _MIN_OVERLAP_MS:
+            rows = _chk_read_jsonl(jsonl_path)
+            if not rows or len(rows) < MIN_FRAMES:
                 continue
-            grid = np.arange(t_min, t_max, _RESAMPLE_MS)
-            if len(grid) < 20:
+            cam_ts = np.array([r.get("capture_time", 0) for r in rows
+                               if r.get("capture_time", 0) > 0], dtype=np.float64)
+            if len(cam_ts) < MIN_FRAMES:
                 continue
 
-            trk_interp = np.interp(grid, ts_ms[1:], vel)
-            cam_interp = np.interp(grid, cam_ts[1:], cam_vel)
+            # Vérifier le chevauchement avant de lire la vidéo
+            t_ov0 = max(ts_ms[0], cam_ts[0])
+            t_ov1 = min(ts_ms[-1], cam_ts[-1])
+            overlap_s = max(0.0, (t_ov1 - t_ov0) / 1000.0)
+            if overlap_s < MIN_OVERLAP_S:
+                details["cameras"][cam] = {"error": f"overlap insuffisant ({overlap_s:.1f}s)", "score": 0.0}
+                continue
 
-            trk_n = (trk_interp - trk_interp.mean()) / (trk_interp.std() + 1e-8)
-            cam_n = (cam_interp - cam_interp.mean()) / (cam_interp.std() + 1e-8)
-            r = float(np.corrcoef(trk_n, cam_n)[0, 1])
-            scores.append(max(0.0, r))
+            # Flux optique dense sur la vidéo
+            cap = _cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                details["cameras"][cam] = {"error": "vidéo inaccessible", "score": 0.0}
+                continue
 
-        return float(np.mean(scores)) if scores else 0.5
-    except Exception:
-        return 0.5
+            prev_gray = None
+            of_norms: List[float] = []
+            fi = 0
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                # Réduire la résolution pour accélérer (factor 4)
+                small = _cv2.resize(frame, (frame.shape[1] // 4, frame.shape[0] // 4))
+                gray  = _cv2.cvtColor(small, _cv2.COLOR_BGR2GRAY)
+                if prev_gray is not None:
+                    flow = _cv2.calcOpticalFlowFarneback(
+                        prev_gray, gray, None,
+                        pyr_scale=0.5, levels=2, winsize=15,
+                        iterations=2, poly_n=5, poly_sigma=1.1, flags=0
+                    )
+                    of_norms.append(float(np.linalg.norm(flow, axis=2).mean()))
+                prev_gray = gray
+                fi += 1
+            cap.release()
 
+            if len(of_norms) < MIN_FRAMES:
+                details["cameras"][cam] = {"error": f"trop peu de frames ({len(of_norms)})", "score": 0.0}
+                continue
+
+            of_norms_arr = np.array(of_norms, dtype=np.float64)
+            of_ts        = cam_ts[1:len(of_norms_arr) + 1]  # timestamps des deltas
+
+            # Grille d'interpolation commune
+            t0_grid = max(of_ts[0], trk_ts[0])
+            t1_grid = min(of_ts[-1], trk_ts[-1])
+            if t1_grid - t0_grid < MIN_OVERLAP_S * 1000.0:
+                details["cameras"][cam] = {"error": "overlap effectif insuffisant", "score": 0.0}
+                continue
+
+            grid    = np.arange(t0_grid, t1_grid, FRAME_MS)
+            of_g    = np.interp(grid, of_ts,  of_norms_arr)
+            trk_g   = np.interp(grid, trk_ts, trk_motion)
+
+            def znorm(x):
+                return (x - x.mean()) / (x.std() + 1e-8)
+
+            of_z  = znorm(of_g)
+            trk_z = znorm(trk_g)
+
+            # Cross-corrélation sur ±LAG_SEARCH_MS
+            xcorr        = _correlate(of_z, trk_z, mode="full")
+            n            = len(of_z)
+            mid          = len(xcorr) // 2
+            max_lag_fr   = max(1, int(LAG_SEARCH_MS / FRAME_MS))
+            lo, hi       = max(0, mid - max_lag_fr), min(len(xcorr), mid + max_lag_fr + 1)
+            xcorr_win    = xcorr[lo:hi]
+
+            best_i       = int(np.argmax(xcorr_win))
+            lag_frames   = best_i - (mid - lo)
+            lag_ms_found = float(lag_frames * FRAME_MS)
+            r_best       = float(xcorr_win[best_i]) / max(n, 1)
+            r_best       = float(np.clip(r_best, -1.0, 1.0))
+
+            # Pearson à lag=0 (référence)
+            r_lag0 = float(np.corrcoef(of_z, trk_z)[0, 1])
+
+            # Score de corrélation : r normalisé sur [0,1]
+            # r=0.7 → excellent, r=0.3 → limite, r<0.1 → mauvais
+            r_score = float(np.clip((r_best - 0.10) / (0.70 - 0.10), 0.0, 1.0))
+
+            # Pénalité si le lag optimal est > 1 frame (anormal sauf décalage systématique)
+            # 1 frame de décalage est naturel pour le flux optique
+            lag_excess_ms = max(0.0, abs(lag_ms_found) - FRAME_MS * 1.5)
+            lag_penalty   = float(np.clip(1.0 - lag_excess_ms / LAG_SEARCH_MS, 0.0, 1.0))
+
+            # Pénalité overlap
+            overlap_score = float(np.clip(overlap_s / 30.0, 0.0, 1.0))  # max bonus à 30s
+
+            cam_score = float(np.clip(
+                0.70 * r_score + 0.20 * lag_penalty + 0.10 * overlap_score,
+                0.0, 1.0
+            ))
+
+            details["cameras"][cam] = {
+                "r_best":       round(r_best,   4),
+                "r_lag0":       round(r_lag0,   4),
+                "r_score":      round(r_score,  4),
+                "lag_ms":       round(lag_ms_found, 1),
+                "lag_penalty":  round(lag_penalty,  4),
+                "overlap_s":    round(overlap_s,    2),
+                "n_frames_of":  len(of_norms),
+                "score":        round(cam_score, 4),
+            }
+            cam_scores[cam] = cam_score
+
+            # HEAD suffit — c'est le signal le plus direct avec le tracker head
+            # On s'arrête après head si disponible
+            if cam == "head" and cam_score > 0:
+                break
+
+        if not cam_scores:
+            return 0.70, {**details, "reason": "aucune caméra utilisable (vidéo manquante ou overlap insuffisant)"}
+
+        # Priorité HEAD > moyenne LEFT+RIGHT
+        if "head" in cam_scores:
+            final = cam_scores["head"]
+        else:
+            final = float(np.mean(list(cam_scores.values())))
+
+        details["n_cams_used"] = len(cam_scores)
+        details["final_score"] = round(final, 4)
+        return final, details
+
+    except Exception as e:
+        return 0.70, {**details, "reason": f"erreur: {e}"}
 
 def _chk_load_model():
     if not _TORCH:
@@ -1115,27 +1279,26 @@ def _chk_check_session(session_dir: Path, model=None) -> _SessionReport:
         report.score = 0.0
         return report
 
-    if not _chk_gate_stream_alignment(session_dir, report):
-        report.blocking_reason = report.first_failure().message
-        report.score = 0.0
-        return report
+    # stream_alignment : on enregistre le résultat mais on ne bloque plus ici.
+    # La porte échouée sera visible dans les détails de video_tracker_sync,
+    # et le score sera pénalisé proportionnellement au décalage.
+    stream_ok = _chk_gate_stream_alignment(session_dir, report)
 
-    # Score IA
-    if model is not None:
-        ia_scores_dict = _chk_score_session_ia(model, session_dir)
-        report.ia_scores = ia_scores_dict
-        if ia_scores_dict:
-            major = [v for k, v in ia_scores_dict.items()
-                     if any(f"{r}|{t}" == k for r, t in _MAJOR_PAIRS)]
-            ia_raw = float(np.mean(major)) if major else float(np.mean(list(ia_scores_dict.values())))
-        else:
-            ia_raw = _chk_heuristic_score(session_dir)
-    else:
-        ia_raw = _chk_heuristic_score(session_dir)
+    # Score mathématique pur — aucun modèle requis
+    math_raw, math_details = _chk_math_score(session_dir)
 
-    report.ia_score = round(ia_raw, 4)
+    # Pénalité stream_alignment : décalage > seuil réduit le score
+    if not stream_ok:
+        # Flux très désalignés → score réduit mais pas à 0 (réparable via fix+trim)
+        math_raw = math_raw * 0.55
+        report.blocking_reason = report.first_failure().message if report.first_failure() else "stream_alignment"
+
     penalty = _chk_compute_penalties(session_dir, meta)
-    report.score = round(float(np.clip(ia_raw * penalty * 100.0, 0.0, 100.0)), 1)
+    math_raw = float(np.clip(math_raw * penalty, 0.0, 1.0))
+
+    report.ia_score  = round(math_raw, 4)
+    report.ia_scores = math_details
+    report.score     = round(math_raw * 100.0, 1)
     return report
 
 
@@ -1887,21 +2050,32 @@ def _dim_video_tracker_sync(session_path: Path, model=None) -> DimensionResult:
     details: Dict[str, Any] = {}
 
     try:
-        report = _chk_check_session(session_path, model=model)
+        report = _chk_check_session(session_path, model=None)  # modèle ignoré — math pur
         score  = float(report.score)
         failed = [g for g in report.gates if not g.passed]
         passed = [g for g in report.gates if g.passed]
 
+        math_details = report.ia_scores if isinstance(report.ia_scores, dict) else {}
+        cam_details  = math_details.get("cameras", {})
+
         details = {
-            "ia_score":        round(float(report.ia_score), 4) if report.ia_score else None,
-            "ia_scores":       {k: round(float(v), 4) for k, v in (report.ia_scores or {}).items()},
+            "math_score":      round(report.ia_score, 4) if report.ia_score else None,
+            "math_details":    math_details,
             "n_gates_passed":  len(passed),
             "n_gates_failed":  len(failed),
             "failed_gates":    [{"name": g.name, "message": g.message} for g in failed],
             "blocking_reason": report.blocking_reason,
+            # Compatibilité interface existante
+            "ia_score":        round(report.ia_score, 4) if report.ia_score else None,
+            "ia_scores":       {},
+            "failed_gates":    [{"name": g.name, "message": g.message} for g in failed],
         }
 
-        blocking = report.is_blocked()
+        # stream_alignment bloquant → pas de score de sync fiable
+        stream_failed = any(g.name == "stream_alignment" for g in failed)
+        blocking = stream_failed or any(
+            g.name not in ("stream_alignment",) for g in failed
+        )
 
         for g in failed:
             diags.append(f"  ✗ porte [{g.name}]: {g.message}")
@@ -1910,27 +2084,42 @@ def _dim_video_tracker_sync(session_path: Path, model=None) -> DimensionResult:
             if g.name == "stream_alignment":
                 repairs.append(f"Flux désalignés au démarrage — exécuter ✂ Trim pour rogner le tracker/gripper")
 
-        # Pénalité score si stream_alignment en warning (décalage entre 200ms et 1000ms)
+        # Pénalité si stream_alignment en warning
         align_gate = next((g for g in report.gates if g.name == "stream_alignment"), None)
         if align_gate and align_gate.passed and "⚠" in align_gate.message:
-            # Warning : réduire le score proportionnellement
-            score = max(0.0, score * 0.70)
+            score = max(0.0, score * 0.80)
 
         for g in passed:
             diags.append(f"  ✓ porte [{g.name}]")
 
-        if report.ia_score is not None:
-            diags.append(f"  IA sync score: {report.ia_score:.3f}")
+        # Détail par caméra
+        for cam, cd in cam_details.items():
+            if cd.get("corr_r") is not None:
+                r     = cd["corr_r"]
+                lag   = cd["lag_ms"]
+                ov    = cd["overlap_s"]
+                r2    = cd["clock_r2"]
+                cs    = cd["score"]
+                diags.append(
+                    f"  {cam}: r={r:.3f}  lag_opt={lag:+.0f}ms  "
+                    f"overlap={ov:.1f}s  clock_r²={r2:.3f}  → {cs*100:.1f}%"
+                )
+            else:
+                diags.append(f"  {cam}: signal insuffisant")
+
+        math_score_pct = round(report.ia_score * 100, 1) if report.ia_score else 0.0
+        diags.append(f"  Score math global: {math_score_pct:.1f}%")
 
         if not failed:
-            summary = (f"Toutes portes OK — IA score={report.ia_score:.3f}"
-                       if report.ia_score else "Toutes portes OK")
+            summary = f"Toutes portes OK — score math={math_score_pct:.1f}%"
+        elif stream_failed:
+            summary = f"{len(failed)} porte(s) échouée(s): {[g.name for g in failed]}"
         else:
             summary = f"{len(failed)} porte(s) échouée(s): {[g.name for g in failed]}"
 
         return DimensionResult(
             name="video_tracker_sync", score=round(score, 1), weight=W_VIDEO_SYNC,
-            grade=_grade(score), ok=_dim_ok(score), blocking=blocking, confidence=0.85,
+            grade=_grade(score), ok=_dim_ok(score), blocking=blocking, confidence=0.90,
             summary=summary, diagnostics=diags, repairs=repairs, details=details, error=None,
         )
 

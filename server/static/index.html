@@ -3467,13 +3467,15 @@
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Inbox :</span>
-							<input type="text" id="inbox-dir-input" placeholder="/mnt/storage/silver"
+							<input type="text" id="inbox-dir-input"
+								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<div
 							style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:4px 10px">
 							<span style="font-size:.75rem;color:var(--text3)">Bronze :</span>
-							<input type="text" id="bronze-dir-input" placeholder="/mnt/storage/silver"
+							<input type="text" id="bronze-dir-input"
+								placeholder="/Users/christopher/Downloads/sync_test_1/treatment/"
 								style="background:none;border:none;color:var(--text);font:inherit;font-size:.82rem;width:220px;outline:none" />
 						</div>
 						<button class="btn p" id="inbox-scan-btn" onclick="inboxScan()">
@@ -3571,12 +3573,14 @@
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Inbox</label>
-								<input type="text" id="svc-inbox" value="/mnt/storage/silver"
+								<input type="text" id="svc-inbox"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
 								<label style="font-size:.7rem;color:var(--text3)">Bronze</label>
-								<input type="text" id="svc-bronze" value="/mnt/storage/silver"
+								<input type="text" id="svc-bronze"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/"
 									style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font:inherit;font-size:.79rem;padding:4px 8px;outline:none" />
 							</div>
 							<div style="display:flex;flex-direction:column;gap:3px">
@@ -3643,7 +3647,8 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">/Users/christopher/Downloads/Video
 									ok 2
 								</span>
-								<input type="hidden" id="cfg-root" value="/mnt/storage/silver" />
+								<input type="hidden" id="cfg-root"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/" />
 							</div>
 							<div style="display:flex;gap:6px;align-items:center;flex:1;min-width:200px">
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">NAS</label>
@@ -3812,7 +3817,8 @@
 							<button class="btn sm"
 								style="background:var(--green)1a;border-color:var(--green)44;color:var(--green)"
 								onclick="selPerfect()"
-								title="Sélectionner uniquement les sessions marquées parfaites (repair_perfect)">★ Parfaites</button>
+								title="Sélectionner uniquement les sessions marquées parfaites (repair_perfect)">★
+								Parfaites</button>
 						</div>
 						<!-- Filtre scénario -->
 						<div id="sess-scenario-bar"
@@ -3838,6 +3844,16 @@
 						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 							<button class="btn p" id="btn-sess-run" onclick="openStepsModal('selected')" disabled>
 								▶ Lancer sur sélectionnées
+							</button>
+							<button class="btn" id="btn-sess-fix" onclick="fixSelected()" disabled
+								style="background:var(--accent2,#e8a020);color:#fff"
+								title="Appliquer fix_camera_offset sur les sessions sélectionnées">
+								🔧 Fix
+							</button>
+							<button class="btn" id="btn-sess-trim" onclick="trimSelected()" disabled
+								style="background:var(--accent3,#6c47c9);color:#fff"
+								title="Rogner le début des flux pour aligner tracker/gripper/vidéo temporellement">
+								✂ Trim
 							</button>
 							<button class="btn d" id="btn-sess-rollback" onclick="rollbackSelected()" disabled>
 								↩ Rollback
@@ -4924,7 +4940,8 @@
 								</div>
 							</div>
 							<div class="fr"><label>Répertoire ingestion</label>
-								<input type="text" id="s-root" value="/mnt/storage/silver" />
+								<input type="text" id="s-root"
+									value="/Users/christopher/Downloads/sync_test_1/treatment/" />
 							</div>
 							<div id="s-lerobot-input-opts" style="display:none">
 								<div class="fr"><label>Dataset LeRobot</label>
@@ -5380,7 +5397,7 @@
 			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
 			cfg: {
-				root: '/mnt/storage/silver', model: '_sync_ml_model', nas: '',
+				root: '/Users/christopher/Downloads/sync_test_1/treatment/', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5576,7 +5593,7 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver';
+			const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/';
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
@@ -5717,37 +5734,74 @@
 				try {
 					const r = await api('POST', '/api/pipeline/check_score', { session_path: sess.path });
 					const score = r.score ?? -1;
-					const failed = r.failed_gates || [];
+					const grade = r.grade || '?';
+					const verdict = r.verdict || '';
 					const blocking = r.blocking_reason || '';
+					const conf = r.confidence != null ? ` conf=${Math.round(r.confidence * 100)}%` : '';
 					const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
 					const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
-					if (failed.length) failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
-					log(`${sess.name}  ${scoreStr}${blocking ? '  ' + blocking : ''}`, logLvl);
-					const tr = r.tracker_result;
-					if (tr && tr.error == null) {
-						const cor = tr.correct || {};
-						const parts = ['head','left','right'].map(k => `${k}:${cor[k] ? '✓' : '✗'}`).join('  ');
-						log(`  tracker: ${parts}`, r.tracker_ok ? 'OK' : 'ERROR');
-					} else if (tr && tr.error) {
-						log(`  tracker: ${tr.error}`, 'WARN');
+
+					// En-tête session
+					log(`${sess.name}  ${scoreStr} grade=${grade}  ${verdict}${conf}${blocking ? '  ⚠ ' + blocking : ''}`, logLvl);
+
+					// Détail par dimension
+					const comp = r.components || {};
+					const DIM_LABELS = {
+						gripper_timestamp_sync: 'TS gripper',
+						video_tracker_sync: 'Vidéo/tracker IA',
+						tracker_placement: 'Placement trackers',
+						video_quality: 'Qualité vidéo',
+						gripper_frame_sync: 'Sync frame/capteur',
+					};
+					for (const [key, label] of Object.entries(DIM_LABELS)) {
+						const d = comp[key];
+						if (!d) continue;
+						const dg = d.grade || '?';
+						const blk = d.blocking ? ' [BLOQUANT]' : '';
+						const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
+						log(`  [${dg}] ${label}: ${Math.round(d.score ?? 0)}%  — ${d.summary || ''}${blk}`, lv);
+						// Détail gripper_frame_sync : lag, r, anomalies
+						if (key === 'gripper_frame_sync' && d.details) {
+							const gdet = d.details.sides || {};
+							for (const [side, sd] of Object.entries(gdet)) {
+								if (!sd || !sd.success) continue;
+								const lagC = Math.abs(sd.lag_ms || 0) <= 50 ? 'OK' : Math.abs(sd.lag_ms || 0) <= 100 ? 'WARN' : 'ERROR';
+								log(`    ${side}: r=${(sd.global_r || 0).toFixed(3)}  lag=${(sd.lag_ms || 0).toFixed(0)}ms  frames_sync=${((sd.frames_in_sync || 0) * 100).toFixed(1)}%  anomalies=${(sd.anomaly_frames || []).length}`, lagC);
+							}
+						}
 					}
+
+					// Réparations recommandées
+					const repairs = r.repairs || [];
+					if (repairs.length) {
+						log(`  ⚙ Réparations (${repairs.length}):`, 'WARN');
+						repairs.forEach(rep => log(`    • ${rep}`, 'WARN'));
+					}
+
+					// Données manquantes
+					const missing = r.missing_data || [];
+					if (missing.length) log(`  ⚠ Manquant: ${missing.join(', ')}`, 'WARN');
+
 					// Propager dans S.sessions
 					const s = S.sessions.find(s => s.path === sess.path);
 					if (s) {
 						if (!s.meta) s.meta = {};
-						s.meta.check_score         = r.score;
-						s.meta.repair_perfect       = r.repair_perfect ?? false;
+						s.meta.check_score = r.score;
+						s.meta.check_grade = r.grade;
+						s.meta.check_verdict = r.verdict;
+						s.meta.repair_perfect = r.repair_perfect ?? false;
 						s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
-						s.meta.repair_score         = r.repair_score ?? score;
+						s.meta.repair_score = r.repair_score ?? score;
 					}
+
 					if (r.repair_perfect) { log(`★ ${sess.name} PARFAITE`, 'OK'); nPerfect++; }
-					else { log(`✗ ${sess.name} ERREUR`, 'ERROR'); nError++; }
+					else { log(`✗ ${sess.name} — ${verdict || 'ERREUR'}`, 'ERROR'); nError++; }
 				} catch (e) {
 					log(`Test ${sess.name}: ${e.message}`, 'ERROR');
 					nError++;
 				}
 			}
-			log(`Test terminé — ★ ${nPerfect} parfaite(s)  ✗ ${nError} erreur(s)`, nError ? 'WARN' : 'OK');
+			log(`Test terminé — ★ ${nPerfect} parfaite(s)  ✗ ${nError} non-parfaite(s)`, nError && !nPerfect ? 'ERROR' : nError ? 'WARN' : 'OK');
 			renderSessionsList();
 		}
 
@@ -6495,34 +6549,76 @@
 				const blocking = r.blocking_reason || '';
 
 				// Stocker dans meta pour l'affichage
-				S.drawerSess.meta.check_score = score;
-				S.drawerSess.meta.check_ia_score = iaScore;
-				S.drawerSess.meta.check_blocking = blocking;
+				S.drawerSess.meta.check_score = r.score;
+				S.drawerSess.meta.check_grade = r.grade;
+				S.drawerSess.meta.check_verdict = r.verdict;
+				S.drawerSess.meta.check_blocking = r.blocking_reason || '';
 				S.drawerSess.meta.repair_perfect = r.repair_perfect ?? false;
 				S.drawerSess.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
 				S.drawerSess.meta.repair_score = r.repair_score ?? score;
 
+				const grade = r.grade || '?';
+				const verdict = r.verdict || '';
+				const conf = r.confidence != null ? ` conf=${Math.round(r.confidence * 100)}%` : '';
 				const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
 				const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
-				const iaStr = iaScore > 0 ? `  ia=${iaScore.toFixed(3)}` : '';
-				if (failed.length) {
-					failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
+				log(`Rapport d'autorité: ${scoreStr} grade=${grade}  ${verdict}${conf}${blocking ? '  ⚠ ' + blocking : ''}`, logLvl);
+
+				// — Détail par dimension —
+				const comp = r.components || {};
+				const DIM_LABELS = {
+					gripper_timestamp_sync: 'TS gripper      (25%)',
+					video_tracker_sync: 'Vidéo/tracker   (25%)',
+					tracker_placement: 'Trackers        (15%)',
+					video_quality: 'Qualité vidéo   (15%)',
+					gripper_frame_sync: 'Sync frame/cap  (20%)',
+				};
+				for (const [key, label] of Object.entries(DIM_LABELS)) {
+					const d = comp[key];
+					if (!d) continue;
+					const dg = d.grade || '?';
+					const blk = d.blocking ? ' [BLOQUANT]' : '';
+					const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
+					log(`  [${dg}] ${label}: ${Math.round(d.score ?? 0)}% — ${d.summary || ''}${blk}`, lv);
+					// diagnostics détaillés si erreur
+					if (d.blocking || d.ok === false) {
+						(d.diagnostics || []).forEach(line => {
+							if (line.trim().startsWith('✗')) log(`  ${line}`, 'ERROR');
+						});
+					}
+					// Gripper frame sync : détail par côté
+					if (key === 'gripper_frame_sync' && d.details) {
+						const gdet = d.details.sides || {};
+						for (const [side, sd] of Object.entries(gdet)) {
+							if (!sd || !sd.success) continue;
+							const lagMs = sd.lag_ms || 0;
+							const lagC = Math.abs(lagMs) <= 50 ? 'OK' : Math.abs(lagMs) <= 100 ? 'WARN' : 'ERROR';
+							log(`    ${side}: r=${(sd.global_r || 0).toFixed(3)}  lag=${lagMs.toFixed(0)}ms  ` +
+								`sync=${((sd.frames_in_sync || 0) * 100).toFixed(1)}%  ` +
+								`fenêtres=${(sd.n_segments || 0) - (sd.bad_segments || 0)}/${sd.n_segments || 0} OK  ` +
+								`anomalies=${(sd.anomaly_frames || []).length}`, lagC);
+							if (sd.residual_std_mm != null)
+								log(`    ${side}: résidu std=${sd.residual_std_mm.toFixed(2)}mm  fit_r²=${(sd.fit_r2 || 0).toFixed(3)}`, 'INFO');
+						}
+					}
 				}
-				log(`Check score: ${scoreStr}${iaStr}${blocking ? '  bloc: ' + blocking : ''}`, logLvl);
-				// Résultat tracker
-				const tr = r.tracker_result;
-				if (tr && tr.error == null) {
-					const tOk = r.tracker_ok;
-					const cor = tr.correct || {};
-					const parts = ['head','left','right'].map(k => `${k}:${cor[k] ? '✓' : '✗'}`).join('  ');
-					log(`Tracker placement: ${parts}`, tOk ? 'OK' : 'ERROR');
-				} else if (tr && tr.error) {
-					log(`Tracker placement: ${tr.error}`, 'WARN');
+
+				// — Réparations recommandées —
+				const repairs = r.repairs || [];
+				if (repairs.length) {
+					log(`  ⚙ Réparations recommandées (${repairs.length}):`, 'WARN');
+					repairs.forEach(rep => log(`    • ${rep}`, 'WARN'));
 				}
+
+				// — Données manquantes —
+				const missing = r.missing_data || [];
+				if (missing.length) log(`  ⚠ Données manquantes: ${missing.join(', ')}`, 'WARN');
+
+				// — Verdict final —
 				if (r.repair_perfect) {
 					log(`★ ${S.drawerSess.name} marquée PARFAITE`, 'OK');
 				} else {
-					log(`✗ ${S.drawerSess.name} marquée ERREUR (${blocking || failed.map(g=>g.name).join(', ') || 'score insuffisant'})`, 'ERROR');
+					log(`✗ ${S.drawerSess.name} — ${verdict || 'non parfaite'} (${blocking || `score=${scoreStr}`})`, 'ERROR');
 				}
 
 				// Rejet automatique si fichiers manquants
@@ -6802,7 +6898,9 @@
 			else if (vidDelay != null) syncCls = vidDelay <= 500 ? 'ok' : 'err';
 			else if (syncSt === 'done') syncCls = 'ok';
 			else if (syncSt === 'failed') syncCls = 'err';
-			const syncLbl = chkScore != null ? `sync ${Math.round(chkScore)}%` : 'sync';
+			const syncLbl = chkScore != null
+				? `${meta.check_grade ? meta.check_grade + ' ' : ''}${Math.round(chkScore)}%`
+				: 'sync';
 
 			// trackers
 			const gripIss = (verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
@@ -6830,10 +6928,21 @@
 			// ── colonne score ──
 			const tdScore = document.createElement('td');
 			tdScore.style.textAlign = 'center';
-			const sc = syncScore(ps);
-			if (sc) {
-				tdScore.innerHTML = `<span class="st-grade" style="color:${sc.color};border-color:${sc.color}44">${sc.grade}</span>`;
-				tdScore.title = `Score: ${sc.score}/100`;
+			// Priorité : grade autorité (check_grade) > grade heuristique (syncScore)
+			const authGrade = meta.check_grade || null;
+			const authScore = meta.check_score ?? null;
+			const authVerdict = meta.check_verdict || '';
+			if (authGrade && authScore != null) {
+				const GRADE_COLORS = { A: 'var(--green)', B: '#22c55e', C: 'var(--orange)', D: '#f97316', F: 'var(--red)' };
+				const gc = GRADE_COLORS[authGrade] || 'var(--text2)';
+				tdScore.innerHTML = `<span class="st-grade" style="color:${gc};border-color:${gc}44">${authGrade}</span>`;
+				tdScore.title = `Autorité: ${authGrade} — ${Math.round(authScore)}% — ${authVerdict}`;
+			} else {
+				const sc = syncScore(ps);
+				if (sc) {
+					tdScore.innerHTML = `<span class="st-grade" style="color:${sc.color};border-color:${sc.color}44">${sc.grade}</span>`;
+					tdScore.title = `Score: ${sc.score}/100`;
+				}
 			}
 			tr.appendChild(tdScore);
 
@@ -6905,13 +7014,45 @@
 
 		function _updateSessActions() {
 			const n = S.selected.size;
-			const btnRun = ge('btn-sess-run');
-			const btnRb = ge('btn-sess-rollback');
-			const cnt = ge('sess-sel-count');
-			if (btnRun) btnRun.disabled = n === 0;
-			if (btnRb) btnRb.disabled = n === 0;
+			const btnRun  = ge('btn-sess-run');
+			const btnRb   = ge('btn-sess-rollback');
+			const btnFix  = ge('btn-sess-fix');
+			const btnTrim = ge('btn-sess-trim');
+			const cnt     = ge('sess-sel-count');
+			if (btnRun)  btnRun.disabled  = n === 0;
+			if (btnRb)   btnRb.disabled   = n === 0;
+			if (btnFix)  btnFix.disabled  = n === 0;
+			if (btnTrim) btnTrim.disabled = n === 0;
 			if (cnt) cnt.textContent = `${n} sélectionnée(s)`;
 			refreshExportBtn();
+		}
+
+		async function fixSelected() {
+			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }
+			const sessions = [...S.selected];
+			const n = sessions.length;
+			if (!confirm(`Appliquer fix_camera_offset sur ${n} session(s) sélectionnée(s) ?`)) return;
+			try {
+				const res = await api('POST', '/api/session/fix_camera_offset_bulk', { sessions, force: false });
+				log(`Fix lancé sur ${n} session(s) — job ${res.job_id}`, 'OK');
+				nav('jobs', null);
+			} catch (e) {
+				log('Erreur fix bulk : ' + e.message, 'ERROR');
+			}
+		}
+
+		async function trimSelected() {
+			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }
+			const sessions = [...S.selected];
+			const n = sessions.length;
+			if (!confirm(`Rogner le début des flux (tracker/gripper/vidéo) sur ${n} session(s) pour les aligner temporellement ?`)) return;
+			try {
+				const res = await api('POST', '/api/session/trim_streams_bulk', { sessions, force: false });
+				log(`Trim lancé sur ${n} session(s) — job ${res.job_id}`, 'OK');
+				nav('jobs', null);
+			} catch (e) {
+				log('Erreur trim bulk : ' + e.message, 'ERROR');
+			}
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -8934,7 +9075,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver				';
+				const root = S.cfg.root || ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/				';
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -8987,7 +9128,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/storage/silver';
+			S.cfg.root = ge('s-root').value || '/Users/christopher/Downloads/sync_test_1/treatment/';
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -9005,7 +9146,7 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/storage/silver';
+				const root = c.root || '/Users/christopher/Downloads/sync_test_1/treatment/';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
@@ -10429,8 +10570,8 @@
 			btn.disabled = true;
 			try {
 				const body = {
-					inbox_dir: ge('svc-inbox').value.trim() || '/mnt/storage/silver',
-					bronze_dir: ge('svc-bronze').value.trim() || '/mnt/storage/silver',
+					inbox_dir: ge('svc-inbox').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/',
+					bronze_dir: ge('svc-bronze').value.trim() || '/Users/christopher/Downloads/sync_test_1/treatment/',
 					host: ge('svc-host').value.trim() || '0.0.0.0',
 					port: parseInt(ge('svc-port').value) || 8000,
 				};

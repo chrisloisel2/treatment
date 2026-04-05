@@ -1,6 +1,6 @@
 ====================================================================
 VERIFY — mode TEST
-Sessions  : /mnt/storage/silver
+Sessions  : /Users/christopher/Downloads/sync_test_1/treatment/
 Sortie    : /Users/christopher/Downloads/sync_test_1/treatment/verify_results
 Durée     : 497.6s
 Statut    : ERROR

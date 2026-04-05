@@ -4,8 +4,8 @@
 SyncML Studio — Serveur web FastAPI.
 
 Architecture 3 chemins :
-  /mnt/storage/silver  → source brute, lecture seule
-  /mnt/storage/silver/    → espace de travail (copie de travail)
+  /Users/christopher/Downloads/sync_test_1/treatment/  → source brute, lecture seule
+  /Users/christopher/Downloads/sync_test_1/treatment//    → espace de travail (copie de travail)
  /home/ia/silver    → sortie finale validée (seulement si write_mode=True)
 
 Intégration dans une pipeline big data :
@@ -110,14 +110,14 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/storage/silver")
+    INGEST_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/Balls/do")
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/storage/silver"
+DEFAULT_WATCH_DIR = "/Users/christopher/Downloads/sync_test_1/treatment/Balls/do"
 
 # Répertoire de persistance des jobs sur disque
-JOBS_DIR = INGEST_DIR / "_server_jobs"
+JOBS_DIR = INGEST_DIR.parent / "_server_jobs"
 
 def _session_writable(session_path: str) -> bool:
     """Teste si le dossier session lui-même est accessible en écriture."""
@@ -169,7 +169,7 @@ def _persist_job(job: Job):
             "logs":         job.logs[-500:],   # garder les 500 dernières lignes
         }
         tmp = _job_file(job.id).with_suffix(".tmp")
-        tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(json.dumps(_sanitize_json(d), ensure_ascii=False), encoding="utf-8")
         tmp.replace(_job_file(job.id))
     except Exception:
         pass
@@ -251,8 +251,21 @@ def _update_job(job: Job, **kwargs):
     )
 
 
+def _sanitize_json(obj):
+    """Remplace récursivement nan/inf par None pour conformité JSON."""
+    if isinstance(obj, float):
+        if obj != obj or obj == float("inf") or obj == float("-inf"):  # nan or inf
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
+
+
 def _job_to_dict(job: Job) -> dict:
-    return {
+    return _sanitize_json({
         "id":           job.id,
         "kind":         job.kind,
         "status":       job.status,
@@ -269,7 +282,7 @@ def _job_to_dict(job: Job) -> dict:
         "pseudo_neg":   job.pseudo_neg,
         "result":       job.result,
         "log_count":    len(job.logs),
-    }
+    })
 
 
 async def _broadcast(payload: dict):
@@ -294,15 +307,30 @@ def _worker_scan(job: Job):
         _log_job(job, f"Scan de {INGEST_DIR}…")
 
         import utils.sync as ia
-        # Découverte récursive dans /mnt/storage/silver/ : sessions = dossiers
-        # contenant metadata.json, quel que soit le niveau d'imbrication.
+        # Découverte récursive : sessions = dossiers contenant metadata.json
+        # OU dossiers contenant un sous-dossier videos/ avec au moins un .mp4.
         # Exclus : dossiers __FAILED et dossiers cachés/internes.
-        sessions = [
-            p.parent for p in (INGEST_DIR.rglob("metadata.json") if INGEST_DIR.exists() else [])
-            if not p.parent.name.startswith("_")
-            and not p.parent.name.startswith(".")
-            and "__FAILED" not in str(p.parent)
-        ]
+        _seen = set()
+        sessions = []
+        if INGEST_DIR.exists():
+            # 1. Par metadata.json (méthode historique)
+            for p in INGEST_DIR.rglob("metadata.json"):
+                s = p.parent
+                if s in _seen: continue
+                if s.name.startswith("_") or s.name.startswith("."): continue
+                if "__FAILED" in str(s): continue
+                _seen.add(s)
+                sessions.append(s)
+            # 2. Par videos/*.mp4 (sessions sans metadata.json)
+            for p in INGEST_DIR.rglob("*.mp4"):
+                s = p.parent.parent  # session_dir/videos/X.mp4 → session_dir
+                if s == INGEST_DIR: continue  # exclure la racine elle-même
+                if s in _seen: continue
+                if s.name.startswith("_") or s.name.startswith("."): continue
+                if "__FAILED" in str(s): continue
+                if not (s / "videos").is_dir(): continue
+                _seen.add(s)
+                sessions.append(s)
         model_exists = (MODEL_DIR / "model.pt").exists()
         result = []
         for s in sorted(sessions, key=lambda p: p.name):
@@ -853,7 +881,7 @@ class TrainRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class InferRequest(BaseModel):
-    session:       str        # chemin dans /mnt/storage/silver/
+    session:       str        # chemin dans /Users/christopher/Downloads/sync_test_1/treatment//
     apply:         bool  = False
     dry_run:       bool  = True
     resample_ms:   float = 5.0
@@ -862,7 +890,7 @@ class InferRequest(BaseModel):
     signal_config: Optional[Dict[str, List[str]]] = None
 
 class PipelineRunRequest(BaseModel):
-    session:              str          # nom ou chemin de session dans /mnt/storage/silver/
+    session:              str          # nom ou chemin de session dans /Users/christopher/Downloads/sync_test_1/treatment//
     write_mode:           bool  = False
     delete_after_store:   bool  = False
     force_flux:           bool  = False
@@ -1168,7 +1196,7 @@ async def get_paths():
 
 @app.post("/api/train")
 async def train(req: TrainRequest):
-    """Lance un entraînement asynchrone sur les sessions de /mnt/storage/silver/."""
+    """Lance un entraînement asynchrone sur les sessions de /Users/christopher/Downloads/sync_test_1/treatment//."""
     params = {
         "epochs":        req.epochs,
         "batch_size":    req.batch_size,
@@ -1189,7 +1217,7 @@ async def train(req: TrainRequest):
 
 @app.post("/api/infer")
 async def infer(req: InferRequest):
-    """Lance une inférence asynchrone sur une session de /mnt/storage/silver/."""
+    """Lance une inférence asynchrone sur une session de /Users/christopher/Downloads/sync_test_1/treatment//."""
     params = {
         "resample_ms":   req.resample_ms,
         "max_lag_ms":    req.max_lag_ms,
@@ -1233,13 +1261,13 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRunRequest):
-    """Lance la pipeline complète (9 étapes) sur une session de /mnt/storage/silver/."""
+    """Lance la pipeline complète (9 étapes) sur une session de /Users/christopher/Downloads/sync_test_1/treatment//."""
     params = {
         "resample_ms": req.resample_ms,
         "max_lag_ms":  req.max_lag_ms,
         "window_ms":   req.window_ms,
     }
-    # req.session peut être un nom ou un chemin complet dans /mnt/storage/silver/
+    # req.session peut être un nom ou un chemin complet dans /Users/christopher/Downloads/sync_test_1/treatment//
     source_path = req.session if Path(req.session).is_absolute() else str(INGEST_DIR / req.session)
 
     job = _new_job("pipeline")
@@ -1255,7 +1283,7 @@ async def pipeline_run(req: PipelineRunRequest):
 
 @app.post("/api/pipeline/run_batch")
 async def pipeline_run_batch(req: dict):
-    """Lance la pipeline sur plusieurs sessions de /mnt/storage/silver/ en parallèle."""
+    """Lance la pipeline sur plusieurs sessions de /Users/christopher/Downloads/sync_test_1/treatment// en parallèle."""
     sessions           = req.get("sessions", [])
     write_mode         = req.get("write_mode", False)
     delete_after_store = req.get("delete_after_store", False)
@@ -1404,87 +1432,99 @@ async def pipeline_check(req: PipelineStateRequest):
 
 @app.post("/api/pipeline/check_score")
 async def pipeline_check_score(req: PipelineStateRequest):
-    """Retourne immédiatement le score check.py pour une session (sans job).
+    """Vérification complète d'une session (sans job, résultat immédiat).
 
-    Utilisé par le drawer de vérification dans la page Sessions.
-    Écrit le score dans metadata.json["check_score"] et ["check_ia_score"].
+    Orchestre 3 checks indépendants via verification/session_check.py :
+      1. Synchronisation vidéo/tracker (IA — check.py)
+      2. Synchronisation gripper CSV ↔ timestamps caméra (cross-corrélation)
+      3. Placement trackers head/left/right (trakeur.py)
+
+    Écrit les résultats dans metadata.json et retourne le rapport complet.
     """
     import asyncio
-    from check import check_session, load_model
+    import importlib.util as _ilu
+
     sess = Path(req.session_path)
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
 
     loop = asyncio.get_event_loop()
+
     def _run():
-        model = load_model()
-        return check_session(sess, model=model)
+        import sys as _sys
+        spec = _ilu.spec_from_file_location(
+            "session_check", _ROOT / "verification" / "session_check.py"
+        )
+        mod = _ilu.module_from_spec(spec)
+        _sys.modules["session_check"] = mod   # requis pour que les dataclasses résolvent leur module
+        spec.loader.exec_module(mod)
+        return mod.check_session_full(sess)
 
-    report = await loop.run_in_executor(None, _run)
+    result = await loop.run_in_executor(None, _run)
 
-    # Vérification tracker (placement head/left/right)
-    tracker_ok = True
-    tracker_result = None
-    try:
-        import importlib.util as _ilu
-        _trak_path = _ROOT / "verification" / "trakeur.py"
-        _spec = _ilu.spec_from_file_location("trakeur", _trak_path)
-        _trak = _ilu.module_from_spec(_spec)
-        _spec.loader.exec_module(_trak)
-        tracker_result = _trak.check_single_session(sess)
-        tracker_ok = tracker_result.get("ok", False)
-    except Exception as _e:
-        tracker_result = {"ok": None, "error": str(_e)}
-        tracker_ok = True  # ne bloque pas si le module est indisponible
+    score      = result["score"]
+    grade      = result.get("grade", "?")
+    verdict    = result.get("verdict", "")
+    is_perfect = result["perfect"]
+    blocked    = result["blocked"]
+    components = result["components"]
+    confidence = result.get("confidence", 0.0)
+    repairs    = result.get("repairs", [])
 
-    # Persister le score + markers repair dans metadata.json
+    # ── Extraire les sous-composantes pour la rétro-compatibilité ──────────
+    vt = components.get("video_tracker_sync", {})
+    tp_details = components.get("tracker_placement", {}).get("details", {})
+    gt = components.get("gripper_timestamp_sync", {})
+    gt_sides = gt.get("details", {}).get("sides", {})
+
+    # ── Persister dans metadata.json ─────────────────────────────────────
     meta_path = sess / "metadata.json"
-    is_perfect = report.score >= 70 and not report.is_blocked() and tracker_ok
     meta_updates = {}
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
-        meta["check_score"]    = report.score
-        meta["check_ia_score"] = report.ia_score
-        meta["check_blocking"] = report.blocking_reason
-        if tracker_result is not None:
-            meta["tracker_placement"] = tracker_result
-        if is_perfect:
-            meta["repair_perfect"]       = True
-            meta["repair_unrecoverable"] = False
-            meta["repair_score"]         = report.score
-        else:
-            reasons = []
-            if report.blocking_reason:
-                reasons.append(report.blocking_reason)
-            failed_names = [g.name for g in report.gates if not g.passed]
-            if failed_names:
-                reasons.append(f"portes={failed_names}")
-            if not tracker_ok and tracker_result:
-                wrong = [k for k, v in tracker_result.get("correct", {}).items() if not v]
-                reasons.append(f"tracker mal placé: {wrong}")
-            meta["repair_perfect"]       = False
-            meta["repair_unrecoverable"] = True
-            meta["repair_score"]         = report.score
-            meta["repair_failure_reason"] = "  |  ".join(reasons) or f"score={report.score:.0f}%"
+        meta["check_score"]      = score
+        meta["check_grade"]      = grade
+        meta["check_verdict"]    = verdict
+        meta["check_confidence"] = confidence
+        meta["check_blocking"]   = result.get("blocking_reason", "")
+        meta["check_repairs"]    = repairs
+        meta["check_components"] = {
+            k: {"score": v.get("score"), "grade": v.get("grade"),
+                "summary": v.get("summary"), "blocking": v.get("blocking")}
+            for k, v in components.items()
+        }
+        meta["repair_perfect"]       = is_perfect
+        meta["repair_unrecoverable"] = not is_perfect
+        meta["repair_score"]         = score
+        if not is_perfect:
+            meta["repair_failure_reason"] = result.get("blocking_reason") or f"score={score:.0f}% grade={grade}"
         meta_updates = {
-            "repair_perfect":       meta["repair_perfect"],
-            "repair_unrecoverable": meta["repair_unrecoverable"],
-            "repair_score":         meta["repair_score"],
+            "repair_perfect":       is_perfect,
+            "repair_unrecoverable": not is_perfect,
+            "repair_score":         score,
         }
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
 
-    failed_gates = [{"name": g.name, "message": g.message} for g in report.gates if not g.passed]
     return {
-        "status":          "ok" if is_perfect else ("issues" if report.score >= 40 else "fail"),
-        "score":           report.score,
-        "ia_score":        report.ia_score,
-        "blocking_reason": report.blocking_reason,
-        "failed_gates":    failed_gates,
-        "tracker_ok":      tracker_ok,
-        "tracker_result":  tracker_result,
-        "repair_perfect":  is_perfect,
+        "status":           "ok" if is_perfect else ("issues" if score >= 40 else "fail"),
+        "score":            score,
+        "grade":            grade,
+        "verdict":          verdict,
+        "confidence":       confidence,
+        "ia_score":         vt.get("details", {}).get("ia_score") or result.get("ia_score", 0.0),
+        "blocking_reason":  result.get("blocking_reason", ""),
+        "failed_gates":     vt.get("details", {}).get("failed_gates", []),
+        "repair_perfect":   is_perfect,
+        "tracker_ok":       tp_details.get("ok"),
+        "tracker_result":   tp_details,
+        "gripper_sync": {
+            "left":  gt_sides.get("left", {}),
+            "right": gt_sides.get("right", {}),
+        },
+        "repairs":          repairs,
+        "components":       components,
         **meta_updates,
     }
 
@@ -3207,7 +3247,7 @@ def _worker_export(job: Job, req: ExportRequest):
 
             sess_name = sess.name
             # Chemin relatif depuis INGEST_DIR pour préserver la hiérarchie Silver
-            # ex: /mnt/storage/silver/Balls/do/session_X → Balls/do/session_X
+            # ex: /Users/christopher/Downloads/sync_test_1/treatment//Balls/do/session_X → Balls/do/session_X
             try:
                 sess_rel = str(sess.relative_to(INGEST_DIR))
             except ValueError:
@@ -3474,6 +3514,121 @@ async def fix_camera_offset(req: FixCameraOffsetRequest):
         raise HTTPException(404, f"Session introuvable : {req.session}")
     job = _new_job("fix_camera_offset")
     threading.Thread(target=_worker_fix_camera_offset, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+class FixCameraOffsetBulkRequest(BaseModel):
+    sessions: List[str]
+    force: bool = False
+
+
+def _worker_fix_camera_offset_bulk(job: Job, sessions: List[str], force: bool):
+    import importlib.util, sys as _sys
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        fix_script = _ROOT / "fix_camera_offset.py"
+        spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        total = len(sessions)
+        results = []
+        for i, sess_str in enumerate(sessions):
+            sess_path = Path(sess_str)
+            _log_job(job, f"[{i+1}/{total}] {sess_path.name}…", "INFO")
+            try:
+                report = mod.fix_session(sess_path, dry_run=False, force=force)
+                status = report.get("status", "?")
+                if status == "corrected":
+                    cams = report.get("cameras_fixed", [])
+                    _log_job(job, f"  ✓ {sess_path.name}: {len(cams)} caméra(s) corrigée(s)", "OK")
+                else:
+                    reason = report.get("reason", "")
+                    _log_job(job, f"  [{status.upper()}] {sess_path.name}: {reason}", "WARN")
+                results.append({"session": sess_str, "status": status, "result": report})
+            except Exception as e:
+                _log_job(job, f"  Erreur {sess_path.name}: {e}", "ERROR")
+                results.append({"session": sess_str, "status": "error", "error": str(e)})
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+        corrected = sum(1 for r in results if r["status"] == "corrected")
+        _log_job(job, f"Fix terminé : {corrected}/{total} session(s) corrigée(s)", "OK")
+        _update_job(job, status=JobStatus.DONE, ended_at=_now(),
+                    result={"corrected": corrected, "total": total, "details": results})
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur bulk fix: {e}", "ERROR")
+
+
+@app.post("/api/session/fix_camera_offset_bulk")
+async def fix_camera_offset_bulk(req: FixCameraOffsetBulkRequest):
+    """Corrige l'offset caméra sur plusieurs sessions en parallèle."""
+    if not req.sessions:
+        raise HTTPException(400, "sessions manquantes")
+    job = _new_job("fix_camera_offset_bulk")
+    threading.Thread(
+        target=_worker_fix_camera_offset_bulk,
+        args=(job, req.sessions, req.force),
+        daemon=True,
+    ).start()
+    return {"job_id": job.id}
+
+
+class TrimStreamsBulkRequest(BaseModel):
+    sessions: List[str]
+    force: bool = False
+
+
+def _worker_trim_streams_bulk(job: Job, sessions: List[str], force: bool):
+    import importlib.util
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    try:
+        fix_script = _ROOT / "fix_camera_offset.py"
+        spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        total = len(sessions)
+        results = []
+        for i, sess_str in enumerate(sessions):
+            sess_path = Path(sess_str)
+            _log_job(job, f"[{i+1}/{total}] {sess_path.name}…", "INFO")
+            try:
+                report = mod.trim_session(sess_path, dry_run=False, force=force)
+                status = report.get("status", "?")
+                if status == "trimmed":
+                    streams = report.get("streams", {})
+                    total_removed = sum(s.get("rows_removed", s.get("frames_removed", 0)) for s in streams.values())
+                    trims = {k: round(v, 0) for k, v in report.get("trims_ms", {}).items() if v > 1}
+                    _log_job(job, f"  ✓ {sess_path.name}: {total_removed} lignes rognées — {trims}", "OK")
+                else:
+                    _log_job(job, f"  [{status.upper()}] {sess_path.name}: {report.get('reason', '')}", "WARN")
+                results.append({"session": sess_str, "status": status, "result": report})
+            except Exception as e:
+                _log_job(job, f"  Erreur {sess_path.name}: {e}", "ERROR")
+                results.append({"session": sess_str, "status": "error", "error": str(e)})
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+        trimmed = sum(1 for r in results if r["status"] == "trimmed")
+        _log_job(job, f"Trim terminé : {trimmed}/{total} session(s) rognée(s)", "OK")
+        _update_job(job, status=JobStatus.DONE, ended_at=_now(),
+                    result={"trimmed": trimmed, "total": total, "details": results})
+    except Exception as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur bulk trim: {e}", "ERROR")
+
+
+@app.post("/api/session/trim_streams_bulk")
+async def trim_streams_bulk(req: TrimStreamsBulkRequest):
+    """Rogne le début de chaque flux pour aligner temporellement les sessions sélectionnées."""
+    if not req.sessions:
+        raise HTTPException(400, "sessions manquantes")
+    job = _new_job("trim_streams_bulk")
+    threading.Thread(
+        target=_worker_trim_streams_bulk,
+        args=(job, req.sessions, req.force),
+        daemon=True,
+    ).start()
     return {"job_id": job.id}
 
 
@@ -4041,7 +4196,7 @@ def _worker_inbox_promote(job: Job, session_path: str, bronze_dir: Optional[str]
 @app.get("/api/inbox/scan")
 async def inbox_scan(inbox_dir: Optional[str] = None):
     """
-    Scanne /mnt/storage/silver (ou inbox_dir si fourni) et retourne le rapport de vérification
+    Scanne /Users/christopher/Downloads/sync_test_1/treatment/ (ou inbox_dir si fourni) et retourne le rapport de vérification
     de chaque session trouvée. Parallélisé selon _INBOX_CONFIG.
     """
     try:
@@ -4063,7 +4218,7 @@ async def inbox_scan(inbox_dir: Optional[str] = None):
 async def inbox_check(req: dict):
     """
     Exécute les 5 checks sur une session précise (sans la déplacer).
-    body: { "session_path": "/mnt/storage/silver/session_xxx" }
+    body: { "session_path": "/Users/christopher/Downloads/sync_test_1/treatment//session_xxx" }
     """
     try:
         from pipeline.inbox_bronze import run_checks, _INBOX_CONFIG
@@ -4220,8 +4375,8 @@ async def inbox_service_install(req: dict):
     """
     import shutil as _sh
 
-    inbox_dir     = req.get("inbox_dir",     "/mnt/storage/silver")
-    bronze_dir    = req.get("bronze_dir",    "/mnt/storage/silver")
+    inbox_dir     = req.get("inbox_dir",     "/Users/christopher/Downloads/sync_test_1/treatment/")
+    bronze_dir    = req.get("bronze_dir",    "/Users/christopher/Downloads/sync_test_1/treatment/")
     host          = req.get("host",          "0.0.0.0")
     port          = int(req.get("port",      8000))
     python_bin    = req.get("python_bin")    or _sh.which("python3") or sys.executable

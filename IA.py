@@ -135,7 +135,7 @@ MODEL_DIRNAME = "_sync_ml_model"
 RESULTS_JSON  = "sync_ml_advanced_results.json"
 
 # Espace de travail fixe — toutes les sessions sont dans ce répertoire
-ROOT_DIR = Path("/mnt/storage/silver")
+ROOT_DIR = Path("/Users/christopher/Downloads/sync_test_1/treatment/")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

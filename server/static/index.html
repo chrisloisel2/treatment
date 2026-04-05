@@ -6430,6 +6430,9 @@
 				S.drawerSess.meta.check_score = score;
 				S.drawerSess.meta.check_ia_score = iaScore;
 				S.drawerSess.meta.check_blocking = blocking;
+				S.drawerSess.meta.repair_perfect = r.repair_perfect ?? false;
+				S.drawerSess.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
+				S.drawerSess.meta.repair_score = r.repair_score ?? score;
 
 				const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
 				const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
@@ -6438,6 +6441,11 @@
 					failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
 				}
 				log(`Check score: ${scoreStr}${iaStr}${blocking ? '  bloc: ' + blocking : ''}`, logLvl);
+				if (r.repair_perfect) {
+					log(`★ ${S.drawerSess.name} marquée PARFAITE`, 'OK');
+				} else {
+					log(`✗ ${S.drawerSess.name} marquée ERREUR (${blocking || failed.map(g=>g.name).join(', ') || 'score insuffisant'})`, 'ERROR');
+				}
 
 				// Rejet automatique si fichiers manquants
 				const missingFiles = failed.find(g => g.name === 'structure') || (blocking && blocking.startsWith('Fichiers manquants'));

@@ -1422,13 +1422,32 @@ async def pipeline_check_score(req: PipelineStateRequest):
 
     report = await loop.run_in_executor(None, _run)
 
-    # Persister le score dans metadata.json
+    # Persister le score + markers repair dans metadata.json
     meta_path = sess / "metadata.json"
+    is_perfect = report.score >= 70 and not report.is_blocked()
+    meta_updates = {}
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
         meta["check_score"]    = report.score
         meta["check_ia_score"] = report.ia_score
         meta["check_blocking"] = report.blocking_reason
+        if is_perfect:
+            meta["repair_perfect"]       = True
+            meta["repair_unrecoverable"] = False
+            meta["repair_score"]         = report.score
+        else:
+            meta["repair_perfect"]       = False
+            meta["repair_unrecoverable"] = True
+            meta["repair_score"]         = report.score
+            meta["repair_failure_reason"] = (
+                report.blocking_reason or
+                f"score={report.score:.0f}%  portes={[g.name for g in report.gates if not g.passed]}"
+            )
+        meta_updates = {
+            "repair_perfect":       meta["repair_perfect"],
+            "repair_unrecoverable": meta["repair_unrecoverable"],
+            "repair_score":         meta["repair_score"],
+        }
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
@@ -1440,6 +1459,8 @@ async def pipeline_check_score(req: PipelineStateRequest):
         "ia_score":        report.ia_score,
         "blocking_reason": report.blocking_reason,
         "failed_gates":    failed_gates,
+        "repair_perfect":  is_perfect,
+        **meta_updates,
     }
 
 

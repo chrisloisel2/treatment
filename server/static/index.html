@@ -5751,14 +5751,32 @@
 			renderSessionsList();
 		}
 
+		function _waitJobDone(jobId, ms = 1500) {
+			return new Promise(resolve => {
+				const t = setInterval(async () => {
+					try {
+						const j = await api('GET', `/api/jobs/${jobId}`);
+						S.jobs[j.id] = j;
+						if (j.status === 'done' || j.status === 'error') {
+							clearInterval(t);
+							resolve(j);
+						}
+					} catch (e) { }
+				}, ms);
+			});
+		}
+
 		async function runSessions(sessions, steps) {
 			const root = S.cfg.root || ge('cfg-root').value;
 			const modelDir = ge('s-model').value || '_sync_ml_model';
 			const nas = ge('cfg-nas').value || ge('s-nas').value;
 			const params = getParams();
 			const forceFlux = ge('chk-force-flux').checked;
-
 			const exportCfg = getExportCfg();
+
+			// La rotation est CPU-bound et écrit les fichiers vidéo — toujours séquentielle
+			const sequential = steps && steps.length === 1 && steps[0] === 'rotate';
+
 			for (const sess of sessions) {
 				try {
 					const body = {
@@ -5773,10 +5791,14 @@
 					};
 					if (steps && steps.length) body.steps = steps;
 					const { job_id } = await api('POST', '/api/pipeline/run', body);
-					// Lier le job à la session
 					const s = S.sessions.find(s => s.path === sess.path);
 					if (s) s.job_id = job_id;
 					log(`Pipeline lancée: ${sess.name} (job ${job_id})`, 'OK');
+					renderPipelineBoard();
+					if (sequential) {
+						const j = await _waitJobDone(job_id);
+						log(`Rotation terminée: ${sess.name} [${j.status}]`, j.status === 'done' ? 'OK' : 'ERROR');
+					}
 				} catch (e) {
 					log(`Erreur lancement ${sess.name}: ${e.message}`, 'ERROR');
 				}

@@ -37,6 +37,7 @@ import os
 import sys
 import time
 import warnings
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -559,9 +560,14 @@ def _collect_sessions(root: Path) -> List[Path]:
     )
 
 
+def _build_examples_worker(sess: Path, gt_label: Optional[int]) -> List[Tuple[np.ndarray, np.ndarray, int]]:
+    """Worker top-level pour ProcessPoolExecutor (picklable)."""
+    return build_pseudo_examples(sess, gt_label=gt_label)
+
+
 def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
           epochs: int = TRAIN_EPOCHS, batch_size: int = BATCH_SIZE,
-          model_dir: Path = MODEL_DIR):
+          model_dir: Path = MODEL_DIR, n_workers: Optional[int] = None):
     if not _TORCH:
         print("[train] PyTorch non disponible — entraînement ignoré.")
         return
@@ -587,13 +593,29 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
             for sess in _collect_sessions(root):
                 gt_map[sess] = label
 
+    n_workers = max(1, n_workers if n_workers is not None else (os.cpu_count() or 4) - 1)
     print(f"[train] Collecte des exemples sur {len(sessions)} sessions "
           f"(sync={sum(1 for v in gt_map.values() if v==1)} "
-          f"desync={sum(1 for v in gt_map.values() if v==0)})...")
+          f"desync={sum(1 for v in gt_map.values() if v==0)}) "
+          f"[{n_workers} processus]...")
     all_examples: List[Tuple[np.ndarray, np.ndarray, int]] = []
+
+    args_list = [(sess, gt_map.get(sess, None)) for sess in sessions]
+    results: Dict[Path, List] = {}
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        fut_to_sess = {pool.submit(_build_examples_worker, sess, gt): sess
+                       for sess, gt in args_list}
+        for fut in as_completed(fut_to_sess):
+            sess = fut_to_sess[fut]
+            try:
+                ex = fut.result()
+            except Exception as e:
+                ex = []
+                print(f"  [ERR] {sess.name}: {e}")
+            results[sess] = ex
+
     for i, sess in enumerate(sessions, 1):
-        gt = gt_map.get(sess, None)
-        ex = build_pseudo_examples(sess, gt_label=gt)
+        ex = results.get(sess, [])
         if ex:
             all_examples.extend(ex)
             print(f"  [{i:3d}/{len(sessions)}] {sess.name:<40}  +{len(ex):5d} exemples "
@@ -630,8 +652,10 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
               f"neg={sum(1 for _,_,y in all_examples if y==0)}")
 
     dataset = PairWindowDataset(all_examples)
+    n_dl_workers = min(4, max(0, (os.cpu_count() or 1) - 1))
     loader  = DataLoader(dataset, batch_size=batch_size, shuffle=True,
-                         num_workers=0, pin_memory=(str(DEVICE) == "cuda"))
+                         num_workers=n_dl_workers, pin_memory=(str(DEVICE) == "cuda"),
+                         persistent_workers=(n_dl_workers > 0))
 
     model = CrossModalAligner().to(DEVICE)
     opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
@@ -712,52 +736,125 @@ def load_model() -> Optional["CrossModalAligner"]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def _ia_score_pair(model: "CrossModalAligner", ref: Flux, tgt: Flux) -> float:
+def _ia_score_pair(model: "CrossModalAligner", ref: Flux, tgt: Flux,
+                   infer_batch: int = 512) -> float:
+    """Score IA pour une paire — tous les lags en un seul mega-batch GPU."""
     delta = tgt.t_start_abs_ms - ref.t_start_abs_ms
-    win     = int(WINDOW_MS / RESAMPLE_MS)
-    stride  = max(4, int(WINDOW_STRIDE_MS / RESAMPLE_MS))
+    win    = int(WINDOW_MS / RESAMPLE_MS)
+    stride = max(4, int(WINDOW_STRIDE_MS / RESAMPLE_MS))
 
-    lag_scores = []
     cands = np.arange(-MAX_LAG_MS, MAX_LAG_MS + RESAMPLE_MS, RESAMPLE_MS, dtype=np.float32)
-    for lag in cands:
-        if abs(float(lag)) >= (MAX_LAG_MS - EDGE_MARGIN_MS):
-            continue
+    valid_cands = [lag for lag in cands if abs(float(lag)) < (MAX_LAG_MS - EDGE_MARGIN_MS)]
+
+    # Construire tous les tenseurs numpy d'un coup (vectorisé, sans boucle Python par fenêtre)
+    all_xa: List[np.ndarray] = []
+    all_xb: List[np.ndarray] = []
+    lag_slice_counts: List[int] = []  # combien de fenêtres pour chaque lag valide
+
+    for lag in valid_cands:
         grid, a, b = make_common_grid(ref, tgt, delta, float(lag), RESAMPLE_MS)
         if grid is None:
+            lag_slice_counts.append(0)
             continue
         slices = window_slices(len(grid), win, stride)
         if not slices:
+            lag_slice_counts.append(0)
             continue
-        batch_xa, batch_xb = [], []
-        for s, e in slices:
-            wa = zscore(robust_clip(a[s:e]))
-            wb = zscore(robust_clip(b[s:e]))
-            da = moving_derivative(wa, RESAMPLE_MS)
-            db = moving_derivative(wb, RESAMPLE_MS)
-            ea = smooth(wa * wa, 2.0)
-            eb = smooth(wb * wb, 2.0)
-            batch_xa.append(np.stack([wa, da, ea], axis=0))
-            batch_xb.append(np.stack([wb, db, eb], axis=0))
-        xa_t = torch.from_numpy(np.stack(batch_xa).astype(np.float32)).to(DEVICE)
-        xb_t = torch.from_numpy(np.stack(batch_xb).astype(np.float32)).to(DEVICE)
-        logit, _, _ = model(xa_t, xb_t)
-        proba = torch.sigmoid(logit).cpu().numpy()
-        lag_scores.append(0.65 * float(np.percentile(proba, 75)) + 0.35 * float(np.mean(proba)))
 
-    if not lag_scores:
+        n = len(slices)
+        # Extraire toutes les fenêtres en bulk avec slicing numpy
+        idx_s = np.array([s for s, _ in slices])
+        idx_e = np.array([e for _, e in slices])
+        # Stack: (n, win)
+        wa_arr = np.stack([a[s:e] for s, e in slices])  # (n, win)
+        wb_arr = np.stack([b[s:e] for s, e in slices])
+
+        # Normalisation vectorisée
+        mu_a = np.mean(wa_arr, axis=1, keepdims=True)
+        mu_b = np.mean(wb_arr, axis=1, keepdims=True)
+        std_a = np.std(wa_arr, axis=1, keepdims=True) + 1e-8
+        std_b = np.std(wb_arr, axis=1, keepdims=True) + 1e-8
+        p1_a = np.percentile(wa_arr, 1, axis=1, keepdims=True)
+        p99_a = np.percentile(wa_arr, 99, axis=1, keepdims=True)
+        p1_b = np.percentile(wb_arr, 1, axis=1, keepdims=True)
+        p99_b = np.percentile(wb_arr, 99, axis=1, keepdims=True)
+        wa_arr = np.clip(wa_arr, p1_a, p99_a)
+        wb_arr = np.clip(wb_arr, p1_b, p99_b)
+        wa_arr = (wa_arr - mu_a) / std_a
+        wb_arr = (wb_arr - mu_b) / std_b
+
+        dt = RESAMPLE_MS
+        da_arr = np.diff(wa_arr, prepend=wa_arr[:, :1], axis=1) / (dt + 1e-8)
+        db_arr = np.diff(wb_arr, prepend=wb_arr[:, :1], axis=1) / (dt + 1e-8)
+
+        # Énergie lissée vectorisée (Gaussian approx via uniform kernel)
+        ea_raw = wa_arr * wa_arr
+        eb_raw = wb_arr * wb_arr
+        k = max(1, int(2.0 / RESAMPLE_MS * 2))
+        kernel = np.ones((1, k), dtype=np.float32) / k
+        # Convolution rapide via cumsum (O(n) au lieu de O(n*k))
+        ea_cs = np.cumsum(np.pad(ea_raw, ((0,0),(k-1,0))), axis=1)
+        ea_arr = (ea_cs[:, k:] - ea_cs[:, :-k]) / k
+        eb_cs = np.cumsum(np.pad(eb_raw, ((0,0),(k-1,0))), axis=1)
+        eb_arr = (eb_cs[:, k:] - eb_cs[:, :-k]) / k
+
+        xa_batch = np.stack([wa_arr, da_arr, ea_arr], axis=1).astype(np.float32)  # (n,3,win)
+        xb_batch = np.stack([wb_arr, db_arr, eb_arr], axis=1).astype(np.float32)
+
+        all_xa.append(xa_batch)
+        all_xb.append(xb_batch)
+        lag_slice_counts.append(n)
+
+    if not all_xa:
         return 0.0
-    scores = np.array(lag_scores)
-    return float(np.max(scores))
+
+    # Un seul transfert CPU→GPU et un seul forward pass (découpé en mini-batches si nécessaire)
+    xa_all = np.concatenate(all_xa, axis=0)  # (total_windows, 3, win)
+    xb_all = np.concatenate(all_xb, axis=0)
+
+    all_probas = []
+    for start in range(0, len(xa_all), infer_batch):
+        xa_t = torch.from_numpy(xa_all[start:start+infer_batch]).to(DEVICE)
+        xb_t = torch.from_numpy(xb_all[start:start+infer_batch]).to(DEVICE)
+        logit, _, _ = model(xa_t, xb_t)
+        all_probas.append(torch.sigmoid(logit).cpu().numpy())
+
+    probas = np.concatenate(all_probas)  # (total_windows,)
+
+    # Reconstituer les scores par lag
+    lag_scores = []
+    cursor = 0
+    for n in lag_slice_counts:
+        if n == 0:
+            continue
+        p = probas[cursor:cursor+n]
+        lag_scores.append(0.65 * float(np.percentile(p, 75)) + 0.35 * float(np.mean(p)))
+        cursor += n
+
+    return float(np.max(lag_scores)) if lag_scores else 0.0
 
 
 def score_session_ia(model: "CrossModalAligner", session_dir: Path) -> Dict[str, float]:
     fluxes = load_all_fluxes(session_dir)
-    out = {}
-    for ref_name, tgt_name in PAIRS:
-        if ref_name not in fluxes or tgt_name not in fluxes:
-            continue
-        s = _ia_score_pair(model, fluxes[ref_name], fluxes[tgt_name])
-        out[f"{ref_name}|{tgt_name}"] = round(s, 4)
+    valid_pairs = [(r, t) for r, t in PAIRS if r in fluxes and t in fluxes]
+    if not valid_pairs:
+        return {}
+
+    out: Dict[str, float] = {}
+    # Les 3 paires sont indépendantes — on les lance en threads simultanés.
+    # Note : _ia_score_pair libère le GIL lors des ops numpy/torch donc les threads
+    # se recouvrent effectivement (surtout en mode CPU).
+    with ThreadPoolExecutor(max_workers=len(valid_pairs)) as tex:
+        fut_map = {
+            tex.submit(_ia_score_pair, model, fluxes[r], fluxes[t]): f"{r}|{t}"
+            for r, t in valid_pairs
+        }
+        for fut in as_completed(fut_map):
+            key = fut_map[fut]
+            try:
+                out[key] = round(fut.result(), 4)
+            except Exception:
+                out[key] = 0.0
     return out
 
 
@@ -881,19 +978,25 @@ def _gate_tracker_continuity(session_dir: Path, report: SessionReport) -> bool:
     return True
 
 
+def _cam_continuity_worker(args):
+    session_dir, cam = args
+    times = _load_jsonl_times(session_dir / "videos" / f"{cam}.jsonl")
+    if times is None or len(times) < 2:
+        return cam, 0
+    dt = np.diff(times)
+    return cam, int(np.sum(dt > CAMERA_GAP_MS))
+
+
 def _gate_camera_continuity(session_dir: Path, report: SessionReport) -> bool:
     """Vérifie les gaps caméra. Bloquant si trop de gaps sur n'importe quelle cam."""
     worst_n = 0
     worst_cam = ""
-    for cam in ("head", "left", "right"):
-        times = _load_jsonl_times(session_dir / "videos" / f"{cam}.jsonl")
-        if times is None or len(times) < 2:
-            continue
-        dt = np.diff(times)
-        n_gaps = int(np.sum(dt > CAMERA_GAP_MS))
-        if n_gaps > worst_n:
-            worst_n = n_gaps
-            worst_cam = cam
+    with ThreadPoolExecutor(max_workers=3) as tex:
+        for cam, n_gaps in tex.map(_cam_continuity_worker,
+                                   [(session_dir, c) for c in ("head", "left", "right")]):
+            if n_gaps > worst_n:
+                worst_n = n_gaps
+                worst_cam = cam
 
     if worst_n >= CAMERA_GAP_FAIL_N:
         report.add_gate(GateResult(
@@ -936,16 +1039,20 @@ def _gate_camera_coverage(session_dir: Path, report: SessionReport) -> bool:
 
     worst_ratio = 1.0
     worst_cam = ""
-    for cam in ("head", "left", "right"):
+
+    def _cam_coverage(cam):
         times = _load_jsonl_times(session_dir / "videos" / f"{cam}.jsonl")
         if times is None or len(times) < 2:
-            continue
+            return cam, 1.0
         cam_t0, cam_t1 = float(times[0]), float(times[-1])
         overlap_ms = max(0.0, min(cam_t1, trk_t1_ms) - max(cam_t0, trk_t0_ms))
-        ratio = overlap_ms / (trk_dur_ms + 1e-6)
-        if ratio < worst_ratio:
-            worst_ratio = ratio
-            worst_cam = cam
+        return cam, overlap_ms / (trk_dur_ms + 1e-6)
+
+    with ThreadPoolExecutor(max_workers=3) as tex:
+        for cam, ratio in tex.map(_cam_coverage, ("head", "left", "right")):
+            if ratio < worst_ratio:
+                worst_ratio = ratio
+                worst_cam = cam
 
     if worst_ratio < MIN_COVERAGE_RATIO:
         report.add_gate(GateResult(
@@ -1161,30 +1268,77 @@ def cmd_train(args):
         desync_dir=Path(args.desync_dir),
         epochs=args.epochs,
         batch_size=args.batch_size,
+        n_workers=getattr(args, "workers", None),
     )
 
 
+def _check_session_worker(sess_str: str) -> dict:
+    """Worker top-level pour ProcessPoolExecutor : charge le modèle localement."""
+    sess = Path(sess_str)
+    model = load_model()  # chargé dans le sous-processus
+    r = check_session(sess, model)
+    # Retourner un dict sérialisable (pas d'objet Path ni numpy)
+    d = asdict(r)
+    d["verdict"] = r.verdict
+    return d
+
+
+def _dict_to_report(d: dict) -> SessionReport:
+    r = SessionReport(session_path=d["session_path"])
+    r.session_id = d.get("session_id", "")
+    r.ia_score = d.get("ia_score", 0.0)
+    r.ia_scores = d.get("ia_scores", {})
+    r.score = d.get("score", 0.0)
+    r.blocking_reason = d.get("blocking_reason", "")
+    r.errors = d.get("errors", [])
+    for g in d.get("gates", []):
+        r.gates.append(GateResult(
+            name=g["name"], passed=g["passed"],
+            message=g.get("message", ""), value=g.get("value"),
+        ))
+    return r
+
+
 def cmd_check(args):
-    model = load_model()
-    if model is None:
+    model_exists = MODEL_PATH.exists()
+    if not model_exists:
         print("[check] ⚠ Aucun modèle trouvé — scores heuristiques uniquement.\n"
               "         Lancez d'abord : python check.py train")
 
     target = Path(args.path)
     reports: List[SessionReport] = []
+    n_workers = max(1, getattr(args, "workers", None) or (os.cpu_count() or 2))
 
     if args.batch or (target.is_dir() and not (target / "metadata.json").exists()):
         sessions = _collect_sessions(target)
         if not sessions:
             print(f"Aucune session trouvée dans {target}")
             return
-        print(f"[check] {len(sessions)} sessions à vérifier...")
+        print(f"[check] {len(sessions)} sessions à vérifier [{n_workers} processus]...")
+
+        results_map: Dict[str, dict] = {}
+        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+            fut_to_sess = {pool.submit(_check_session_worker, str(s)): s for s in sessions}
+            for fut in as_completed(fut_to_sess):
+                sess = fut_to_sess[fut]
+                try:
+                    results_map[str(sess)] = fut.result()
+                except Exception as e:
+                    results_map[str(sess)] = {
+                        "session_path": str(sess), "session_id": "", "gates": [],
+                        "ia_scores": {}, "ia_score": 0.0, "score": 0.0,
+                        "blocking_reason": str(e), "errors": [str(e)], "verdict": "FAIL",
+                    }
+
+        # Réafficher dans l'ordre original des sessions
         for sess in sessions:
-            r = check_session(sess, model)
+            d = results_map[str(sess)]
+            r = _dict_to_report(d)
             reports.append(r)
             print_report(r, verbose=args.verbose)
         print_summary(reports)
     else:
+        model = load_model()
         r = check_session(target, model)
         reports.append(r)
         print_report(r, verbose=True)
@@ -1215,6 +1369,7 @@ def cmd_all(args):
         desync_dir = args.desync_dir
         epochs     = args.epochs
         batch_size = args.batch_size
+        workers    = getattr(args, "workers", None)
     cmd_train(TrainArgs())
 
     class CheckArgs:
@@ -1222,6 +1377,7 @@ def cmd_all(args):
         batch    = True
         verbose  = getattr(args, "verbose", False)
         json_out = getattr(args, "json_out", None)
+        workers  = getattr(args, "workers", None)
     print("\n[all] Vérification desync/ :")
     cmd_check(CheckArgs())
 
@@ -1246,6 +1402,9 @@ def main():
     p_train.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     p_train.set_defaults(func=cmd_train)
 
+    p_train.add_argument("--workers", type=int, default=None,
+                         help="Nombre de processus parallèles (défaut: CPU-1)")
+
     p_check = sub.add_parser("check", help="Vérifier une ou plusieurs sessions")
     p_check.add_argument("path", help="Chemin vers la session ou le dossier racine")
     p_check.add_argument("--batch",    action="store_true",
@@ -1253,6 +1412,8 @@ def main():
     p_check.add_argument("--verbose",  action="store_true")
     p_check.add_argument("--json-out", metavar="FILE",
                          help="Sauvegarder le rapport en JSON")
+    p_check.add_argument("--workers", type=int, default=None,
+                         help="Nombre de processus parallèles pour le batch (défaut: CPU-1)")
     p_check.set_defaults(func=cmd_check)
 
     p_all = sub.add_parser("all", help="Train puis check sur sync/ + desync/")
@@ -1260,6 +1421,8 @@ def main():
     p_all.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     p_all.add_argument("--verbose",    action="store_true")
     p_all.add_argument("--json-out",   metavar="FILE")
+    p_all.add_argument("--workers", type=int, default=None,
+                       help="Nombre de processus parallèles (défaut: CPU-1)")
     p_all.set_defaults(func=cmd_all)
 
     args = parser.parse_args()

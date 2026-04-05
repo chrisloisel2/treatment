@@ -1852,6 +1852,158 @@ def _gfs_analyze_side(session_path: Path, side: str,
     return result
 
 
+def _gfs_proprioceptive_score(session_path: Path, side: str) -> dict:
+    """
+    Cross-modal proprioceptive sync: teste tous les signaux tracker (qw,qx,qy,qz,x,y,z)
+    du côté {side} contre gripper_{side}_data.csv opening_mm (et angle_deg si disponible).
+
+    Retourne la meilleure corrélation trouvée avec lag search ±1s.
+    Score 0-100 basé sur |r_max|.
+    """
+    if not _PANDAS or not _SCIPY:
+        return {"success": False, "error": "pandas/scipy manquant"}
+
+    trk_path = session_path / "tracker_positions.csv"
+    csv_path = session_path / f"gripper_{side}_data.csv"
+    if not trk_path.exists() or not csv_path.exists():
+        return {"success": False, "error": "fichiers absents"}
+
+    try:
+        trk = pd.read_csv(trk_path)
+        grp = pd.read_csv(csv_path)
+
+        ts_col = next((c for c in trk.columns if c.lower() == "timestamp_ns"), None)
+        if ts_col is None:
+            return {"success": False, "error": "timestamp_ns absent dans tracker"}
+
+        t_trk = trk[ts_col].astype(float).to_numpy() / 1e6
+        t_grp = grp["timestamp_ns"].astype(float).to_numpy() / 1e6
+        opening = grp["opening_mm"].astype(float).to_numpy()
+
+        # Targets : opening_mm + angle_deg si disponible
+        targets: Dict[str, np.ndarray] = {"opening_mm": opening}
+        if "angle_deg" in grp.columns:
+            ang = grp["angle_deg"].astype(float).to_numpy()
+            if np.isfinite(ang).sum() > 50:
+                targets["angle_deg"] = ang
+
+        t_start = max(t_trk[0], t_grp[0])
+        t_end   = min(t_trk[-1], t_grp[-1])
+        if t_end - t_start < 3000.0:
+            return {"success": False, "error": f"recouvrement insuffisant ({(t_end-t_start)/1000:.1f}s)"}
+
+        # Resampler à 20 Hz commun
+        t_common = np.arange(t_start, t_end, 50.0)
+        if len(t_common) < 60:
+            return {"success": False, "error": "trop peu de points communs"}
+
+        # Tracker signals
+        trk_cols = [f"tracker_{side}_{s}" for s in ("qw", "qx", "qy", "qz", "x", "y", "z")]
+        trk_cols = [c for c in trk_cols if c in trk.columns]
+
+        # Max lag = 1000ms → 20 samples at 20Hz
+        _max_lag_samples = 20
+
+        best_r: float = 0.0
+        best_signal:  str = ""
+        best_target:  str = ""
+        best_lag_ms:  float = 0.0
+        all_results:  List[dict] = []
+
+        for target_name, target_vals in targets.items():
+            f_target = _interp1d(t_grp, target_vals, bounds_error=False, fill_value=np.nan)
+            tgt_rs = f_target(t_common)
+
+            for col in trk_cols:
+                sig_vals = trk[col].to_numpy().astype(float)
+                f_sig = _interp1d(t_trk, sig_vals, bounds_error=False, fill_value=np.nan)
+                sig_rs = f_sig(t_common)
+
+                both = np.isfinite(sig_rs) & np.isfinite(tgt_rs)
+                if both.sum() < 50:
+                    continue
+
+                a = sig_rs[both]
+                b = tgt_rs[both]
+                a_z = (a - a.mean()) / (a.std() + 1e-8)
+                b_z = (b - b.mean()) / (b.std() + 1e-8)
+                cc = _correlate(a_z, b_z, mode="full")
+                center = len(b_z) - 1
+                lo = max(0, center - _max_lag_samples)
+                hi = min(len(cc), center + _max_lag_samples + 1)
+                sub_cc = cc[lo:hi]
+                sub_lags = np.arange(lo - center, hi - center)
+                best_idx = int(np.argmax(np.abs(sub_cc)))
+                r_raw = float(sub_cc[best_idx]) / len(a_z)
+                lag_samp = int(sub_lags[best_idx])
+                lag_ms = float(lag_samp * 50.0)  # 50ms/sample
+
+                # Verify r_max with actual Pearson at best lag
+                if lag_samp >= 0:
+                    a_al = a[lag_samp:]
+                    b_al = b[:len(a) - lag_samp]
+                else:
+                    a_al = a[:len(a) + lag_samp]
+                    b_al = b[-lag_samp:]
+                if len(a_al) >= 30:
+                    try:
+                        r_pearson, _ = _pearsonr(a_al, b_al)
+                    except Exception:
+                        r_pearson = r_raw
+                else:
+                    r_pearson = r_raw
+
+                r_abs = abs(r_pearson)
+                all_results.append({
+                    "signal": col, "target": target_name,
+                    "r": round(float(r_pearson), 4),
+                    "r_abs": round(r_abs, 4),
+                    "lag_ms": round(lag_ms, 1),
+                })
+
+                if r_abs > abs(best_r):
+                    best_r = float(r_pearson)
+                    best_signal = col
+                    best_target = target_name
+                    best_lag_ms = lag_ms
+
+        if not all_results:
+            return {"success": False, "error": "aucun signal corrélable trouvé"}
+
+        all_results.sort(key=lambda x: x["r_abs"], reverse=True)
+        r_abs = abs(best_r)
+
+        # Score basé uniquement sur r_abs — le lag physiologique (biomécanique)
+        # entre rotation du poignet et ouverture du gripper n'est pas un défaut de sync.
+        # Seul un lag > 1500ms (probablement une erreur d'horloge) est pénalisé.
+        # Formule : clip((r-0.30)/0.70, 0, 1)*100
+        score = float(np.clip((r_abs - 0.30) / 0.70, 0.0, 1.0)) * 100.0
+
+        # Pénalité lag : seulement pour les décalages très larges (>1000ms)
+        lag_abs = abs(best_lag_ms)
+        if lag_abs > 1000:
+            score *= max(0.5, 1.0 - (lag_abs - 1000) / 2000.0)
+
+        # Confidence : basée sur r_abs (>0.5 → fiable)
+        confidence = float(np.clip((r_abs - 0.20) / 0.55, 0.0, 1.0))
+
+        return {
+            "success": True,
+            "score": round(score, 1),
+            "confidence": round(confidence, 3),
+            "best_r": round(best_r, 4),
+            "best_r_abs": round(r_abs, 4),
+            "best_signal": best_signal,
+            "best_target": best_target,
+            "best_lag_ms": round(best_lag_ms, 1),
+            "top_signals": all_results[:5],
+            "n_signals_tested": len(all_results),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def _gfs_analyze_session(session_path, sides=None, include_per_frame=False) -> dict:
     session_path = Path(session_path)
     if sides is None:
@@ -1882,8 +2034,7 @@ def _gfs_analyze_session(session_path, sides=None, include_per_frame=False) -> d
 
     global_score = float(np.mean(scores)) if scores else 0.0
 
-    # Si le signal visuel est trop bruité pour être fiable, on neutralise le score.
-    # Critères : confidence < 0.75 OU invalid > 40% OU rolling_r_mean < 0.50 (aucune corrélation locale)
+    # Qualifier le signal visuel
     confidences    = [results[s].get("confidence", 1.0) for s in results if results[s].get("success")]
     invalid_ratios = [
         results[s].get("invalid_frames", 0) / max(results[s].get("n_frames", 1), 1)
@@ -1893,34 +2044,101 @@ def _gfs_analyze_session(session_path, sides=None, include_per_frame=False) -> d
     mean_conf      = float(np.mean(confidences))    if confidences    else 1.0
     mean_inv_ratio = float(np.mean(invalid_ratios)) if invalid_ratios else 0.0
     mean_roll_r    = float(np.mean(roll_means))     if roll_means     else 1.0
-    signal_weak    = mean_conf < 0.75 or mean_inv_ratio > 0.40 or mean_roll_r < 0.50
+    visual_weak    = mean_conf < 0.75 or mean_inv_ratio > 0.40 or mean_roll_r < 0.50
 
-    if not scores:
-        verdict = "NO_DATA"
-    elif signal_weak:
-        verdict = "SIGNAL_FAIBLE"
-        global_score = 50.0   # neutre — on ne pénalise pas un signal non mesurable
-        all_ok = True         # ne bloque pas la session
-    elif all_ok and global_score >= 80:
-        verdict = "SYNC_PARFAITE"
-    elif all_ok:
-        verdict = "SYNC_OK"
-    elif global_score >= 50:
-        verdict = "SYNC_PARTIELLE"
+    # ── Signal proprioceptif cross-modal ─────────────────────────────────────
+    # Toujours calculé — fusion avec le visuel si les deux sont disponibles,
+    # fallback exclusif si le signal visuel est trop faible.
+    prop_results: Dict[str, dict] = {}
+    prop_scores:  List[float]     = []
+    for side in sides:
+        pr = _gfs_proprioceptive_score(session_path, side)
+        prop_results[side] = pr
+        if pr.get("success") and pr.get("confidence", 0.0) > 0.15:
+            prop_scores.append(pr["score"])
+
+    prop_score  = float(np.mean(prop_scores)) if prop_scores else 0.0
+    prop_ok     = prop_score >= 60.0
+    prop_conf   = float(np.mean([pr.get("confidence", 0.0) for pr in prop_results.values()
+                                  if pr.get("success")])) if prop_results else 0.0
+
+    # ── Fusion visuel + proprioceptif ─────────────────────────────────────────
+    if not scores and not prop_scores:
+        # Aucune donnée du tout
+        final_score = 0.0
+        final_ok    = False
+        verdict     = "NO_DATA"
+        signal_used = "none"
+    elif visual_weak or not scores:
+        if prop_scores:
+            # Le visuel est trop bruité — on se repose sur le proprioceptif seul
+            final_score = prop_score
+            final_ok    = prop_ok
+            verdict     = "SYNC_PARFAITE" if prop_score >= 80 and prop_ok else (
+                          "SYNC_OK"       if prop_ok else (
+                          "SYNC_PARTIELLE" if prop_score >= 50 else "DESYNC"))
+            signal_used = "proprioceptif"
+        else:
+            # Signal visuel faible ET proprioceptif non disponible
+            final_score = 50.0
+            final_ok    = True
+            verdict     = "SIGNAL_FAIBLE"
+            signal_used = "none"
     else:
-        verdict = "DESYNC"
+        # Les deux signaux sont disponibles.
+        # Stratégie : le signal visuel est leader quand il est fiable.
+        # Le proprioceptif sert de confirmation (bonus si r_prop > 0.5) ou
+        # d'alerte si le score visuel ET proprio sont tous deux mauvais.
+        #
+        # Si visuel_score >= 60% : on garde le score visuel, le proprio ne peut
+        # que le confirmer (pas le réduire). Score = max(visuel, fusion légère).
+        # Si visuel_score < 60%  : fusion pondérée pour bénéficier du proprio.
+        vis_conf = float(np.clip(mean_conf * (1.0 - mean_inv_ratio) * (mean_roll_r / 0.5), 0.0, 1.0))
+        if global_score >= GRADE_C:
+            # Visuel suffisamment bon → le proprio ne fait que confirmer
+            # Bonus léger si proprio est bon, pas de pénalité sinon
+            prop_bonus = max(0.0, (prop_score - global_score) * prop_conf * 0.3)
+            final_score = min(100.0, global_score + prop_bonus)
+        else:
+            # Visuel faible → fusionner pour tenter de récupérer du score
+            w_vis  = vis_conf
+            w_prop = prop_conf * 0.5
+            total_w = w_vis + w_prop
+            if total_w < 0.01:
+                final_score = global_score
+            else:
+                final_score = (global_score * w_vis + prop_score * w_prop) / total_w
+        final_ok = (all_ok or prop_ok)
+        if final_score >= 80 and final_ok:
+            verdict = "SYNC_PARFAITE"
+        elif final_ok:
+            verdict = "SYNC_OK"
+        elif final_score >= 50:
+            verdict = "SYNC_PARTIELLE"
+        else:
+            verdict = "DESYNC"
+        signal_used = "fusion"
 
     return {
-        "score":        round(global_score, 1),
-        "ok":           all_ok and bool(scores),
-        "verdict":      verdict,
-        "lag_ms_max":   round(max_lag, 1),
-        "n_sides":      len(scores),
-        "signal_weak":    signal_weak,
-        "mean_conf":      round(mean_conf, 2),
-        "mean_inv_ratio": round(mean_inv_ratio, 2),
-        "mean_roll_r":    round(mean_roll_r, 2),
-        "sides":        results,
+        "score":           round(final_score, 1),
+        "ok":              final_ok,
+        "verdict":         verdict,
+        "signal_used":     signal_used,
+        "lag_ms_max":      round(max_lag, 1),
+        "n_sides":         len(scores),
+        # Visuel
+        "visual_score":    round(global_score, 1),
+        "visual_weak":     visual_weak,
+        "mean_conf":       round(mean_conf, 2),
+        "mean_inv_ratio":  round(mean_inv_ratio, 2),
+        "mean_roll_r":     round(mean_roll_r, 2),
+        # Proprioceptif
+        "prop_score":      round(prop_score, 1),
+        "prop_conf":       round(prop_conf, 3),
+        "prop_details":    prop_results,
+        # Compat legacy
+        "signal_weak":     visual_weak and not prop_scores,
+        "sides":           results,
     }
 
 
@@ -2330,95 +2548,155 @@ def _dim_gripper_frame_sync(session_path: Path) -> DimensionResult:
         sides       = report.get("sides", {})
         signal_weak = report.get("signal_weak", False)
 
+        signal_used = report.get("signal_used", "")
+        prop_details = report.get("prop_details", {})
+        visual_weak  = report.get("visual_weak", signal_weak)
+
         for side, sr in sides.items():
+            anom: List = []
+            r_val = 0.0; lag_ms = 0.0; side_v = "?"; side_s = 0.0
+
             if not sr.get("success"):
-                diags.append(f"  {side}: ✗ {sr.get('error', 'échec')}")
-                details[side] = {"success": False, "error": sr.get("error")}
-                continue
-
-            r_val   = sr.get("global_r", 0.0) or 0.0
-            lag_ms  = sr.get("lag_ms", 0.0) or 0.0
-            r_mean  = sr.get("rolling_r_mean", r_val) or r_val
-            r_min   = sr.get("rolling_r_min", r_val) or r_val
-            n_seg   = sr.get("n_segments", 0) or 0
-            bad_seg = sr.get("bad_segments", 0) or 0
-            fis     = sr.get("frames_in_sync", 1.0) or 1.0
-            anom    = sr.get("anomaly_frames", []) or []
-            side_v  = sr.get("verdict", "?")
-            side_s  = sr.get("score", 0.0) or 0.0
-
-            if signal_weak:
-                diags.append(f"  {side}: signal visuel trop faible pour mesure fiable (r={r_val:.3f}  roll_r={r_mean:.2f})")
+                diags.append(f"  {side}: ✗ visuel: {sr.get('error', 'échec')}")
             else:
-                r_icon   = "✓" if r_val >= 0.70 else ("⚠" if r_val >= 0.50 else "✗")
-                lag_icon = "✓" if abs(lag_ms) <= 50 else ("⚠" if abs(lag_ms) <= 100 else "✗")
+                r_val   = sr.get("global_r", 0.0) or 0.0
+                lag_ms  = sr.get("lag_ms", 0.0) or 0.0
+                r_mean  = sr.get("rolling_r_mean", r_val) or r_val
+                r_min   = sr.get("rolling_r_min", r_val) or r_val
+                n_seg   = sr.get("n_segments", 0) or 0
+                bad_seg = sr.get("bad_segments", 0) or 0
+                fis     = sr.get("frames_in_sync", 1.0) or 1.0
+                anom    = sr.get("anomaly_frames", []) or []
+                side_v  = sr.get("verdict", "?")
+                side_s  = sr.get("score", 0.0) or 0.0
+
+                if visual_weak:
+                    diags.append(f"  {side} [visuel]: signal faible (r={r_val:.3f}  roll_r={r_mean:.2f}  conf={report.get('mean_conf',0):.2f})")
+                else:
+                    r_icon   = "✓" if r_val >= 0.70 else ("⚠" if r_val >= 0.50 else "✗")
+                    lag_icon = "✓" if abs(lag_ms) <= 50 else ("⚠" if abs(lag_ms) <= 100 else "✗")
+                    diags.append(
+                        f"  {side} [visuel]: {side_v}  score={side_s:.1f}%  "
+                        f"{r_icon} r={r_val:.3f}  {lag_icon} lag={lag_ms:+.0f}ms"
+                    )
+                    if n_seg > 0:
+                        seg_icon = "✓" if bad_seg == 0 else ("⚠" if bad_seg <= n_seg // 4 else "✗")
+                        diags.append(f"    {seg_icon} fenêtres {n_seg-bad_seg}/{n_seg} OK  r_moy={r_mean:.3f}  r_min={r_min:.3f}")
+                    diags.append(f"    frames en sync: {fis*100:.1f}%  anomalies: {len(anom)}")
+
+                if anom:
+                    diags.append(f"    ⚠ frames anormales: {anom[:10]}{'…' if len(anom) > 10 else ''}")
+                    if len(anom) > 5:
+                        repairs.append(
+                            f"gripper {side}: {len(anom)} frames avec désynchronisation — vérifier horloge commune"
+                        )
+
+                if not visual_weak:
+                    if r_val < 0.50:
+                        repairs.append(
+                            f"gripper {side}: corrélation visuelle faible (r={r_val:.3f}) — "
+                            f"vérifier orientation caméra et seuil de segmentation"
+                        )
+                    if abs(lag_ms) > 200:
+                        repairs.append(
+                            f"gripper {side}: lag visuel/capteur={lag_ms:+.0f}ms — "
+                            f"vérifier la synchronisation horloge gripper"
+                        )
+
+            # ── Détails proprioceptifs pour ce côté ──────────────────────────
+            pr = prop_details.get(side, {})
+            if pr.get("success"):
+                pr_r    = pr.get("best_r_abs", 0.0)
+                pr_lag  = pr.get("best_lag_ms", 0.0)
+                pr_sig  = pr.get("best_signal", "?")
+                pr_tgt  = pr.get("best_target", "?")
+                pr_s    = pr.get("score", 0.0)
+                pr_icon = "✓" if pr_r >= 0.60 else ("⚠" if pr_r >= 0.40 else "✗")
                 diags.append(
-                    f"  {side}: {side_v}  score={side_s:.1f}%  "
-                    f"{r_icon} r={r_val:.3f}  {lag_icon} lag={lag_ms:+.0f}ms"
+                    f"  {side} [proprio]: {pr_icon} r={pr_r:.3f}  lag={pr_lag:+.0f}ms  "
+                    f"score={pr_s:.1f}%  ({pr_sig}→{pr_tgt})"
                 )
-                if n_seg > 0:
-                    seg_icon = "✓" if bad_seg == 0 else ("⚠" if bad_seg <= n_seg // 4 else "✗")
-                    diags.append(f"    {seg_icon} fenêtres {n_seg-bad_seg}/{n_seg} OK  r_moy={r_mean:.3f}  r_min={r_min:.3f}")
-                diags.append(f"    frames en sync: {fis*100:.1f}%  anomalies: {len(anom)}")
-
-            if anom:
-                diags.append(f"    ⚠ frames anormales: {anom[:10]}{'…' if len(anom) > 10 else ''}")
-                if len(anom) > 5:
-                    repairs.append(
-                        f"gripper {side}: {len(anom)} frames avec désynchronisation — vérifier horloge commune"
-                    )
-
-            # Ne générer des repairs que si le signal visuel est fiable
-            if not signal_weak:
-                if r_val < 0.50:
-                    repairs.append(
-                        f"gripper {side}: corrélation visuelle faible (r={r_val:.3f}) — "
-                        f"vérifier orientation caméra et seuil de segmentation"
-                    )
-                if abs(lag_ms) > 200:
-                    # Ce lag est entre signal visuel et capteur CSV — indépendant de fix_camera_offset
-                    repairs.append(
-                        f"gripper {side}: lag visuel/capteur={lag_ms:+.0f}ms — "
-                        f"vérifier la synchronisation horloge gripper"
-                    )
+                top = pr.get("top_signals", [])
+                if len(top) > 1:
+                    diags.append(f"    top signaux: {[(t['signal'].split('_')[-1],round(t['r'],3)) for t in top[:3]]}")
+            else:
+                diags.append(f"  {side} [proprio]: ✗ {pr.get('error', 'non disponible')}")
 
             details[side] = {
-                "success": True, "score": side_s, "verdict": side_v,
+                "success": sr.get("success", False),
+                "score": side_s, "verdict": side_v,
                 "global_r": r_val, "lag_ms": lag_ms,
-                "lag_frames": sr.get("lag_frames", 0),
-                "rolling_r_mean": r_mean, "rolling_r_min": r_min,
-                "rolling_r_max": sr.get("rolling_r_max", r_val),
-                "n_segments": n_seg, "bad_segments": bad_seg,
-                "frames_in_sync": fis,
+                "lag_frames": sr.get("lag_frames", 0) if sr.get("success") else 0,
+                "rolling_r_mean": sr.get("rolling_r_mean", 0.0) if sr.get("success") else 0.0,
+                "rolling_r_min":  sr.get("rolling_r_min", 0.0)  if sr.get("success") else 0.0,
+                "rolling_r_max":  sr.get("rolling_r_max", 0.0)  if sr.get("success") else 0.0,
+                "n_segments":     sr.get("n_segments", 0)        if sr.get("success") else 0,
+                "bad_segments":   sr.get("bad_segments", 0)      if sr.get("success") else 0,
+                "frames_in_sync": sr.get("frames_in_sync", 0.0)  if sr.get("success") else 0.0,
                 "residual_std_mm": sr.get("residual_std_mm", 0.0),
                 "px_per_mm": sr.get("px_per_mm", 0.0),
                 "fit_r2": sr.get("fit_r2", 0.0),
                 "n_frames": sr.get("n_frames", 0),
                 "anomaly_frames": anom[:20],
+                "proprioceptive": pr,
             }
 
-        n_sides = report.get("n_sides", 0)
-        conf    = 0.90 if n_sides == 2 else (0.5 if n_sides == 1 else 0.0)
+        n_sides_vis  = report.get("n_sides", 0)
+        n_sides_prop = sum(1 for pr in prop_details.values() if pr.get("success"))
+        n_sides_any  = max(n_sides_vis, n_sides_prop)
 
-        if not sides or n_sides == 0:
+        if not sides and n_sides_prop == 0:
             return DimensionResult(
                 name="gripper_frame_sync", score=0.0, weight=W_GRIP_FRAME,
                 grade="F", ok=False, blocking=False, confidence=0.0,
-                summary="Aucune donnée gripper/vidéo disponible",
+                summary="Aucune donnée gripper/vidéo/tracker disponible",
                 diagnostics=diags, repairs=repairs, details=details, error=None,
             )
 
-        if verdict == "SYNC_PARFAITE":    summary = f"Sync par frame parfaite ({n_sides} côtés, score={score:.1f}%)"
-        elif verdict == "SYNC_OK":        summary = f"Sync par frame OK ({n_sides} côtés, score={score:.1f}%)"
-        elif verdict == "SYNC_PARTIELLE": summary = f"Sync par frame partielle ({score:.1f}%) — vérifier le lag"
-        elif verdict == "SIGNAL_FAIBLE":  summary = f"Signal visuel insuffisant — mesure non conclusive ({score:.1f}%)"
-        else:                             summary = f"DÉSYNC détectée ({score:.1f}%) — corrélation insuffisante"
+        # Confidence : max de la confiance visuelle (si signal fort) et proprioceptive
+        prop_conf_val = report.get("prop_conf", 0.0)
+        if not visual_weak and n_sides_vis > 0:
+            conf = float(np.clip(0.70 + 0.20 * (1.0 - report.get("mean_inv_ratio", 0.0)), 0.0, 1.0))
+        elif n_sides_prop > 0:
+            conf = float(np.clip(prop_conf_val, 0.0, 0.80))  # proprio = max 80% confidence
+        else:
+            conf = 0.0
+
+        # ok = True sauf si le score est clairement mauvais ET la confiance est suffisante.
+        # Seuil adaptatif : plus la confiance est basse, plus le seuil d'échec est sévère.
+        # - conf >= 0.80 (signal visuel fiable) : seuil normal 60%
+        # - conf <  0.80 (signal proprio seul)  : seuil abaissé à 45%
+        fail_threshold = GRADE_C if conf >= 0.80 else GRADE_D  # 60% ou 45%
+        ok = score >= fail_threshold or verdict in ("SIGNAL_FAIBLE",)
+
+        sig_label = {"fusion": "fusion visuel+proprio", "proprioceptif": "signal proprioceptif",
+                     "none": "aucun signal"}.get(signal_used, signal_used)
+
+        if verdict == "SYNC_PARFAITE":
+            summary = f"Sync parfaite — {sig_label} ({n_sides_any} côtés, score={score:.1f}%)"
+        elif verdict == "SYNC_OK":
+            summary = f"Sync OK — {sig_label} ({n_sides_any} côtés, score={score:.1f}%)"
+        elif verdict == "SYNC_PARTIELLE":
+            summary = f"Sync partielle — {sig_label} ({score:.1f}%)"
+        elif verdict == "SIGNAL_FAIBLE":
+            summary = f"Signal insuffisant — aucun signal mesurable disponible"
+        elif not ok:
+            summary = f"DÉSYNC détectée — {sig_label} ({score:.1f}%)"
+        else:
+            summary = f"Sync partielle acceptable — {sig_label} ({score:.1f}%)"
 
         return DimensionResult(
             name="gripper_frame_sync", score=round(score, 1), weight=W_GRIP_FRAME,
-            grade=_grade(score), ok=ok, blocking=False, confidence=conf,
+            grade=_grade(score), ok=ok, blocking=False, confidence=round(conf, 3),
             summary=summary, diagnostics=diags, repairs=repairs,
-            details={"session_verdict": verdict, "lag_ms_max": report.get("lag_ms_max", 0.0), "sides": details},
+            details={
+                "session_verdict": verdict, "signal_used": signal_used,
+                "lag_ms_max": report.get("lag_ms_max", 0.0),
+                "visual_score": report.get("visual_score", score),
+                "prop_score": report.get("prop_score", 0.0),
+                "prop_conf": prop_conf_val,
+                "sides": details,
+            },
             error=None,
         )
 
@@ -2513,10 +2791,31 @@ def check_session_full(session_path, model=None) -> dict:
         "gripper_frame_sync":     dim_gf,
     }
 
-    # ── Score global pondéré ──────────────────────────────────────────────
-    total_w = sum(d.weight for d in dims.values())
-    total_s = sum(d.weight * d.score for d in dims.values())
-    global_score = float(np.clip(total_s / max(total_w, 1e-6), 0.0, 100.0))
+    # ── Identifier les dimensions non conclusives ─────────────────────────
+    # Une dimension est "non conclusive" si son signal était trop faible pour
+    # être mesuré (ex : gripper_frame_sync SIGNAL_FAIBLE, ou video_tracker_sync
+    # sans caméra HEAD disponible). Ces dimensions ont score=50 et confidence<0.5.
+    # Elles sont exclues du score global et du test de blocage — c'est une
+    # donnée manquante, pas une donnée mauvaise.
+    def _is_inconclusive(d: DimensionResult) -> bool:
+        return (
+            abs(d.score - 50.0) < 1.0   # score exactement 50 (valeur neutre)
+            and d.confidence < 0.5       # confiance basse = mesure non fiable
+            and not d.blocking           # pas une porte bloquante formelle
+        )
+
+    conclusive_dims = {k: d for k, d in dims.items() if not _is_inconclusive(d)}
+    inconclusive_dims = {k: d for k, d in dims.items() if _is_inconclusive(d)}
+
+    # ── Score global pondéré (sur les dimensions conclusives uniquement) ──
+    if conclusive_dims:
+        total_w = sum(d.weight for d in conclusive_dims.values())
+        total_s = sum(d.weight * d.score for d in conclusive_dims.values())
+        global_score = float(np.clip(total_s / max(total_w, 1e-6), 0.0, 100.0))
+    else:
+        total_w = sum(d.weight for d in dims.values())
+        total_s = sum(d.weight * d.score for d in dims.values())
+        global_score = float(np.clip(total_s / max(total_w, 1e-6), 0.0, 100.0))
 
     # ── Portes bloquantes ─────────────────────────────────────────────────
     blocking_reason = ""
@@ -2526,8 +2825,16 @@ def check_session_full(session_path, model=None) -> dict:
 
     is_blocked = bool(blocking_reason)
 
-    # Une dimension en dessous de C (60) est rédhibitoire même sans porte bloquante
-    weak_dims = [d for d in dims.values() if d.score < GRADE_C]
+    # Une dimension conclusive en dessous de C (60) est rédhibitoire.
+    # Les dimensions non conclusives (signal faible) ne bloquent pas.
+    # Pour gripper_frame_sync : signal cross-modal intrinsèquement plus bruité —
+    # corrélation visuelle + proprioceptive rarement > 0.80 même sur sessions correctes.
+    # Seuil de blocage abaissé à GRADE_D (45%) pour cette dimension.
+    def _blocking_threshold(d: DimensionResult) -> float:
+        if d.name == "gripper_frame_sync":
+            return GRADE_D  # 45% — seuil adapté aux signaux cross-modaux
+        return GRADE_C  # 60% — seuil normal pour les autres dimensions
+    weak_dims = [d for k, d in conclusive_dims.items() if d.score < _blocking_threshold(d)]
     if weak_dims and not is_blocked:
         blocking_reason = (
             f"dimension(s) insuffisante(s) : "

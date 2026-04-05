@@ -333,7 +333,9 @@ def _worker_scan(job: Job):
                 sessions.append(s)
         model_exists = (MODEL_DIR / "model.pt").exists()
         result = []
-        for s in sorted(sessions, key=lambda p: p.name):
+        total = max(len(sessions), 1)
+        for idx, s in enumerate(sorted(sessions, key=lambda p: p.name)):
+            _update_job(job, progress=10 + int(88 * idx / total))
             meta_path = s / "metadata.json"
             meta = {}
             if meta_path.exists():

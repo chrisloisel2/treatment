@@ -5694,6 +5694,8 @@
 			try {
 				const { job_id } = await api('POST', '/api/scan', scanBody);
 				log(`Scan lancé (${job_id})`, 'OK');
+				S.jobs[job_id] = { id: job_id, kind: 'scan', status: 'pending', progress: 0, result: null, error: null, started_at: null, ended_at: null };
+				renderJobsList();
 				pollJobUntilDone(job_id, job => {
 					if (job.status === 'done' && job.result) {
 						_scanInProgress = false;
@@ -11009,6 +11011,7 @@
 				try {
 					const j = await api('GET', `/api/jobs/${jobId}`);
 					S.jobs[j.id] = j;
+					renderJobsList();
 					cb(j);
 					if (j.status === 'done' || j.status === 'error') clearInterval(t);
 				} catch (e) { }

@@ -5723,6 +5723,14 @@
 					const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
 					if (failed.length) failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
 					log(`${sess.name}  ${scoreStr}${blocking ? '  ' + blocking : ''}`, logLvl);
+					const tr = r.tracker_result;
+					if (tr && tr.error == null) {
+						const cor = tr.correct || {};
+						const parts = ['head','left','right'].map(k => `${k}:${cor[k] ? '✓' : '✗'}`).join('  ');
+						log(`  tracker: ${parts}`, r.tracker_ok ? 'OK' : 'ERROR');
+					} else if (tr && tr.error) {
+						log(`  tracker: ${tr.error}`, 'WARN');
+					}
 					// Propager dans S.sessions
 					const s = S.sessions.find(s => s.path === sess.path);
 					if (s) {
@@ -6479,6 +6487,16 @@
 					failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
 				}
 				log(`Check score: ${scoreStr}${iaStr}${blocking ? '  bloc: ' + blocking : ''}`, logLvl);
+				// Résultat tracker
+				const tr = r.tracker_result;
+				if (tr && tr.error == null) {
+					const tOk = r.tracker_ok;
+					const cor = tr.correct || {};
+					const parts = ['head','left','right'].map(k => `${k}:${cor[k] ? '✓' : '✗'}`).join('  ');
+					log(`Tracker placement: ${parts}`, tOk ? 'OK' : 'ERROR');
+				} else if (tr && tr.error) {
+					log(`Tracker placement: ${tr.error}`, 'WARN');
+				}
 				if (r.repair_perfect) {
 					log(`★ ${S.drawerSess.name} marquée PARFAITE`, 'OK');
 				} else {

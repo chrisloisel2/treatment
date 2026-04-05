@@ -1422,27 +1422,50 @@ async def pipeline_check_score(req: PipelineStateRequest):
 
     report = await loop.run_in_executor(None, _run)
 
+    # Vérification tracker (placement head/left/right)
+    tracker_ok = True
+    tracker_result = None
+    try:
+        import importlib.util as _ilu
+        _trak_path = _ROOT / "verification" / "trakeur.py"
+        _spec = _ilu.spec_from_file_location("trakeur", _trak_path)
+        _trak = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_trak)
+        tracker_result = _trak.check_single_session(sess, root_path=sess.parent)
+        tracker_ok = tracker_result.get("ok", False)
+    except Exception as _e:
+        tracker_result = {"ok": None, "error": str(_e)}
+        tracker_ok = True  # ne bloque pas si le module est indisponible
+
     # Persister le score + markers repair dans metadata.json
     meta_path = sess / "metadata.json"
-    is_perfect = report.score >= 70 and not report.is_blocked()
+    is_perfect = report.score >= 70 and not report.is_blocked() and tracker_ok
     meta_updates = {}
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
         meta["check_score"]    = report.score
         meta["check_ia_score"] = report.ia_score
         meta["check_blocking"] = report.blocking_reason
+        if tracker_result is not None:
+            meta["tracker_placement"] = tracker_result
         if is_perfect:
             meta["repair_perfect"]       = True
             meta["repair_unrecoverable"] = False
             meta["repair_score"]         = report.score
         else:
+            reasons = []
+            if report.blocking_reason:
+                reasons.append(report.blocking_reason)
+            failed_names = [g.name for g in report.gates if not g.passed]
+            if failed_names:
+                reasons.append(f"portes={failed_names}")
+            if not tracker_ok and tracker_result:
+                wrong = [k for k, v in tracker_result.get("correct", {}).items() if not v]
+                reasons.append(f"tracker mal placé: {wrong}")
             meta["repair_perfect"]       = False
             meta["repair_unrecoverable"] = True
             meta["repair_score"]         = report.score
-            meta["repair_failure_reason"] = (
-                report.blocking_reason or
-                f"score={report.score:.0f}%  portes={[g.name for g in report.gates if not g.passed]}"
-            )
+            meta["repair_failure_reason"] = "  |  ".join(reasons) or f"score={report.score:.0f}%"
         meta_updates = {
             "repair_perfect":       meta["repair_perfect"],
             "repair_unrecoverable": meta["repair_unrecoverable"],
@@ -1454,11 +1477,13 @@ async def pipeline_check_score(req: PipelineStateRequest):
 
     failed_gates = [{"name": g.name, "message": g.message} for g in report.gates if not g.passed]
     return {
-        "status":          "ok" if report.score >= 70 else ("issues" if report.score >= 40 else "fail"),
+        "status":          "ok" if is_perfect else ("issues" if report.score >= 40 else "fail"),
         "score":           report.score,
         "ia_score":        report.ia_score,
         "blocking_reason": report.blocking_reason,
         "failed_gates":    failed_gates,
+        "tracker_ok":      tracker_ok,
+        "tracker_result":  tracker_result,
         "repair_perfect":  is_perfect,
         **meta_updates,
     }

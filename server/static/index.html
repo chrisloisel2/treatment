@@ -4981,6 +4981,22 @@
 							<span>Actifs : <b id="pool-threads">—</b></span>
 						</div>
 						<div id="pool-threads-list" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
+						<!-- Pool configuration -->
+						<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+							<span style="color:var(--text2);font-weight:600">Configurer</span>
+							<label style="display:flex;align-items:center;gap:6px">
+								Processeurs (workers)
+								<input type="number" id="pool-cfg-workers" value="2" min="1" max="64"
+									style="width:60px;background:var(--bg4);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:2px 6px;font-size:.78rem" />
+							</label>
+							<label style="display:flex;align-items:center;gap:6px">
+								Threads
+								<input type="number" id="pool-cfg-threads" value="4" min="1" max="256"
+									style="width:60px;background:var(--bg4);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:2px 6px;font-size:.78rem" />
+							</label>
+							<button class="btn sm" onclick="applyPoolConfig()">Appliquer</button>
+							<span style="color:var(--text3);font-size:.72rem">Recrée le pool — les jobs en cours seront annulés</span>
+						</div>
 					</div>
 
 					<div id="jobs-list"></div>
@@ -9165,6 +9181,20 @@
 				log('Pool réinitialisé', 'OK');
 				setTimeout(refreshPoolStatus, 500);
 			} catch (e) { log('Reset pool error: ' + e, 'ERROR'); }
+		}
+
+		async function applyPoolConfig() {
+			const workers = parseInt(ge('pool-cfg-workers').value, 10);
+			const threads = parseInt(ge('pool-cfg-threads').value, 10);
+			if (!workers || workers < 1 || !threads || threads < 1) {
+				log('Valeurs invalides pour workers/threads', 'ERROR'); return;
+			}
+			if (!confirm(`Reconfigurer le pool avec ${workers} worker(s) et ${threads} thread(s) ? Les jobs en cours seront annulés.`)) return;
+			try {
+				const r = await api('POST', '/api/pool/configure', { workers, threads });
+				log(`Pool reconfiguré : ${r.workers} worker(s), ${r.threads} thread(s)`, 'OK');
+				setTimeout(refreshPoolStatus, 500);
+			} catch (e) { log('Pool configure error: ' + e, 'ERROR'); }
 		}
 
 		// ══════════════════════════════════════════════════════════════════

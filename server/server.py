@@ -1821,6 +1821,41 @@ async def pool_reset():
     return {"reset": True}
 
 
+class PoolConfigRequest(BaseModel):
+    workers: int
+    threads: int
+
+
+@app.post("/api/pool/configure")
+async def pool_configure(req: PoolConfigRequest):
+    """Recrée le pool avec le nombre de workers (processus) et threads demandé."""
+    global _PROCESS_POOL
+    n_workers = max(1, min(req.workers, os.cpu_count() or 1))
+    n_threads = max(1, min(req.threads, 256))
+    _POOL_FUTURES.clear()
+    with _PROCESS_POOL_LOCK:
+        old = _PROCESS_POOL
+        _PROCESS_POOL = concurrent.futures.ProcessPoolExecutor(
+            max_workers=n_workers,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+    if old is not None:
+        try:
+            old.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+    # Marquer les jobs RUNNING comme annulés (pool changé sous leurs pieds)
+    with _jobs_lock:
+        for job in _jobs.values():
+            if job.status == JobStatus.RUNNING:
+                job.status   = JobStatus.ERROR
+                job.ended_at = _now()
+                job.error    = "Pool reconfiguré par l'utilisateur"
+                _persist_job(job)
+    await _broadcast({"type": "pool_reset"})
+    return {"workers": n_workers, "threads": n_threads}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Signal config — colonnes CSV disponibles par flux
 # ──────────────────────────────────────────────────────────────────────────────

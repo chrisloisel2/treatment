@@ -5394,7 +5394,8 @@
 		const STEP_LABELS = {
 			detect: 'Détection', check_sync: 'Sync Check', verify: 'Vérification',
 			rotate: 'Rotation 180°', tracker: 'Tracker', video: 'Vidéo',
-			verify_labels: 'Labels', flux_csv: 'Flux CSV', ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS'
+			verify_labels: 'Labels', flux_csv: 'Flux CSV', ia_sync: 'IA Sync', validate: 'Validation', store: 'NAS',
+			test: 'Test',
 		};
 		const STEP_DESCS = {
 			detect: 'Vérification intégrité structure session',
@@ -5640,10 +5641,10 @@
 		// ══════════════════════════════════════════════════════════════════
 		// Modale sélection étapes
 		// ══════════════════════════════════════════════════════════════════
-		const ALL_STEPS = ['detect', 'check_sync', 'verify', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store'];
+		const ALL_STEPS = ['detect', 'check_sync', 'verify', 'rotate', 'tracker', 'video', 'verify_labels', 'flux_csv', 'ia_sync', 'validate', 'store', 'test'];
 		const STEP_ICONS = {
 			detect: '🔍', check_sync: '⏱', verify: '⚠', rotate: '↻', tracker: '📡', video: '🎬',
-			verify_labels: '🏷', flux_csv: '〜', ia_sync: '🤖', validate: '✓', store: '💾',
+			verify_labels: '🏷', flux_csv: '〜', ia_sync: '🤖', validate: '✓', store: '💾', test: '★',
 		};
 
 		let _stepsModalTarget = null; // 'selected' | 'all' | 'drawer'
@@ -5683,6 +5684,7 @@
 			ge('steps-modal-backdrop').classList.remove('open');
 			const sessions = _stepsModalSessions();
 			_stepsModalTarget = null;
+			if (step === 'test') { await runTest(sessions); return; }
 			await runSessions(sessions, [step]);
 		}
 
@@ -5702,7 +5704,43 @@
 			ge('steps-modal-backdrop').classList.remove('open');
 			const sessions = _stepsModalSessions();
 			_stepsModalTarget = null;
-			await runSessions(sessions, steps);
+			const pipelineSteps = steps.filter(s => s !== 'test');
+			const hasTest = steps.includes('test');
+			if (pipelineSteps.length) await runSessions(sessions, pipelineSteps);
+			if (hasTest) await runTest(sessions);
+		}
+
+		async function runTest(sessions) {
+			log(`Test sur ${sessions.length} session(s)…`, 'INFO');
+			let nPerfect = 0, nError = 0;
+			for (const sess of sessions) {
+				try {
+					const r = await api('POST', '/api/pipeline/check_score', { session_path: sess.path });
+					const score = r.score ?? -1;
+					const failed = r.failed_gates || [];
+					const blocking = r.blocking_reason || '';
+					const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
+					const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
+					if (failed.length) failed.forEach(g => log(`  ✗ ${g.name}: ${g.message}`, 'ERROR'));
+					log(`${sess.name}  ${scoreStr}${blocking ? '  ' + blocking : ''}`, logLvl);
+					// Propager dans S.sessions
+					const s = S.sessions.find(s => s.path === sess.path);
+					if (s) {
+						if (!s.meta) s.meta = {};
+						s.meta.check_score         = r.score;
+						s.meta.repair_perfect       = r.repair_perfect ?? false;
+						s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
+						s.meta.repair_score         = r.repair_score ?? score;
+					}
+					if (r.repair_perfect) { log(`★ ${sess.name} PARFAITE`, 'OK'); nPerfect++; }
+					else { log(`✗ ${sess.name} ERREUR`, 'ERROR'); nError++; }
+				} catch (e) {
+					log(`Test ${sess.name}: ${e.message}`, 'ERROR');
+					nError++;
+				}
+			}
+			log(`Test terminé — ★ ${nPerfect} parfaite(s)  ✗ ${nError} erreur(s)`, nError ? 'WARN' : 'OK');
+			renderSessionsList();
 		}
 
 		async function runSessions(sessions, steps) {

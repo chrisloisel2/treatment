@@ -3808,6 +3808,11 @@
 								title="Sélectionner uniquement les sessions avec vidéo rotée 180°">↻ Rotées</button>
 							<button class="btn sm" onclick="selNotRotated()"
 								title="Sélectionner uniquement les sessions sans rotation vidéo">○ Non-rotées</button>
+							<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
+							<button class="btn sm"
+								style="background:var(--green)1a;border-color:var(--green)44;color:var(--green)"
+								onclick="selPerfect()"
+								title="Sélectionner uniquement les sessions marquées parfaites (repair_perfect)">★ Parfaites</button>
 						</div>
 						<!-- Filtre scénario -->
 						<div id="sess-scenario-bar"
@@ -6685,9 +6690,12 @@
 			const tdName = document.createElement('td');
 			tdName.className = 'st-name';
 			tdName.title = s.path;
-			tdName.innerHTML = s.action
+			const perfectBadge = meta.repair_perfect
+				? `<span title="Session parfaite" style="color:var(--green);margin-left:5px;font-size:.8em">★</span>`
+				: '';
+			tdName.innerHTML = (s.action
 				? `<span style="color:var(--text2);font-weight:400;font-size:.8em;margin-right:5px">[${s.action}]</span>${s.name}`
-				: s.name;
+				: s.name) + perfectBadge;
 			tr.appendChild(tdName);
 
 			// ── colonne fichiers ──
@@ -6807,6 +6815,7 @@
 		function selIssues() { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 		function selRotated() { _applySelAndRefresh(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 		function selNotRotated() { _applySelAndRefresh(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selPerfect() { _applySelAndRefresh(s => s.meta?.repair_perfect ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 
 		function _updateSessActions() {
 			const n = S.selected.size;

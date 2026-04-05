@@ -1,7 +1,7 @@
 ====================================================================
 VERIFY — mode TEST
-Sessions  : /mnt/storage/silver/
-Sortie    : /mnt/storage/silver/verify_results
+Sessions  : Balls/do
+Sortie    : Balls/doverify_results
 Durée     : 497.6s
 Statut    : ERROR
 ====================================================================
@@ -400,8 +400,8 @@ Statut    : ERROR
   ✓ session_20260327_194018/right  score=50.4/100  r=+0.476  lag=+0.0ms  ev_vis=6 ev_sen=8
   ✗ session_20260327_194049/left   score=0.0/100  r=+nan  lag=+nanms  ev_vis=2 ev_sen=0
   ✓ session_20260327_194049/right  score=37.2/100  r=+0.327  lag=-66.7ms  ev_vis=2 ev_sen=2
-  ✗ session_20260327_194351/left  FAILED: Fichier absent : /mnt/storage/silver/da
-  ✗ session_20260327_194351/right  FAILED: Fichier absent : /mnt/storage/silver/da
+  ✗ session_20260327_194351/left  FAILED: Fichier absent : Balls/doda
+  ✗ session_20260327_194351/right  FAILED: Fichier absent : Balls/doda
   ✓ session_20260327_195658/left   score=65.2/100  r=+0.707  lag=+0.0ms  ev_vis=1 ev_sen=2
   ✓ session_20260327_195658/right  score=65.0/100  r=+0.706  lag=+0.0ms  ev_vis=1 ev_sen=1
   ✓ session_20260327_200346/left   score=73.0/100  r=+0.740  lag=+0.0ms  ev_vis=2 ev_sen=2

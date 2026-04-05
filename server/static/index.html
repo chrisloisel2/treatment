@@ -2392,6 +2392,59 @@
 			display: inline-block
 		}
 
+		.tv-sess-grade {
+			flex-shrink: 0;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 18px;
+			height: 18px;
+			border-radius: 3px;
+			font-size: .64rem;
+			font-weight: 800;
+			color: #fff;
+			line-height: 1;
+		}
+		.tv-sess-grade.A { background: var(--green) }
+		.tv-sess-grade.B { background: #22c55e }
+		.tv-sess-grade.C { background: var(--orange) }
+		.tv-sess-grade.D { background: #f97316 }
+		.tv-sess-grade.F { background: var(--red) }
+		.tv-sess-grade.none { background: var(--bg4); color: var(--text3); font-size:.55rem }
+
+		/* Filtre grade VIEW */
+		#tv-grade-filter {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			padding: 4px 8px 6px;
+			flex-wrap: wrap;
+		}
+		.tv-grade-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 22px;
+			height: 22px;
+			border-radius: 4px;
+			font-size: .7rem;
+			font-weight: 800;
+			color: #fff;
+			cursor: pointer;
+			border: 2px solid transparent;
+			opacity: .55;
+			transition: opacity .15s, border-color .15s;
+		}
+		.tv-grade-btn:hover { opacity: .85 }
+		.tv-grade-btn.active { opacity: 1; border-color: #fff6 }
+		.tv-grade-btn.A { background: var(--green) }
+		.tv-grade-btn.B { background: #22c55e }
+		.tv-grade-btn.C { background: var(--orange) }
+		.tv-grade-btn.D { background: #f97316 }
+		.tv-grade-btn.F { background: var(--red) }
+		.tv-grade-btn.all { background: var(--bg4); color: var(--text2); font-size:.65rem; width:auto; padding: 0 6px }
+		.tv-grade-btn.all.active { border-color: var(--accent) }
+
 		#tv-sess-empty {
 			padding: 24px 14px;
 			font-size: .75rem;
@@ -3814,6 +3867,22 @@
 								onclick="selPerfect()"
 								title="Sélectionner uniquement les sessions marquées parfaites (repair_perfect)">★
 								Parfaites</button>
+							<div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
+							<button class="btn sm" onclick="selGrade('A')"
+								style="background:var(--green)1a;border-color:var(--green)44;color:var(--green)"
+								title="Sélectionner les sessions note A">A</button>
+							<button class="btn sm" onclick="selGrade('B')"
+								style="background:#22c55e1a;border-color:#22c55e44;color:#22c55e"
+								title="Sélectionner les sessions note B">B</button>
+							<button class="btn sm" onclick="selGrade('C')"
+								style="background:var(--orange)1a;border-color:var(--orange)44;color:var(--orange)"
+								title="Sélectionner les sessions note C">C</button>
+							<button class="btn sm" onclick="selGrade('D')"
+								style="background:#f973161a;border-color:#f9731644;color:#f97316"
+								title="Sélectionner les sessions note D">D</button>
+							<button class="btn sm" onclick="selGrade('F')"
+								style="background:var(--red)1a;border-color:var(--red)44;color:var(--red)"
+								title="Sélectionner les sessions note F">F</button>
 						</div>
 						<!-- Filtre scénario -->
 						<div id="sess-scenario-bar"
@@ -4033,6 +4102,15 @@
 							<div id="tv-panel-body">
 								<!-- Onglet Sessions -->
 								<div class="tv-pane active" id="tv-pane-sessions">
+									<div id="tv-grade-filter">
+										<span style="font-size:.65rem;color:var(--text3);margin-right:2px">Note</span>
+										<button class="tv-grade-btn all active" id="tv-gf-all" onclick="tvGradeFilter(null,this)" title="Toutes les notes">Tout</button>
+										<button class="tv-grade-btn A" onclick="tvGradeFilter('A',this)" title="Note A">A</button>
+										<button class="tv-grade-btn B" onclick="tvGradeFilter('B',this)" title="Note B">B</button>
+										<button class="tv-grade-btn C" onclick="tvGradeFilter('C',this)" title="Note C">C</button>
+										<button class="tv-grade-btn D" onclick="tvGradeFilter('D',this)" title="Note D">D</button>
+										<button class="tv-grade-btn F" onclick="tvGradeFilter('F',this)" title="Note F">F</button>
+									</div>
 									<div id="tv-sess-list">
 										<div id="tv-sess-empty">Cliquez « Scanner »<br />pour charger les sessions</div>
 									</div>
@@ -6998,6 +7076,13 @@
 			refreshExportBtn();
 		}
 
+		// Retourne la note effective d'une session (check_grade prioritaire, puis heuristique)
+		function _sessGrade(s) {
+			if (s.meta?.check_grade) return s.meta.check_grade;
+			const sc = syncScore(s.pipeline_state);
+			return sc ? sc.grade : null;
+		}
+
 		function selAll() { _applySelAndRefresh(s => S.selected.add(s.path)); }
 		function deselAll() { _applySelAndRefresh(s => S.selected.delete(s.path)); }
 		function selValid() { _applySelAndRefresh(s => _sessionHasIssues(s) ? S.selected.delete(s.path) : S.selected.add(s.path)); }
@@ -7005,6 +7090,15 @@
 		function selRotated() { _applySelAndRefresh(s => s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 		function selNotRotated() { _applySelAndRefresh(s => !s.video_rotated ? S.selected.add(s.path) : S.selected.delete(s.path)); }
 		function selPerfect() { _applySelAndRefresh(s => s.meta?.repair_perfect ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+		function selGrade(g) { _applySelAndRefresh(s => _sessGrade(s) === g ? S.selected.add(s.path) : S.selected.delete(s.path)); }
+
+		// Filtre d'affichage VIEW par note
+		function tvGradeFilter(grade, btn) {
+			TV._gradeFilter = grade;
+			document.querySelectorAll('.tv-grade-btn').forEach(b => b.classList.remove('active'));
+			btn.classList.add('active');
+			tvRefreshSessions();
+		}
 
 		function _updateSessActions() {
 			const n = S.selected.size;
@@ -7335,6 +7429,7 @@
 			vidInfo: {},      // { head: {t0_s}, left: {t0_s}, right: {t0_s} }
 			vidReady: {},      // { head: bool, left: bool, right: bool }
 			gripOffset: 0,    // décalage en ms appliqué aux données gripper (visuel uniquement)
+			_gradeFilter: null, // filtre d'affichage par note (null = tout afficher)
 		};
 
 		const TV_COLORS = {
@@ -7439,6 +7534,12 @@
 				sessionsDiv.className = 'post-group-sessions';
 
 				sessions.forEach(s => {
+					// filtre grade VIEW
+					if (TV._gradeFilter) {
+						const sg = _sessGrade(s);
+						if (sg !== TV._gradeFilter) return;
+					}
+
 					const ps = s.pipeline_state;
 					const step = ps?.current_step || '—';
 					const ok = ps?.success === true;
@@ -7448,6 +7549,14 @@
 					const scenario = s.meta?.scenario ? s.meta.scenario : '';
 					const hasVerifIssues = !!(s.meta?.verification?.has_issues);
 					const isSel = S.selected.has(s.path);
+
+					// badge grade
+					const sg = _sessGrade(s);
+					const gradeHTML = sg
+						? `<span class="tv-sess-grade ${sg}" title="Note ${sg}">${sg}</span>`
+						: `<span class="tv-sess-grade none" title="Non noté">—</span>`;
+					// score numérique
+					const scoreNum = s.meta?.check_score != null ? Math.round(s.meta.check_score) + '%' : '';
 
 					const div = document.createElement('div');
 					div.className = 'tv-sess-item'
@@ -7460,10 +7569,11 @@
 						<div class="tv-sess-item-body">
 							<div style="display:flex;align-items:center;gap:6px">
 								<div class="tv-sess-dot" style="background:${dotColor}"></div>
-								<div class="tv-sess-item-name">${esc(s.name)}</div>
+								<div class="tv-sess-item-name" style="flex:1;min-width:0">${esc(s.name)}</div>
+								${gradeHTML}
 							</div>
 							${scenario ? `<div class="tv-sess-item-meta">${esc(scenario)}</div>` : ''}
-							<div class="tv-sess-item-meta" style="color:var(--text3)">${step}</div>
+							<div class="tv-sess-item-meta" style="color:var(--text3)">${scoreNum ? scoreNum + ' · ' : ''}${step}</div>
 						</div>
 					`;
 					const cb = div.querySelector('.tv-sess-cb');

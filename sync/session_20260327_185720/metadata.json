@@ -1,0 +1,74 @@
+{
+	"session_id": "20260327_185720",
+	"scenario": "Fold the pant",
+	"start_time": "2026-03-27T17:57:20.696288+00:00",
+	"start_time_ns": 1774634240696288000,
+	"video_config": {
+		"width": 1920,
+		"height": 1200,
+		"fps": 30
+	},
+	"cameras": {
+		"0": {
+			"name": "USB3.0 Camera",
+			"position": "right",
+			"serial": "40993"
+		},
+		"1": {
+			"name": "USB3.0 Camera",
+			"position": "left",
+			"serial": "41015"
+		},
+		"2": {
+			"name": "USB3.0 Camera",
+			"position": "head",
+			"serial": "41096"
+		}
+	},
+	"camera_anchors": {
+		"right": {
+			"mono_start": 47199.8763461,
+			"mono_offset_from_record": 0.0
+		},
+		"left": {
+			"mono_start": 47199.8763461,
+			"mono_offset_from_record": 0.0
+		},
+		"head": {
+			"mono_start": 47199.8763461,
+			"mono_offset_from_record": 0.0
+		}
+	},
+	"trackers": {
+		"1": {
+			"serial": "56-A33R02770",
+			"model": "VIVE Ultimate Tracker 1"
+		},
+		"2": {
+			"serial": "56-A33R04706",
+			"model": "VIVE Ultimate Tracker 2"
+		},
+		"3": {
+			"serial": "59-A33R00856",
+			"model": "VIVE Ultimate Tracker 3"
+		}
+	},
+	"grippers": {
+		"right": {
+			"port": "COM5",
+			"baud": "115200"
+		},
+		"left": {
+			"port": "COM3",
+			"baud": "115200"
+		}
+	},
+	"precise_timer": true,
+	"end_time": "2026-03-27T17:57:43.074912+00:00",
+	"end_time_ns": 1774634263074912012,
+	"trigger_time_ns": 1774634240657612712,
+	"trigger_time": "2026-03-27T17:57:20.657613+00:00",
+	"duration_seconds": 22.378624012,
+	"failed": false,
+	"jsonl_capture_time_unit": "milliseconds"
+}

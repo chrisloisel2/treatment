@@ -3247,7 +3247,7 @@ def _worker_export(job: Job, req: ExportRequest):
 
             sess_name = sess.name
             # Chemin relatif depuis INGEST_DIR pour préserver la hiérarchie Silver
-            # ex: /mnt/storage/silver//Balls/do/session_X → Balls/do/session_X
+            # ex: /mnt/storage/silver///mnt/storage/silver//session_X → /mnt/storage/silver//session_X
             try:
                 sess_rel = str(sess.relative_to(INGEST_DIR))
             except ValueError:

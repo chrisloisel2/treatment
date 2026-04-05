@@ -1,7 +1,7 @@
 ====================================================================
 VERIFY — mode TEST
 Sessions  : /Users/christopher/Downloads/sync_test_1/rendu/pants/do
-Sortie    : /mnt/storage/silver/verify_results/new_gv_module
+Sortie    : Balls/doverify_results/new_gv_module
 Durée     : 57.1s
 Statut    : WARNING
 ====================================================================

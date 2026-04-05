@@ -58,7 +58,7 @@ if str(_ROOT) not in sys.path:
 
 # ── Chemins fixes ─────────────────────────────────────────────────────────────
 INGEST_DIR   = Path("/mnt/storage/silver/")  # source ET espace de travail (déposé par l'opérateur)
-SILVER_DIR   = Path("/home/exoria/silver")     # sortie finale validée (écriture explicite)
+SILVER_DIR   = Path("/mnt/storage/silver/")     # sortie finale validée (écriture explicite)
 MODEL_DIR    = INGEST_DIR / "_sync_ml_model"
 # Alias pour compatibilité rétrograde
 DATASETS_DIR = INGEST_DIR

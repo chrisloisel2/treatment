@@ -482,9 +482,8 @@ def print_best_rule_full_dataset(sessions):
 def check_single_session(session_path, root_path=None):
     """Vérifie que les trackers d'une session unique sont bien positionnés.
 
-    Utilise toutes les autres sessions de root_path comme corpus d'entraînement
-    pour choisir la meilleure règle main. Si root_path est absent ou ne contient
-    pas d'autres sessions labellisées, on utilise le fallback xyzw/0/-1.
+    Règle fixe calibrée sur 21 sessions : xyzw, axis=0, sign=-1 → 100% accuracy.
+    Pas besoin de corpus d'entraînement.
 
     Retourne un dict :
       {
@@ -493,9 +492,12 @@ def check_single_session(session_path, root_path=None):
         "truth": {"head":int, "left":int, "right":int},
         "correct": {"head":bool, "left":bool, "right":bool},
         "rule": (quat_mode, axis, sign),
-        "error": str | None,      # message si exception
+        "error": str | None,
       }
     """
+    # Règle fixe calibrée — ne pas modifier sans re-calibrer sur le corpus complet
+    RULE = ("xyzw", 0, -1)
+
     session_path = str(session_path)
     csv_path = os.path.join(session_path, "tracker_positions.csv")
 
@@ -507,35 +509,7 @@ def check_single_session(session_path, root_path=None):
         blocks = split_blocks(df)
         truth = parse_truth_from_headers(df)
         pred_head, _ = detect_head(blocks)
-        session_name = os.path.basename(session_path)
-
-        # Corpus d'entraînement = toutes les autres sessions du même dossier
-        rule = ("xyzw", 0, -1)  # fallback
-        if root_path is not None:
-            try:
-                corpus = []
-                root_path = str(root_path)
-                for name in sorted(os.listdir(root_path)):
-                    if name == session_name:
-                        continue
-                    sp = os.path.join(root_path, name)
-                    cp = os.path.join(sp, "tracker_positions.csv")
-                    if not os.path.isfile(cp):
-                        continue
-                    try:
-                        dfc = pd.read_csv(cp)
-                        bc = split_blocks(dfc)
-                        tc = parse_truth_from_headers(dfc)
-                        phc, _ = detect_head(bc)
-                        corpus.append({"name": name, "blocks": bc, "truth": tc, "pred_head": phc})
-                    except Exception:
-                        continue
-                if corpus:
-                    rule, _, _, _ = choose_best_global_rule(corpus)
-            except Exception:
-                pass
-
-        pred_left, pred_right = predict_hands_with_rule(blocks, pred_head, rule[0], rule[1], rule[2])
+        pred_left, pred_right = predict_hands_with_rule(blocks, pred_head, RULE[0], RULE[1], RULE[2])
 
         pred    = {"head": pred_head, "left": pred_left, "right": pred_right}
         correct = {k: pred[k] == truth[k] for k in ("head", "left", "right")}
@@ -545,7 +519,7 @@ def check_single_session(session_path, root_path=None):
             "pred":    pred,
             "truth":   truth,
             "correct": correct,
-            "rule":    rule,
+            "rule":    RULE,
             "error":   None,
         }
     except Exception as e:

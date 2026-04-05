@@ -1431,7 +1431,7 @@ async def pipeline_check_score(req: PipelineStateRequest):
         _spec = _ilu.spec_from_file_location("trakeur", _trak_path)
         _trak = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_trak)
-        tracker_result = _trak.check_single_session(sess, root_path=sess.parent)
+        tracker_result = _trak.check_single_session(sess)
         tracker_ok = tracker_result.get("ok", False)
     except Exception as _e:
         tracker_result = {"ok": None, "error": str(_e)}

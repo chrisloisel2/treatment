@@ -4175,6 +4175,24 @@ async def set_scenario_mode(req: SetScenarioModeRequest):
     new_mode_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(sess), str(new_sess))
 
+    # Récupérer les champs do/reset depuis MongoDB pour les mettre dans scenario
+    scenario_instruction: str | None = None
+    try:
+        from pymongo import MongoClient as _MongoClient
+        _mongo_uri  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        _mongo_db   = os.getenv("MONGO_DB", "physical_data")
+        _mongo_coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
+        _client = _MongoClient(_mongo_uri, serverSelectionTimeoutMS=3000)
+        _doc = _client[_mongo_db][_mongo_coll].find_one(
+            {"name": {"$regex": f"^{scenario_slug}$", "$options": "i"}},
+            {"_id": 0, "do": 1, "reset": 1},
+        )
+        if _doc:
+            scenario_instruction = _doc.get(req.mode)
+        _client.close()
+    except Exception:
+        pass
+
     # Mettre à jour metadata.json
     meta_path = new_sess / "metadata.json"
     if meta_path.exists():
@@ -4182,11 +4200,18 @@ async def set_scenario_mode(req: SetScenarioModeRequest):
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             meta["scenario_folder"] = scenario_slug
             meta["mode"] = req.mode
+            if scenario_instruction:
+                meta["scenario"] = scenario_instruction
             meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass
 
-    return {"status": "ok", "moved": True, "new_path": str(new_sess)}
+    return {
+        "status": "ok",
+        "moved": True,
+        "new_path": str(new_sess),
+        "scenario_instruction": scenario_instruction,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────

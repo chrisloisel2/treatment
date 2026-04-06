@@ -6044,6 +6044,11 @@
 						renderSessionsList();
 					}
 
+					if (r.tracker_auto_fixed) {
+						const fm = r.tracker_fix_mapping || {};
+						const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
+						log(`  🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
+					}
 					if (r.repair_perfect) { log(`★ ${sess.name} PARFAITE`, 'OK'); nPerfect++; }
 					else { log(`✗ ${sess.name} — ${verdict || 'ERREUR'}`, 'ERROR'); nError++; }
 				} catch (e) {
@@ -6870,6 +6875,13 @@
 				// — Données manquantes —
 				const missing = r.missing_data || [];
 				if (missing.length) log(`  ⚠ Données manquantes: ${missing.join(', ')}`, 'WARN');
+
+				// — Auto-fix inversion trackers —
+				if (r.tracker_auto_fixed) {
+					const fm = r.tracker_fix_mapping || {};
+					const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
+					log(`🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
+				}
 
 				// — Verdict final —
 				if (r.repair_perfect) {

@@ -325,7 +325,7 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
             try:
                 return [Path(e.path) for e in os.scandir(p)
                         if e.is_dir(follow_symlinks=False) and not _skip_dir(e.name)]
-            except PermissionError:
+            except Exception:
                 return []
 
         def _is_session(p: Path) -> bool:
@@ -333,7 +333,7 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
             try:
                 names = {e.name for e in os.scandir(p)}
                 return "metadata.json" in names or "videos" in names
-            except PermissionError:
+            except Exception:
                 return False
 
         found_lock = threading.Lock()
@@ -360,28 +360,34 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
                 result.extend(fut.result())
             return result
 
-        if scan_dir.exists():
+        if not scan_dir.exists():
+            _log_job(job, f"Répertoire introuvable : {scan_dir}", "ERROR")
+        else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
-                # Niveau 1 : tester chaque sous-dossier direct
                 lvl1 = _list_subdirs(scan_dir)
+                _log_job(job, f"Niveau 1 : {len(lvl1)} sous-dossier(s) dans {scan_dir}", "INFO")
                 futs1 = [ex.submit(_process_candidate, p) for p in lvl1]
                 concurrent.futures.wait(futs1)
+                _log_job(job, f"Après niveau 1 : {len(sessions)} session(s) trouvée(s)", "INFO")
 
+                lvl2 = []
                 if not stop_flag.is_set():
-                    # Niveau 2 : descendre dans les dossiers qui ne sont pas des sessions
                     sess_set = set(sessions)
                     non_sess1 = [p for p in lvl1 if p not in sess_set]
                     lvl2 = _gather_subdirs_parallel(non_sess1, ex)
+                    _log_job(job, f"Niveau 2 : {len(lvl2)} sous-dossier(s)", "INFO")
                     futs2 = [ex.submit(_process_candidate, p) for p in lvl2]
                     concurrent.futures.wait(futs2)
+                    _log_job(job, f"Après niveau 2 : {len(sessions)} session(s) trouvée(s)", "INFO")
 
                 if not stop_flag.is_set():
-                    # Niveau 3
                     sess_set = set(sessions)
                     non_sess2 = [p for p in lvl2 if p not in sess_set]
                     lvl3 = _gather_subdirs_parallel(non_sess2, ex)
+                    _log_job(job, f"Niveau 3 : {len(lvl3)} sous-dossier(s)", "INFO")
                     futs3 = [ex.submit(_process_candidate, p) for p in lvl3]
                     concurrent.futures.wait(futs3)
+                    _log_job(job, f"Après niveau 3 : {len(sessions)} session(s) trouvée(s)", "INFO")
 
         model_exists = (MODEL_DIR / "model.pt").exists()
         total_found = len(sessions)

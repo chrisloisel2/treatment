@@ -302,11 +302,12 @@ async def _broadcast(payload: dict):
 # Workers (thread)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _worker_scan(job: Job, limit: int = 500, offset: int = 0):
+def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
     try:
+        scan_dir = Path(root) if root else INGEST_DIR
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
         _cap = f" (limite {limit}, offset {offset})" if limit or offset else ""
-        _log_job(job, f"Scan de {INGEST_DIR}…{_cap}")
+        _log_job(job, f"Scan de {scan_dir}…{_cap}")
 
         import utils.sync as ia
         # Découverte récursive : sessions = dossiers contenant metadata.json
@@ -314,9 +315,9 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0):
         # Exclus : dossiers __FAILED et dossiers cachés/internes.
         _seen = set()
         sessions = []
-        if INGEST_DIR.exists():
+        if scan_dir.exists():
             # 1. Par metadata.json (méthode historique)
-            for p in INGEST_DIR.rglob("metadata.json"):
+            for p in scan_dir.rglob("metadata.json"):
                 s = p.parent
                 if s in _seen: continue
                 if s.name.startswith("_") or s.name.startswith("."): continue
@@ -324,9 +325,9 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0):
                 _seen.add(s)
                 sessions.append(s)
             # 2. Par videos/*.mp4 (sessions sans metadata.json)
-            for p in INGEST_DIR.rglob("*.mp4"):
+            for p in scan_dir.rglob("*.mp4"):
                 s = p.parent.parent  # session_dir/videos/X.mp4 → session_dir
-                if s == INGEST_DIR: continue  # exclure la racine elle-même
+                if s == scan_dir: continue  # exclure la racine elle-même
                 if s in _seen: continue
                 if s.name.startswith("_") or s.name.startswith("."): continue
                 if "__FAILED" in str(s): continue
@@ -415,7 +416,7 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0):
             progress  = 100,
             result    = {
                 "sessions":    result,
-                "ingest_dir":  str(INGEST_DIR),
+                "ingest_dir":  str(scan_dir),
                 "silver_dir":  str(SILVER_DIR),
                 "model_exists": model_exists,
                 "total_found": total_found,
@@ -1027,6 +1028,7 @@ async def health():
 @app.post("/api/scan")
 async def scan(req: dict = None):
     """Lance un scan asynchrone.
+    req.root         = répertoire racine à scanner (défaut : INGEST_DIR)
     req.input_format = "custom" (défaut) | "lerobot"
     req.lerobot_path = chemin vers le dataset LeRobot (si input_format == "lerobot")
     req.limit  = nombre max de sessions à retourner (défaut 500, 0 = illimité)
@@ -1037,12 +1039,13 @@ async def scan(req: dict = None):
     input_format = req.get("input_format", "custom")
     limit  = int(req.get("limit",  500))
     offset = int(req.get("offset", 0))
+    root   = req.get("root", "") or str(INGEST_DIR)
     job = _new_job("scan")
     if input_format == "lerobot":
-        lerobot_path = req.get("lerobot_path", "")
+        lerobot_path = req.get("lerobot_path", "") or root
         threading.Thread(target=_worker_scan_lerobot, args=(job, lerobot_path, limit, offset), daemon=True).start()
     else:
-        threading.Thread(target=_worker_scan, args=(job, limit, offset), daemon=True).start()
+        threading.Thread(target=_worker_scan, args=(job, limit, offset, root), daemon=True).start()
     return {"job_id": job.id}
 
 

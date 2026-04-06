@@ -5528,7 +5528,7 @@
 				lerobot_path: '',
 			},
 			cfg: {
-				root: '/mnt/storage/silver/', model: '_sync_ml_model', nas: '',
+				root: '', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
 			}
@@ -5763,10 +5763,14 @@
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
-			const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver/';
-			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
-			ge('cfg-root').value = root;
+			// Toujours lire depuis le champ UI — c'est la source de vérité
+			const root = ge('s-root').value.trim() || S.cfg.root || '/mnt/storage/silver/';
+			const lrPath = ge('s-lerobot-input-path')?.value.trim() || S.cfg.lerobot_input_path || '';
+			// Synchroniser S.cfg avec ce qu'on va réellement scanner
 			S.cfg.root = root;
+			S.cfg.lerobot_input_path = lrPath;
+			ge('cfg-root').value = root;
+			ge('cfg-root-display').textContent = root;
 			// Réinitialiser la pagination
 			S.scan = { totalFound: 0, offset: 0, limit: SCAN_LIMIT,
 				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath };
@@ -9476,7 +9480,7 @@
 				ge('watcher-status').textContent = 'Arrêté';
 				log('Watcher arrêté', 'WARN');
 			} else {
-				const root = S.cfg.root || ge('s-root').value || '/mnt/storage/silver/				';
+				const root = ge('s-root').value.trim() || S.cfg.root;
 				const params = getParams();
 				try {
 					await api('POST', '/api/watcher/start', {
@@ -9529,7 +9533,7 @@
 		}
 
 		function saveSettings() {
-			S.cfg.root = ge('s-root').value || '/mnt/storage/silver/';
+			S.cfg.root = ge('s-root').value.trim();
 			S.cfg.model = ge('s-model').value;
 			S.cfg.nas = ge('s-nas').value;
 			S.cfg.resample_ms = +ge('s-rs').value;
@@ -9547,11 +9551,11 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '/mnt/storage/silver/';
+				const root = c.root || '';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
-				ge('cfg-root-display').textContent = root;
+				ge('cfg-root-display').textContent = root || '—';
 				if (c.model) { S.cfg.model = c.model; ge('s-model').value = c.model; }
 				if (c.nas) { S.cfg.nas = c.nas; ge('s-nas').value = c.nas; ge('cfg-nas').value = c.nas; ge('cfg-nas-display').textContent = c.nas || '—'; }
 				if (c.resample_ms) { S.cfg.resample_ms = c.resample_ms; ge('s-rs').value = c.resample_ms; }

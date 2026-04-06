@@ -29,6 +29,7 @@ import io
 import json
 import multiprocessing
 import os
+import shutil
 import sys
 import threading
 import time
@@ -3302,6 +3303,12 @@ def _worker_export(job: Job, req: ExportRequest):
                 else:
                     raise ValueError(f"dest_type inconnu: {req.dest_type}")
                 exported_count += 1
+                # Notifier le client que cette session a été exportée
+                if _loop:
+                    asyncio.run_coroutine_threadsafe(
+                        _broadcast({"type": "session_removed", "session_path": sess_path, "reason": "exported"}),
+                        _loop,
+                    )
             except Exception as e:
                 # Limiter la taille de la liste d'erreurs pour éviter l'OOM
                 if len(errors) < 500:
@@ -3480,6 +3487,12 @@ def _worker_reject(job: Job, req: RejectRequest):
             shutil.move(str(sess), str(dest))
             moved.append(sess.name)
             _log_job(job, f"[{i+1}/{total}] ✓ {sess.name} → {dest}", "OK")
+            # Notifier le client que cette session a été rejetée
+            if _loop:
+                asyncio.run_coroutine_threadsafe(
+                    _broadcast({"type": "session_removed", "session_path": sess_path, "reason": "rejected"}),
+                    _loop,
+                )
         except Exception as e:
             errors.append(f"{sess.name}: {e}")
             _log_job(job, f"[{i+1}/{total}] ✗ {sess.name}: {e}", "ERROR")
@@ -3993,6 +4006,62 @@ async def check_pinces(req: CheckPincesRequest):
     job = _new_job("check_pinces")
     threading.Thread(target=_worker_check_pinces, args=(job, req), daemon=True).start()
     return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Modifier scénario / mode d'une session (déplace le dossier + met à jour metadata)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class SetScenarioModeRequest(BaseModel):
+    session_path: str
+    scenario: str       # nouveau scénario (clé slug, ex: "pants", "towel", …)
+    mode: str           # "do" ou "reset"
+
+
+@app.post("/api/session/set_scenario_mode")
+async def set_scenario_mode(req: SetScenarioModeRequest):
+    """Déplace le dossier session vers {parent_racine}/{scenario}/{mode}/ et met à jour metadata.json."""
+    if not req.session_path:
+        raise HTTPException(400, "session_path manquant")
+    if req.mode not in ("do", "reset"):
+        raise HTTPException(400, "mode doit être 'do' ou 'reset'")
+    if not req.scenario.strip():
+        raise HTTPException(400, "scenario vide")
+
+    sess = Path(req.session_path)
+    if not sess.exists():
+        raise HTTPException(404, f"Session introuvable : {req.session_path}")
+
+    # Déterminer la racine (3 niveaux au-dessus si structure {root}/{scenario}/{mode}/{session})
+    current_mode_dir = sess.parent
+    current_scenario_dir = current_mode_dir.parent
+    root_dir = current_scenario_dir.parent
+
+    scenario_slug = req.scenario.strip()
+    new_mode_dir = root_dir / scenario_slug / req.mode
+    new_sess = new_mode_dir / sess.name
+
+    if new_sess == sess:
+        return {"status": "ok", "moved": False, "new_path": str(sess)}
+
+    if new_sess.exists():
+        raise HTTPException(409, f"Destination déjà occupée : {new_sess}")
+
+    new_mode_dir.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(sess), str(new_sess))
+
+    # Mettre à jour metadata.json
+    meta_path = new_sess / "metadata.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["scenario_folder"] = scenario_slug
+            meta["mode"] = req.mode
+            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    return {"status": "ok", "moved": True, "new_path": str(new_sess)}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

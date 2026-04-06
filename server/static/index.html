@@ -4441,6 +4441,33 @@
 											</div>
 										</div>
 
+										<!-- Scénario / Mode -->
+										<div class="tv-rp-section">
+											<div class="tv-rp-title">Scénario / Mode</div>
+											<div class="tv-rp-row" style="margin-top:6px">
+												<label>Scénario</label>
+												<input type="text" id="tv-meta-scenario" placeholder="ex: pants"
+													style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text1);border-radius:4px;padding:2px 6px;font-size:.78rem"
+													disabled />
+											</div>
+											<div class="tv-rp-row" style="margin-top:5px">
+												<label>Mode</label>
+												<div style="display:flex;gap:4px;flex:1">
+													<button id="tv-meta-btn-do"
+														style="flex:1;font-size:.73rem;border-radius:4px;padding:3px 0;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text2)"
+														onclick="tvMetaSelectMode('do')" disabled>do</button>
+													<button id="tv-meta-btn-reset"
+														style="flex:1;font-size:.73rem;border-radius:4px;padding:3px 0;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text2)"
+														onclick="tvMetaSelectMode('reset')" disabled>reset</button>
+												</div>
+											</div>
+											<button class="tv-rp-btn" id="tv-rp-btn-set-meta" onclick="tvApplyScenarioMode()"
+												style="margin-top:6px;background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent);font-weight:600"
+												disabled>Appliquer</button>
+											<div id="tv-meta-status"
+												style="font-size:.7rem;color:var(--text3);margin-top:3px;min-height:1em"></div>
+										</div>
+
 										<!-- Export / Rejet session -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Session actuelle</div>
@@ -5609,7 +5636,24 @@
 				case 'pair_result':
 					S.estimates.push(m.estimate); break;
 				case 'pong': break;
+			case 'session_removed':
+				_removeSession(m.session_path);
+				break;
 			}
+		}
+
+		function _removeSession(sessPath) {
+			const existed = S.sessions.some(s => s.path === sessPath);
+			if (!existed) return;
+			S.sessions = S.sessions.filter(s => s.path !== sessPath);
+			S.selected.delete(sessPath);
+			_saveSelection();
+			if (S.drawerSess && S.drawerSess.path === sessPath) closeDrawer();
+			if (TV.sessPath === sessPath) { tvStopStream(); tvStopPlay(); TV.sessPath = null; TV.data = null; tvRefreshSessions(); }
+			renderSessionsList();
+			renderPipelineBoard();
+			refreshExportBtn();
+			updateNavBadges();
 		}
 
 		// ══════════════════════════════════════════════════════════════════
@@ -5636,6 +5680,26 @@
 						mean_conf: job.result.mean_conf,
 					};
 					renderPipelineBoard();
+				}
+			}
+			// Mise à jour score en temps réel pour les jobs check / align_pro
+			if ((job.kind === 'check' || job.kind === 'align_pro') &&
+				job.status === 'done' && job.result) {
+				const sessPath = job.result.session;
+				const sess = S.sessions.find(s => s.path === sessPath);
+				if (sess) {
+					if (!sess.meta) sess.meta = {};
+					if (job.result.score != null)   sess.meta.check_score   = job.result.score;
+					if (job.result.grade != null)   sess.meta.check_grade   = job.result.grade;
+					if (job.result.verdict != null) sess.meta.check_verdict = job.result.verdict;
+					if (job.result.ia_score != null) sess.meta.check_ia_score = job.result.ia_score;
+					if (job.result.blocking_reason != null) sess.meta.check_blocking = job.result.blocking_reason;
+					sess.meta.repair_perfect = !!job.result.fix_applied;
+					renderSessionsList();
+					// Rafraîchir le drawer si ouvert sur cette session
+					if (S.drawerSess && S.drawerSess.path === sessPath) {
+						renderDrawerContent(S.drawerSess);
+					}
 				}
 			}
 		}
@@ -5872,16 +5936,19 @@
 					const missing = r.missing_data || [];
 					if (missing.length) log(`  ⚠ Manquant: ${missing.join(', ')}`, 'WARN');
 
-					// Propager dans S.sessions
+					// Propager dans S.sessions et afficher immédiatement
 					const s = S.sessions.find(s => s.path === sess.path);
 					if (s) {
 						if (!s.meta) s.meta = {};
 						s.meta.check_score = r.score;
 						s.meta.check_grade = r.grade;
 						s.meta.check_verdict = r.verdict;
+						s.meta.check_ia_score = r.ia_score ?? null;
+						s.meta.check_blocking = r.blocking_reason || '';
 						s.meta.repair_perfect = r.repair_perfect ?? false;
 						s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
 						s.meta.repair_score = r.repair_score ?? score;
+						renderSessionsList();
 					}
 
 					if (r.repair_perfect) { log(`★ ${sess.name} PARFAITE`, 'OK'); nPerfect++; }
@@ -6638,14 +6705,19 @@
 				const failed = r.failed_gates || [];
 				const blocking = r.blocking_reason || '';
 
-				// Stocker dans meta pour l'affichage
+				// Stocker dans meta pour l'affichage (dans le drawer ET dans S.sessions)
 				S.drawerSess.meta.check_score = r.score;
 				S.drawerSess.meta.check_grade = r.grade;
 				S.drawerSess.meta.check_verdict = r.verdict;
+				S.drawerSess.meta.check_ia_score = r.ia_score ?? null;
 				S.drawerSess.meta.check_blocking = r.blocking_reason || '';
 				S.drawerSess.meta.repair_perfect = r.repair_perfect ?? false;
 				S.drawerSess.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
 				S.drawerSess.meta.repair_score = r.repair_score ?? score;
+				// Propager dans S.sessions si l'objet n'est pas le même
+				const _s = S.sessions.find(s => s.path === S.drawerSess.path);
+				if (_s && _s !== S.drawerSess) { _s.meta = { ...(_s.meta || {}), ...S.drawerSess.meta }; }
+				renderSessionsList();
 
 				const grade = r.grade || '?';
 				const verdict = r.verdict || '';
@@ -7731,6 +7803,63 @@
 			return map[ext] || '📄';
 		}
 
+		// ── Scénario / Mode ───────────────────────────────────────────────────
+		let _tvMetaMode = 'do';
+
+		function tvMetaSelectMode(mode) {
+			_tvMetaMode = mode;
+			const btnDo = ge('tv-meta-btn-do');
+			const btnReset = ge('tv-meta-btn-reset');
+			const accent = 'var(--accent)';
+			if (mode === 'do') {
+				btnDo.style.background = accent;
+				btnDo.style.color = '#fff';
+				btnDo.style.borderColor = accent;
+				btnReset.style.background = 'var(--bg3)';
+				btnReset.style.color = 'var(--text2)';
+				btnReset.style.borderColor = 'var(--border)';
+			} else {
+				btnReset.style.background = accent;
+				btnReset.style.color = '#fff';
+				btnReset.style.borderColor = accent;
+				btnDo.style.background = 'var(--bg3)';
+				btnDo.style.color = 'var(--text2)';
+				btnDo.style.borderColor = 'var(--border)';
+			}
+		}
+
+		async function tvApplyScenarioMode() {
+			if (!TV.sessPath) return;
+			const scenario = ge('tv-meta-scenario').value.trim();
+			if (!scenario) { ge('tv-meta-status').textContent = 'Scénario vide.'; return; }
+			const mode = _tvMetaMode;
+			const btn = ge('tv-rp-btn-set-meta');
+			const statusEl = ge('tv-meta-status');
+			btn.disabled = true;
+			statusEl.textContent = '…';
+			try {
+				const res = await api('POST', '/api/session/set_scenario_mode', {
+					session_path: TV.sessPath,
+					scenario,
+					mode,
+				});
+				if (res.moved) {
+					statusEl.textContent = 'Déplacé.';
+					const oldPath = TV.sessPath;
+					TV.sessPath = res.new_path;
+					// Mettre à jour la session dans S.sessions
+					const sess = S.sessions.find(s => s.path === oldPath);
+					if (sess) { sess.path = res.new_path; }
+					tvRefreshSessions();
+				} else {
+					statusEl.textContent = 'Aucun changement.';
+				}
+			} catch (e) {
+				statusEl.textContent = 'Erreur : ' + e.message;
+			}
+			btn.disabled = false;
+		}
+
 		async function tvSelectSession(path) {
 			if (!path) return;
 			tvStopStream();
@@ -7747,7 +7876,22 @@
 			ge('tv-rp-btn-rotate').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
 			ge('tv-rp-btn-reject').disabled = false;
+			ge('tv-rp-btn-set-meta').disabled = false;
 			tvTrackerSwapBuildPanel(path);
+			// Initialiser les champs scénario/mode à partir du chemin session
+			{
+				const parts = path.split('/');
+				// structure attendue: .../racine/scenario/mode/session_name
+				const detectedMode = parts.length >= 2 ? parts[parts.length - 2] : '';
+				const detectedScenario = parts.length >= 3 ? parts[parts.length - 3] : '';
+				const scenarioInput = ge('tv-meta-scenario');
+				scenarioInput.value = detectedScenario;
+				scenarioInput.disabled = false;
+				ge('tv-meta-btn-do').disabled = false;
+				ge('tv-meta-btn-reset').disabled = false;
+				ge('tv-meta-status').textContent = '';
+				tvMetaSelectMode(detectedMode === 'reset' ? 'reset' : 'do');
+			}
 			TV.vidInfo = {};
 			TV.vidReady = {};
 			TV3D.needsRebuild = true;
@@ -9766,6 +9910,8 @@
 				log(`Rejet lancé — job ${res.job_id}`, 'WARN');
 				// Retirer immédiatement les sessions rejetées de la liste
 				const rejectedSet = new Set(sessions);
+				if (S.drawerSess && rejectedSet.has(S.drawerSess.path)) closeDrawer();
+				if (TV.sessPath && rejectedSet.has(TV.sessPath)) { tvStopStream(); tvStopPlay(); TV.sessPath = null; TV.data = null; tvRefreshSessions(); }
 				S.sessions = S.sessions.filter(s => !rejectedSet.has(s.path));
 				rejectedSet.forEach(p => S.selected.delete(p));
 				_saveSelection();
@@ -9875,6 +10021,8 @@
 				log(`Export lancé — job ${res.job_id}`, 'OK');
 				// Retirer immédiatement les sessions exportées de la liste
 				const exportedSet = new Set(sessions);
+				if (S.drawerSess && exportedSet.has(S.drawerSess.path)) closeDrawer();
+				if (TV.sessPath && exportedSet.has(TV.sessPath)) { tvStopStream(); tvStopPlay(); TV.sessPath = null; TV.data = null; tvRefreshSessions(); }
 				S.sessions = S.sessions.filter(s => !exportedSet.has(s.path));
 				exportedSet.forEach(p => S.selected.delete(p));
 				_saveSelection();
@@ -9922,6 +10070,7 @@
 			const poll = setInterval(async () => {
 				try {
 					const j = await api('GET', `/api/jobs/${job_id}`);
+					S.jobs[j.id] = j;
 					if (j.status === 'done') {
 						clearInterval(poll);
 						const r = j.result || {};
@@ -9935,6 +10084,20 @@
 						const iaStr = r.ia_score != null ? `  ia=${r.ia_score.toFixed(3)}` : '';
 						const blockStr = r.blocking_reason ? `  bloc: ${r.blocking_reason}` : '';
 						log(`Diagnostic terminé : ${Math.round(score)}%${iaStr}${blockStr}`, logLvl);
+						// Propager le score dans S.sessions
+						const sessPath = TV.sessPath || r.session;
+						if (sessPath) {
+							const sess = S.sessions.find(s => s.path === sessPath);
+							if (sess) {
+								if (!sess.meta) sess.meta = {};
+								if (score >= 0) sess.meta.check_score = r.score;
+								if (r.grade)    sess.meta.check_grade = r.grade;
+								if (r.verdict)  sess.meta.check_verdict = r.verdict;
+								if (r.ia_score != null) sess.meta.check_ia_score = r.ia_score;
+								if (r.blocking_reason != null) sess.meta.check_blocking = r.blocking_reason;
+								renderSessionsList();
+							}
+						}
 					} else if (j.status === 'error') {
 						clearInterval(poll);
 						log('Diagnostic échoué : ' + (j.error || '?'), 'ERROR');

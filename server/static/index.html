@@ -3903,6 +3903,13 @@
 								</thead>
 								<tbody id="sess-list"></tbody>
 							</table>
+							<div id="load-more-bar" style="display:none;padding:10px 0;text-align:center">
+								<button class="btn" id="btn-load-more" onclick="loadMoreSessions()"
+									style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:.8rem;padding:6px 16px">
+									⬇ Charger plus — <span id="load-more-remaining">?</span> restantes
+								</button>
+								<span style="margin-left:10px;font-size:.75rem;color:var(--text3)" id="load-more-info"></span>
+							</div>
 						</div>
 						<div class="div" style="margin:10px 0 8px"></div>
 						<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -5511,6 +5518,15 @@
 			drawerSess: null,
 			scenarioFilter: null,  // string|null — scénario actif dans la vue Sessions
 			watcher: { running: false },
+			scan: {
+				totalFound: 0,    // total trouvé côté serveur
+				offset: 0,        // offset courant
+				limit: 500,       // sessions par page
+				hasMore: false,   // il reste des sessions à charger
+				inputFmt: 'custom',
+				root: '',
+				lerobot_path: '',
+			},
 			cfg: {
 				root: '/mnt/storage/silver/', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
@@ -5741,6 +5757,8 @@
 		// Scan
 		// ══════════════════════════════════════════════════════════════════
 		let _scanInProgress = false;
+		const SCAN_LIMIT = 500; // sessions par page
+
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
@@ -5749,7 +5767,10 @@
 			const lrPath = S.cfg.lerobot_input_path || ge('s-lerobot-input-path')?.value || '';
 			ge('cfg-root').value = root;
 			S.cfg.root = root;
-			const scanBody = { root, input_format: fmt };
+			// Réinitialiser la pagination
+			S.scan = { totalFound: 0, offset: 0, limit: SCAN_LIMIT,
+				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath };
+			const scanBody = { root, input_format: fmt, limit: SCAN_LIMIT, offset: 0 };
 			if (fmt === 'lerobot') {
 				if (!lrPath) { _scanInProgress = false; log('Scan LeRobot : chemin dataset non configuré', 'ERROR'); return; }
 				scanBody.lerobot_path = lrPath;
@@ -5764,6 +5785,10 @@
 					if (job.status === 'done' && job.result) {
 						_scanInProgress = false;
 						const { sessions } = job.result;
+						// Mettre à jour état pagination
+						S.scan.totalFound = job.result.total_found ?? sessions.length;
+						S.scan.hasMore    = job.result.has_more ?? false;
+						S.scan.offset     = sessions.length;
 						// Pour LeRobot, on skip le loadSessionPipelineState (pas de pipeline_state.json)
 						const loaders = fmt === 'lerobot'
 							? sessions.map(s => Promise.resolve(s))
@@ -5775,15 +5800,79 @@
 							if (!_restoreSelection(allPaths)) {
 								S.selected = new Set(allPaths);
 							}
+							_updateLoadMoreBar();
 							renderAll();
 							const label = fmt === 'lerobot' ? 'épisodes LeRobot' : 'sessions';
-							log(`${sessions.length} ${label} détecté(e)s`, 'OK');
+							const totalInfo = S.scan.hasMore
+								? ` (${S.scan.totalFound} au total — affichage limité à ${SCAN_LIMIT})`
+								: '';
+							log(`${sessions.length} ${label} chargé(e)s${totalInfo}`, 'OK');
 						});
 					} else if (job.status === 'failed') {
 						_scanInProgress = false;
 					}
 				});
 			} catch (e) { _scanInProgress = false; log('Scan: ' + e.message, 'ERROR'); }
+		}
+
+		async function loadMoreSessions() {
+			if (_scanInProgress) return;
+			_scanInProgress = true;
+			const btn = ge('btn-load-more');
+			if (btn) { btn.disabled = true; btn.textContent = '⏳ Chargement…'; }
+			const { inputFmt: fmt, root, lerobot_path: lrPath, offset, limit } = S.scan;
+			const scanBody = { root, input_format: fmt, limit, offset };
+			if (fmt === 'lerobot') scanBody.lerobot_path = lrPath;
+			try {
+				const { job_id } = await api('POST', '/api/scan', scanBody);
+				pollJobUntilDone(job_id, job => {
+					if (job.status === 'done' && job.result) {
+						_scanInProgress = false;
+						const { sessions: newSess } = job.result;
+						S.scan.totalFound = job.result.total_found ?? S.scan.totalFound;
+						S.scan.hasMore    = job.result.has_more ?? false;
+						S.scan.offset     += newSess.length;
+						const loaders = fmt === 'lerobot'
+							? newSess.map(s => Promise.resolve(s))
+							: newSess.map(loadSessionPipelineState);
+						Promise.all(loaders).then(() => {
+							// Dédupliquer par path
+							const existing = new Set(S.sessions.map(s => s.path));
+							const added = newSess.filter(s => !existing.has(s.path));
+							S.sessions = S.sessions.concat(added);
+							_updateLoadMoreBar();
+							renderSessionsList();
+							renderPipelineBoard();
+							tvRefreshSessions();
+							updateNavBadges();
+							log(`+${added.length} session(s) chargée(s) (${S.sessions.length}/${S.scan.totalFound} au total)`, 'OK');
+						});
+					} else if (job.status === 'error' || job.status === 'failed') {
+						_scanInProgress = false;
+						if (btn) { btn.disabled = false; btn.textContent = `⬇ Charger plus`; }
+					}
+				});
+			} catch (e) {
+				_scanInProgress = false;
+				log('Chargement: ' + e.message, 'ERROR');
+				if (btn) { btn.disabled = false; }
+			}
+		}
+
+		function _updateLoadMoreBar() {
+			const bar = ge('load-more-bar');
+			if (!bar) return;
+			if (S.scan.hasMore) {
+				const remaining = S.scan.totalFound - S.scan.offset;
+				ge('load-more-remaining').textContent = remaining.toLocaleString();
+				ge('load-more-info').textContent =
+					`${S.sessions.length.toLocaleString()} / ${S.scan.totalFound.toLocaleString()} chargées`;
+				const btn = ge('btn-load-more');
+				if (btn) { btn.disabled = false; btn.innerHTML = `⬇ Charger plus — <span id="load-more-remaining">${remaining.toLocaleString()}</span> restantes`; }
+				bar.style.display = '';
+			} else {
+				bar.style.display = 'none';
+			}
 		}
 
 		async function loadSessionPipelineState(sess) {
@@ -6924,9 +7013,12 @@
 				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
 				: S.sessions;
 
-			ge('sess-count').textContent = S.scenarioFilter
-				? `${visible.length} / ${S.sessions.length}`
+			const totalStr = S.scan.hasMore
+				? `${S.sessions.length} / ${S.scan.totalFound}`
 				: S.sessions.length;
+			ge('sess-count').textContent = S.scenarioFilter
+				? `${visible.length} / ${totalStr}`
+				: totalStr;
 
 			_updateSessActions();
 
@@ -6939,9 +7031,18 @@
 			});
 		}
 
+		// Rendu par chunks pour éviter de freezer le navigateur sur des milliers de lignes
+		const RENDER_CHUNK = 100; // lignes par chunk
+		let _renderSessAbort = null; // AbortController pour annuler un rendu en cours
+
 		function _renderSessTable(visible) {
 			const tbody = ge('sess-list');
 			if (!tbody) return;
+
+			// Annuler rendu précédent si toujours en cours
+			if (_renderSessAbort) { _renderSessAbort.aborted = true; }
+			const abort = { aborted: false };
+			_renderSessAbort = abort;
 
 			// Grouper par poste
 			const groups = new Map();
@@ -6955,47 +7056,67 @@
 				groups.get(key).sessions.push(s);
 			});
 
-			const frag = document.createDocumentFragment();
+			// Aplatir tous les éléments à rendre (header de groupe + sessions)
+			const items = []; // {type:'group'|'sess', data, postIdx, groupSessions}
 			let postIdx = 1;
-
 			groups.forEach(({ serials, sessions }) => {
-				// — Ligne de groupe —
-				const gtr = document.createElement('tr');
-				gtr.className = 'st-group-row';
-				const gtd = document.createElement('td');
-				gtd.colSpan = 7;
-				const serialTxt = serials.length ? serials.join(' · ') : '—';
-				gtd.innerHTML = `Poste ${postIdx} <span style="font-weight:400;color:var(--text3);font-size:.62rem;letter-spacing:0;text-transform:none;margin-left:6px">${serialTxt}</span>`
-					+ `<button class="st-group-sel-btn" data-grp="${postIdx}">Sélect. groupe</button>`
-					+ `<span style="margin-left:auto;float:right;font-weight:400;color:var(--text3)">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>`;
-				gtr.appendChild(gtd);
-				// sélection groupe
-				gtd.querySelector('.st-group-sel-btn').addEventListener('click', (e) => {
-					e.stopPropagation();
-					const allSel = sessions.every(s => S.selected.has(s.path));
-					sessions.forEach(s => allSel ? S.selected.delete(s.path) : S.selected.add(s.path));
-					_saveSelection();
-					// Mettre à jour juste les classes des lignes concernées
-					sessions.forEach(s => {
-						const row = tbody.querySelector(`tr[data-path="${CSS.escape(s.path)}"]`);
-						if (row) row.classList.toggle('st-selected', S.selected.has(s.path));
-					});
-					_updateSessActions();
-					_updateScriptRunBtn();
-					renderPipelineBoard();
-					refreshExportBtn();
-				});
-				frag.appendChild(gtr);
-
-				// — Lignes sessions —
-				sessions.forEach(s => {
-					frag.appendChild(_buildSessRow(s));
-				});
+				items.push({ type: 'group', serials, sessions, postIdx });
+				sessions.forEach(s => items.push({ type: 'sess', s, postIdx, groupSessions: sessions }));
 				postIdx++;
 			});
 
-			tbody.textContent = ''; // vide sans parser HTML
-			tbody.appendChild(frag);
+			tbody.textContent = ''; // vide immédiatement
+
+			if (!items.length) return;
+
+			// Fonction qui rend un chunk et planifie le suivant
+			function renderChunk(startIdx) {
+				if (abort.aborted) return;
+				const frag = document.createDocumentFragment();
+				const end = Math.min(startIdx + RENDER_CHUNK, items.length);
+				for (let i = startIdx; i < end; i++) {
+					const item = items[i];
+					if (item.type === 'group') {
+						const gtr = document.createElement('tr');
+						gtr.className = 'st-group-row';
+						const gtd = document.createElement('td');
+						gtd.colSpan = 7;
+						const serialTxt = item.serials.length ? item.serials.join(' · ') : '—';
+						const pi = item.postIdx;
+						const gs = item.sessions;
+						gtd.innerHTML = `Poste ${pi} <span style="font-weight:400;color:var(--text3);font-size:.62rem;letter-spacing:0;text-transform:none;margin-left:6px">${serialTxt}</span>`
+							+ `<button class="st-group-sel-btn" data-grp="${pi}">Sélect. groupe</button>`
+							+ `<span style="margin-left:auto;float:right;font-weight:400;color:var(--text3)">${gs.length} session${gs.length > 1 ? 's' : ''}</span>`;
+						gtr.appendChild(gtd);
+						gtd.querySelector('.st-group-sel-btn').addEventListener('click', (e) => {
+							e.stopPropagation();
+							const allSel = gs.every(s => S.selected.has(s.path));
+							gs.forEach(s => allSel ? S.selected.delete(s.path) : S.selected.add(s.path));
+							_saveSelection();
+							gs.forEach(s => {
+								const row = tbody.querySelector(`tr[data-path="${CSS.escape(s.path)}"]`);
+								if (row) row.classList.toggle('st-selected', S.selected.has(s.path));
+							});
+							_updateSessActions();
+							_updateScriptRunBtn();
+							renderPipelineBoard();
+							refreshExportBtn();
+						});
+						frag.appendChild(gtr);
+					} else {
+						frag.appendChild(_buildSessRow(item.s));
+					}
+				}
+				tbody.appendChild(frag);
+
+				if (end < items.length) {
+					// Planifier le prochain chunk sur le prochain frame idle
+					const scheduler = window.requestIdleCallback || requestAnimationFrame;
+					scheduler(() => renderChunk(end));
+				}
+			}
+
+			renderChunk(0);
 		}
 
 		function _buildSessRow(s) {
@@ -11189,6 +11310,7 @@
 		function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 		function renderAll() {
+			_updateLoadMoreBar();
 			renderPipelineBoard();
 			renderSessionsList();
 			tvRefreshSessions();

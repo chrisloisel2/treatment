@@ -302,10 +302,11 @@ async def _broadcast(payload: dict):
 # Workers (thread)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _worker_scan(job: Job):
+def _worker_scan(job: Job, limit: int = 500, offset: int = 0):
     try:
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
-        _log_job(job, f"Scan de {INGEST_DIR}…")
+        _cap = f" (limite {limit}, offset {offset})" if limit or offset else ""
+        _log_job(job, f"Scan de {INGEST_DIR}…{_cap}")
 
         import utils.sync as ia
         # Découverte récursive : sessions = dossiers contenant metadata.json
@@ -333,9 +334,16 @@ def _worker_scan(job: Job):
                 _seen.add(s)
                 sessions.append(s)
         model_exists = (MODEL_DIR / "model.pt").exists()
+        total_found = len(sessions)
+        # Trier, puis paginer
+        all_sorted = sorted(sessions, key=lambda p: p.name)
+        if offset:
+            all_sorted = all_sorted[offset:]
+        if limit:
+            all_sorted = all_sorted[:limit]
         result = []
-        total = max(len(sessions), 1)
-        for idx, s in enumerate(sorted(sessions, key=lambda p: p.name)):
+        total = max(len(all_sorted), 1)
+        for idx, s in enumerate(all_sorted):
             _update_job(job, progress=10 + int(88 * idx / total))
             meta_path = s / "metadata.json"
             meta = {}
@@ -396,17 +404,24 @@ def _worker_scan(job: Job):
                 "pipeline_steps": pipeline_steps,
             })
 
-        _log_job(job, f"{len(result)} sessions trouvées dans {INGEST_DIR}.", "OK")
+        has_more = bool(limit and (offset + len(result)) < total_found)
+        _log_job(job, f"{len(result)} sessions retournées (total trouvé: {total_found}).", "OK")
+        if has_more:
+            _log_job(job, f"  → {total_found - offset - len(result)} session(s) supplémentaire(s) disponibles (offset={offset+len(result)})", "INFO")
         _update_job(
             job,
             status    = JobStatus.DONE,
             ended_at  = _now(),
             progress  = 100,
             result    = {
-                "sessions":     result,
-                "ingest_dir":   str(INGEST_DIR),
-                "silver_dir":   str(SILVER_DIR),
+                "sessions":    result,
+                "ingest_dir":  str(INGEST_DIR),
+                "silver_dir":  str(SILVER_DIR),
                 "model_exists": model_exists,
+                "total_found": total_found,
+                "offset":      offset,
+                "limit":       limit,
+                "has_more":    has_more,
             },
         )
     except Exception:
@@ -1014,20 +1029,24 @@ async def scan(req: dict = None):
     """Lance un scan asynchrone.
     req.input_format = "custom" (défaut) | "lerobot"
     req.lerobot_path = chemin vers le dataset LeRobot (si input_format == "lerobot")
+    req.limit  = nombre max de sessions à retourner (défaut 500, 0 = illimité)
+    req.offset = index de départ pour la pagination (défaut 0)
     """
     if req is None:
         req = {}
     input_format = req.get("input_format", "custom")
+    limit  = int(req.get("limit",  500))
+    offset = int(req.get("offset", 0))
     job = _new_job("scan")
     if input_format == "lerobot":
         lerobot_path = req.get("lerobot_path", "")
-        threading.Thread(target=_worker_scan_lerobot, args=(job, lerobot_path), daemon=True).start()
+        threading.Thread(target=_worker_scan_lerobot, args=(job, lerobot_path, limit, offset), daemon=True).start()
     else:
-        threading.Thread(target=_worker_scan, args=(job,), daemon=True).start()
+        threading.Thread(target=_worker_scan, args=(job, limit, offset), daemon=True).start()
     return {"job_id": job.id}
 
 
-def _worker_scan_lerobot(job: Job, dataset_path: str):
+def _worker_scan_lerobot(job: Job, dataset_path: str, limit: int = 500, offset: int = 0):
     """Scan d'un dataset au format LeRobot v3.
 
     Structure attendue :
@@ -1074,7 +1093,13 @@ def _worker_scan_lerobot(job: Job, dataset_path: str):
         if not data_files:
             raise FileNotFoundError(f"Aucun fichier data/chunk-*/file-*.parquet dans {dataset_path}")
 
-        _log_job(job, f"{len(data_files)} épisode(s) trouvé(s)", "OK")
+        total_found = len(data_files)
+        _log_job(job, f"{total_found} épisode(s) trouvé(s)", "OK")
+        if offset:
+            data_files = data_files[offset:]
+        if limit:
+            data_files = data_files[:limit]
+        _log_job(job, f"Chargement de {len(data_files)} épisode(s) (offset={offset}, limite={limit})", "INFO")
         _update_job(job, progress=20)
 
         # Essayer de charger les métadonnées d'épisodes depuis meta/episodes/
@@ -1163,9 +1188,10 @@ def _worker_scan_lerobot(job: Job, dataset_path: str):
                 "last_result":    None,
             })
 
-            progress = 20 + int(75 * (i + 1) / len(data_files))
+            progress = 20 + int(75 * (i + 1) / max(len(data_files), 1))
             _update_job(job, progress=progress)
 
+        has_more = bool(limit and (offset + len(result)) < total_found)
         _log_job(job, f"{len(result)} épisodes chargés depuis {root}", "OK")
         _update_job(
             job,
@@ -1179,6 +1205,10 @@ def _worker_scan_lerobot(job: Job, dataset_path: str):
                 "model_exists":  (MODEL_DIR / "model.pt").exists(),
                 "input_format":  "lerobot",
                 "lerobot_info":  info,
+                "total_found":   total_found,
+                "offset":        offset,
+                "limit":         limit,
+                "has_more":      has_more,
             },
         )
     except Exception:

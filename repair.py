@@ -32,8 +32,13 @@ MARKER_PERFECT       = "repair_perfect"
 MARKER_REPAIRED      = "repair_camera_fixed"
 MARKER_UNRECOVERABLE = "repair_unrecoverable"
 
-# Portes qu'un fix caméra peut résoudre
-CAMERA_FIXABLE_GATES = {"camera_coverage", "camera_continuity"}
+# Portes qu'un fix_camera_offset peut résoudre :
+#   camera_coverage  → les frames caméra sont hors fenêtre tracker (offset temporel)
+# camera_continuity → gaps dans le flux caméra, PAS un problème d'offset ; on
+#   tente trim_session mais PAS fix_camera_offset.
+CAMERA_OFFSET_FIXABLE_GATES = {"camera_coverage"}
+TRIM_FIXABLE_GATES          = {"camera_continuity"}
+CAMERA_FIXABLE_GATES        = CAMERA_OFFSET_FIXABLE_GATES | TRIM_FIXABLE_GATES  # compat
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -100,76 +105,93 @@ def process_session(
             "reason":  f"score={score:.0f}% toutes portes OK",
         }
 
-    # Cas 2 : toutes les portes échouées sont des portes caméra → tentative de réparation
     failed_names = {g.name for g in failed}
+
+    # Cas 2 : toutes les portes échouées sont des portes caméra récupérables
     if failed_names and failed_names.issubset(CAMERA_FIXABLE_GATES):
-        fix_report = fix_cam.fix_session(session_path, dry_run=dry_run, force=force)
-        fix_status = fix_report.get("status", "error")
 
-        if fix_status in ("corrected", "ok", "dry-run"):
-            # Revérifier après fix (sauf en dry-run où rien n'a changé sur disque)
-            if not dry_run:
-                report2 = chk.check_session(session_path, model)
-                score2  = report2.score
-                failed2 = [g for g in report2.gates if not g.passed]
+        # Stratégie : fix_camera_offset pour camera_coverage,
+        #             trim_session pour camera_continuity.
+        # Si les deux types de portes échouent, on tente fix_camera_offset en premier
+        # (il peut corriger la coverage ET réduire les gaps indirects), puis trim.
+        fix_reports = {}
 
-                if not failed2 and score2 >= 70.0:
-                    meta = _read_meta(session_path) or meta
-                    meta[MARKER_REPAIRED] = True
-                    meta["repair_score_before"] = score
-                    meta["repair_score_after"]  = score2
-                    _write_meta(session_path, meta)
+        need_offset_fix = bool(failed_names & CAMERA_OFFSET_FIXABLE_GATES)
+        need_trim       = bool(failed_names & TRIM_FIXABLE_GATES)
+
+        if need_offset_fix:
+            fix_rep = fix_cam.fix_session(session_path, dry_run=dry_run, force=force)
+            fix_reports["camera_offset"] = fix_rep
+            if fix_rep.get("status") not in ("corrected", "ok", "dry-run"):
+                # fix_camera_offset a explicitement échoué (pas juste "déjà corrigée")
+                if fix_rep.get("status") == "error":
+                    if not dry_run:
+                        meta[MARKER_UNRECOVERABLE] = True
+                        meta["repair_failure_reason"] = (
+                            f"fix_camera_offset échoué: {fix_rep.get('reason', '')}"
+                        )
+                        _write_meta(session_path, meta)
                     return {
-                        "session":    name,
-                        "action":     "repaired",
-                        "score_before": score,
-                        "score_after":  score2,
-                        "reason":     "fix caméra réussi, session maintenant parfaite",
-                        "fix_report": fix_report,
+                        "session":  name,
+                        "action":   "unrecoverable",
+                        "score":    score,
+                        "reason":   f"fix_camera_offset échoué: {fix_rep.get('reason', '')}",
+                        "fix_reports": fix_reports,
                     }
-                else:
-                    # Fix appliqué mais session encore insuffisante
-                    meta = _read_meta(session_path) or meta
-                    meta[MARKER_UNRECOVERABLE] = True
-                    meta["repair_score"] = score2
-                    meta["repair_failure_reason"] = (
-                        f"après fix caméra : score={score2:.0f}%  "
-                        f"portes échouées={[g.name for g in failed2]}"
-                    )
-                    _write_meta(session_path, meta)
-                    return {
-                        "session":    name,
-                        "action":     "unrecoverable",
-                        "score_before": score,
-                        "score_after":  score2,
-                        "reason":     f"fix caméra appliqué mais score={score2:.0f}% encore insuffisant",
-                        "gates_failed": [g.name for g in failed2],
-                        "fix_report": fix_report,
-                    }
-            else:
-                # dry-run : on simule
-                return {
-                    "session":    name,
-                    "action":     "would_repair",
-                    "score":      score,
-                    "reason":     f"fix caméra applicable (gates: {sorted(failed_names)})",
-                    "fix_report": fix_report,
-                }
-        else:
-            # Fix a échoué (erreur)
-            if not dry_run:
-                meta[MARKER_UNRECOVERABLE] = True
-                meta["repair_failure_reason"] = f"fix_camera échoué: {fix_report.get('reason','')}"
-                _write_meta(session_path, meta)
+
+        if need_trim and not dry_run:
+            trim_rep = fix_cam.trim_session(session_path, dry_run=False, force=force)
+            fix_reports["trim"] = trim_rep
+
+        if dry_run:
             return {
-                "session":  name,
-                "action":   "unrecoverable",
-                "score":    score,
-                "reason":   f"fix caméra échoué: {fix_report.get('reason', '')}",
-                "fix_report": fix_report,
+                "session": name,
+                "action":  "would_repair",
+                "score":   score,
+                "reason":  f"fix(es) applicable(s) pour gates: {sorted(failed_names)}",
+                "fix_reports": fix_reports,
             }
 
-    # Cas 3 : portes bloquantes non-caméra (structure, quaternions, tracker…)
+        # Revérifier après tous les fixes
+        report2  = chk.check_session(session_path, model)
+        score2   = report2.score
+        failed2  = [g for g in report2.gates if not g.passed]
+
+        if not failed2 and score2 >= 70.0:
+            meta = _read_meta(session_path) or meta
+            meta[MARKER_REPAIRED]          = True
+            meta["repair_score_before"]    = score
+            meta["repair_score_after"]     = score2
+            _write_meta(session_path, meta)
+            return {
+                "session":      name,
+                "action":       "repaired",
+                "score_before": score,
+                "score_after":  score2,
+                "reason":       "réparation réussie, session maintenant parfaite",
+                "fix_reports":  fix_reports,
+            }
+        else:
+            # Fixes appliqués mais session encore insuffisante
+            meta = _read_meta(session_path) or meta
+            meta[MARKER_UNRECOVERABLE]    = True
+            meta["repair_score"]          = score2
+            meta["repair_failure_reason"] = (
+                f"après fix(es) : score={score2:.0f}%  "
+                f"portes échouées={[g.name for g in failed2]}"
+            )
+            _write_meta(session_path, meta)
+            return {
+                "session":      name,
+                "action":       "unrecoverable",
+                "score_before": score,
+                "score_after":  score2,
+                "reason":       f"fix(es) appliqué(s) mais score={score2:.0f}% encore insuffisant",
+                "gates_failed": [g.name for g in failed2],
+                "fix_reports":  fix_reports,
+            }
+
+    # Cas 3 : portes bloquantes non-récupérables (structure, quaternions, tracker…)
     if not dry_run:
         meta[MARKER_UNRECOVERABLE] = True
         meta["repair_score"] = score

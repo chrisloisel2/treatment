@@ -358,10 +358,13 @@ def _measure_gripper_visual_lag(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def read_jsonl(path: Path) -> list[dict]:
+    """Parse JSONL robuste : accepte \\r\\n, \\n, et \\r comme séparateurs."""
     with open(path, "rb") as f:
         raw = f.read()
     frames = []
-    for part in raw.split(b"\r\n"):
+    # Normaliser tous les séparateurs de ligne en \n avant de splitter
+    normalized = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    for part in normalized.split(b"\n"):
         part = part.strip()
         if len(part) > 5:
             try:
@@ -458,6 +461,22 @@ def fix_session(session_path: Path, dry_run: bool = False, force: bool = False) 
     if not offsets:
         return {"session": session_name, "status": "error", "reason": "aucun fichier .jsonl trouvé"}
 
+    # Calculer l'offset sur la médiane des 3 premières frames valides (robuste aux frames corrompues)
+    robust_offsets: dict[str, float] = {}
+    for cam, frames in cam_frames.items():
+        head_times = []
+        for fr in frames[:5]:
+            ct = fr.get("capture_time")
+            if ct is not None:
+                head_times.append(float(ct))
+            if len(head_times) == 3:
+                break
+        if head_times:
+            robust_offsets[cam] = float(sorted(head_times)[len(head_times) // 2]) - trk_t0
+        else:
+            robust_offsets[cam] = offsets[cam]
+    offsets = robust_offsets
+
     max_offset = max(abs(v) for v in offsets.values())
     if max_offset < OFFSET_THRESHOLD_MS and not force:
         return {
@@ -482,26 +501,47 @@ def fix_session(session_path: Path, dry_run: bool = False, force: bool = False) 
         if lag_result["valid"]:
             gripper_lag_results[side] = lag_result
 
-    # Évaluer la cohérence entre offset tracker et lag gripper visuel
+    # Évaluer la cohérence entre offset tracker et lag gripper visuel.
+    # Si le pic xcorr est fiable (> 0.3) et que le lag résiduel est trop grand,
+    # la correction tracker serait incohérente avec le signal gripper — on bloque.
     gripper_validation = {}
+    gripper_incoherent_sides = []
     for side, lag_r in gripper_lag_results.items():
         lag_ms = lag_r["lag_ms"]
-        cam_side = side  # "left" ou "right" correspond à la caméra du même nom
-        tracker_offset = offsets.get(cam_side, 0.0)
 
         # Le lag xcorr mesure combien la vidéo est EN AVANCE sur le capteur.
         # Après correction tracker (offset_ms soustrait), le résidu gripper
         # devrait être proche de zéro.
         residual_ms = lag_ms  # Si tracker_offset bien appliqué, lag_ms ≈ 0
+        xcorr_reliable = lag_r["xcorr_peak"] >= 0.3
 
         coherent = abs(residual_ms) < GRIPPER_LAG_MAX_MS
+        if xcorr_reliable and not coherent:
+            gripper_incoherent_sides.append(
+                f"{side} lag={lag_ms:+.0f}ms xcorr={lag_r['xcorr_peak']:.2f}"
+            )
+
         gripper_validation[side] = {
-            "lag_ms":       round(lag_ms, 1),
-            "xcorr_peak":   lag_r["xcorr_peak"],
-            "n_frames":     lag_r["n_frames"],
+            "lag_ms":        round(lag_ms, 1),
+            "xcorr_peak":    lag_r["xcorr_peak"],
+            "n_frames":      lag_r["n_frames"],
             "signal_std_mm": lag_r["signal_std_mm"],
-            "coherent":     coherent,
-            "warning":      (abs(residual_ms) >= GRIPPER_WARN_MS),
+            "coherent":      coherent,
+            "xcorr_reliable": xcorr_reliable,
+            "warning":       (abs(residual_ms) >= GRIPPER_WARN_MS),
+        }
+
+    # Si au moins un côté est incohérent avec un xcorr fiable, on bloque la correction
+    if gripper_incoherent_sides and not force:
+        return {
+            "session": session_name,
+            "status":  "error",
+            "reason":  (
+                f"validation gripper échouée : lag résiduel incohérent avec la "
+                f"correction tracker — {'; '.join(gripper_incoherent_sides)}"
+            ),
+            "offsets_ms":             offsets,
+            "gripper_lag_validation": gripper_validation,
         }
 
     report = {
@@ -526,10 +566,12 @@ def fix_session(session_path: Path, dry_run: bool = False, force: bool = False) 
             for frame in frames
         ]
 
-        # 2. Troncature : ne garder que les frames dans la fenêtre tracker
+        # 2. Troncature : ne garder que les frames strictement à l'intérieur de la
+        #    fenêtre tracker. Borne supérieure exclusive (< trk_t1) pour éviter
+        #    de conserver une frame sans correspondance proprioceptive.
         truncated = [
             frame for frame in recaled
-            if trk_t0 <= frame["capture_time"] <= trk_t1
+            if trk_t0 <= frame["capture_time"] < trk_t1
         ]
 
         n_removed = len(recaled) - len(truncated)
@@ -572,11 +614,20 @@ def fix_session(session_path: Path, dry_run: bool = False, force: bool = False) 
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _read_csv_rows(path: Path) -> tuple[list[str], list[dict]]:
-    """Lit un CSV, retourne (fieldnames, rows)."""
+    """Lit un CSV, retourne (fieldnames, rows).
+
+    Note : on capture fieldnames PENDANT la lecture (avant l'épuisement
+    du reader) pour éviter le cas où rows est vide et reader.fieldnames
+    est None après itération.
+    """
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
-        return list(reader.fieldnames or []) if not rows else list(rows[0].keys()), rows
+        fieldnames = list(reader.fieldnames or [])
+    # Si fieldnames vide mais rows non-vide, reconstruire depuis la première ligne
+    if not fieldnames and rows:
+        fieldnames = list(rows[0].keys())
+    return fieldnames, rows
 
 
 def _write_csv_rows(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
@@ -679,17 +730,38 @@ def trim_session(session_path: Path, dry_run: bool = False, force: bool = False)
     if dry_run:
         return report
 
+    def _parse_ns_safe(val: str) -> float | None:
+        """Parse un timestamp_ns en float ms. Retourne None si invalide."""
+        v = (val or "").strip()
+        if not v:
+            return None
+        try:
+            return int(v) / 1_000_000
+        except (ValueError, OverflowError):
+            return None
+
     # ── Tracker CSV ──────────────────────────────────────────────────────────
     if trk_path.exists() and trims.get("tracker", 0) > 0:
         fieldnames, rows = _read_csv_rows(trk_path)
         before = len(rows)
-        rows = [r for r in rows
-                if int(r.get("timestamp_ns", "0") or "0") / 1_000_000 >= sync_t0]
-        kept = len(rows)
+        kept_rows = []
+        n_invalid = 0
+        for r in rows:
+            t = _parse_ns_safe(r.get("timestamp_ns", ""))
+            if t is None:
+                n_invalid += 1
+                continue
+            if t >= sync_t0:
+                kept_rows.append(r)
+        if n_invalid:
+            report.setdefault("warnings", []).append(
+                f"tracker: {n_invalid} lignes avec timestamp_ns invalide ignorées"
+            )
+        kept = len(kept_rows)
         bak = trk_path.with_suffix(".csv.bak")
         if not bak.exists():
             shutil.copy2(trk_path, bak)
-        _write_csv_rows(trk_path, fieldnames, rows)
+        _write_csv_rows(trk_path, fieldnames, kept_rows)
         report["streams"]["tracker"] = {"rows_before": before, "rows_kept": kept,
                                          "rows_removed": before - kept,
                                          "trim_ms": round(trims["tracker"], 1)}
@@ -702,13 +774,24 @@ def trim_session(session_path: Path, dry_run: bool = False, force: bool = False)
             continue
         fieldnames, rows = _read_csv_rows(grp_path)
         before = len(rows)
-        rows = [r for r in rows
-                if int(r.get("timestamp_ns", "0") or "0") / 1_000_000 >= sync_t0]
-        kept = len(rows)
+        kept_rows = []
+        n_invalid = 0
+        for r in rows:
+            t = _parse_ns_safe(r.get("timestamp_ns", ""))
+            if t is None:
+                n_invalid += 1
+                continue
+            if t >= sync_t0:
+                kept_rows.append(r)
+        if n_invalid:
+            report.setdefault("warnings", []).append(
+                f"{key}: {n_invalid} lignes avec timestamp_ns invalide ignorées"
+            )
+        kept = len(kept_rows)
         bak = grp_path.with_suffix(".csv.bak")
         if not bak.exists():
             shutil.copy2(grp_path, bak)
-        _write_csv_rows(grp_path, fieldnames, rows)
+        _write_csv_rows(grp_path, fieldnames, kept_rows)
         report["streams"][key] = {"rows_before": before, "rows_kept": kept,
                                    "rows_removed": before - kept,
                                    "trim_ms": round(trims[key], 1)}

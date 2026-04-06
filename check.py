@@ -246,8 +246,14 @@ def heuristic_alignment_score(a: np.ndarray, b: np.ndarray) -> float:
     ecorr = safe_corrcoef(ea, eb)
     pa, _ = find_peaks(a1, height=float(np.percentile(a1, 75)))
     pb, _ = find_peaks(b1, height=float(np.percentile(b1, 75)))
-    match = (sum(1 for p in pa if np.any(np.abs(pb - p) <= 4)) / max(len(pa), 1)
-             if len(pa) > 0 and len(pb) > 0 else 0.0)
+    # Symétrique : moyenne des rappels a→b et b→a pour éviter le biais
+    # quand un signal a peu de pics et l'autre en a beaucoup.
+    if len(pa) > 0 and len(pb) > 0:
+        recall_ab = sum(1 for p in pa if np.any(np.abs(pb - p) <= 4)) / len(pa)
+        recall_ba = sum(1 for p in pb if np.any(np.abs(pa - p) <= 4)) / len(pb)
+        match = (recall_ab + recall_ba) / 2.0
+    else:
+        match = 0.0
     fa = np.abs(np.fft.rfft(a1))
     fb = np.abs(np.fft.rfft(b1))
     scorr = safe_corrcoef(fa, fb)
@@ -332,7 +338,14 @@ def load_tracker_flux(session_dir: Path) -> Optional[Flux]:
 
 
 def load_camera_flux(session_dir: Path, cam: str) -> Optional[Flux]:
-    """Construit un signal caméra à partir des timestamps JSONL (densité de frames)."""
+    """Construit un signal caméra à partir des timestamps JSONL.
+
+    Signal = déviation normalisée de l'IFI (inter-frame interval) par rapport
+    à la médiane. À framerate constant l'IFI est quasi-constant et le signal
+    est dominé par le bruit ; on le lisse avec une fenêtre glissante pour
+    extraire les variations de densité de frames (micro-pauses, accélérations)
+    qui se corrèlent avec les mouvements du tracker.
+    """
     jsonl_path = session_dir / "videos" / f"{cam}.jsonl"
     times = _load_jsonl_times(jsonl_path)
     if times is None or len(times) < 20:
@@ -340,8 +353,22 @@ def load_camera_flux(session_dir: Path, cam: str) -> Optional[Flux]:
 
     t_start = float(times[0])
     t_ms_rel = (times - t_start).astype(np.float32)
-    ifi = np.diff(times, prepend=times[0]).astype(np.float32)
-    sig = zscore(robust_clip(np.abs(ifi - np.median(ifi))))
+
+    # IFI centré sur la médiane, clippé et lissé pour réduire le bruit plancher
+    ifi = np.diff(times, prepend=times[0]).astype(np.float64)
+    median_ifi = float(np.median(ifi))
+    if median_ifi < 1e-3:
+        # Framerate pathologique (timestamps identiques) — signal inutilisable
+        return None
+    ifi_dev = np.abs(ifi - median_ifi)
+    # Fenêtre glissante sur ~200ms pour capturer les variations de densité
+    win = max(3, int(200.0 / median_ifi))
+    if win < len(ifi_dev):
+        kernel = np.ones(win, dtype=np.float64) / win
+        ifi_smooth = np.convolve(ifi_dev, kernel, mode="same")
+    else:
+        ifi_smooth = ifi_dev
+    sig = zscore(robust_clip(ifi_smooth.astype(np.float32)))
 
     valid = np.isfinite(t_ms_rel) & np.isfinite(sig)
     t_ms_rel, sig = t_ms_rel[valid], sig[valid]
@@ -1041,9 +1068,13 @@ def _gate_camera_coverage(session_dir: Path, report: SessionReport) -> bool:
     worst_cam = ""
 
     def _cam_coverage(cam):
-        times = _load_jsonl_times(session_dir / "videos" / f"{cam}.jsonl")
+        jsonl_path = session_dir / "videos" / f"{cam}.jsonl"
+        if not jsonl_path.exists() or jsonl_path.stat().st_size == 0:
+            # Fichier absent — coverage = 0, pas 1.0 (1.0 masquerait le problème)
+            return cam, 0.0
+        times = _load_jsonl_times(jsonl_path)
         if times is None or len(times) < 2:
-            return cam, 1.0
+            return cam, 0.0
         cam_t0, cam_t1 = float(times[0]), float(times[-1])
         overlap_ms = max(0.0, min(cam_t1, trk_t1_ms) - max(cam_t0, trk_t0_ms))
         return cam, overlap_ms / (trk_dur_ms + 1e-6)
@@ -1089,8 +1120,9 @@ def _compute_penalties(session_dir: Path, meta: Optional[dict]) -> float:
                     offset = abs(float(times[0]) - trigger_ms)
                     max_offset = max(max_offset, offset)
             if max_offset >= OFFSET_THRESHOLD_MS:
-                # Offset significatif : pénalité proportionnelle, max -20%
-                penalty *= max(0.80, 1.0 - (max_offset - OFFSET_THRESHOLD_MS) / 5000.0)
+                # Offset significatif : pénalité proportionnelle sans plancher arbitraire.
+                # 250ms → pénalité nulle, 5250ms → -50%, 10250ms → -100%
+                penalty *= max(0.0, 1.0 - (max_offset - OFFSET_THRESHOLD_MS) / 10000.0)
 
     # Pénalité gaps tracker (quelques gaps mais sous le seuil bloquant)
     if _PANDAS:

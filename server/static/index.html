@@ -6557,107 +6557,200 @@
       <div style="font-size:.75rem;color:var(--green)">✓ Stocké: ${ps.nas_path}</div>`;
 			}
 
-			// ── Bloc vérifications metadata ──────────────────────────────────
-			const verif = sess.meta?.verification;
-			const labelVerif = sess.meta?.camera_label_verification;
-			const metaFull = sess.meta || {};
-			const checkScore = sess.meta?.check_score ?? null;
-			const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated || checkScore != null;
-			if (hasAnyVerif) {
-				html += `<div class="div" style="margin:8px 0"></div>
-      <div style="font-size:.78rem;color:var(--text3);margin-bottom:6px">⚙ Vérifications</div>`;
+			// ── Bloc vérifications ───────────────────────────────────────────
+			{
+				const verif      = sess.meta?.verification;
+				const labelVerif = sess.meta?.camera_label_verification;
+				const metaFull   = sess.meta || {};
+				const checkScore = sess.meta?.check_score ?? null;
+				const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated || checkScore != null;
 
-				// — check.py score —
-				if (checkScore != null) {
-					const csColor = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
-					const csIcon = checkScore >= 70 ? '✓' : '✗';
-					const csIa = sess.meta?.check_ia_score != null ? `  ia=${sess.meta.check_ia_score.toFixed(3)}` : '';
-					const csBloc = sess.meta?.check_blocking ? `  <span style="color:var(--red)">✗ ${esc(sess.meta.check_blocking)}</span>` : '';
-					html += `<div style="font-size:.75rem;margin-bottom:3px">
-        <span style="color:var(--text3)">check.py</span>
-        <span style="color:${csColor};margin-left:6px">${csIcon} ${Math.round(checkScore)}%${csIa}</span>${csBloc}
-      </div>`;
-				}
+				if (hasAnyVerif) {
+					html += `<div class="div" style="margin:12px 0 10px"></div>
+<div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Qualité de la session</div>`;
 
-				// — check_sync (legacy) —
-				const syncDelay = verif?.stats?.video_max_delay_ms;
-				if (syncDelay != null) {
-					const syncOk = syncDelay <= 500;
-					const delays = verif?.stats?.camera_delays_ms || {};
-					const delayStr = Object.entries(delays).map(([c, v]) => `${c}:${v}ms`).join(' ');
-					html += `<div style="font-size:.75rem;margin-bottom:3px">
-        <span style="color:var(--text3)">check_sync</span>
-        <span style="color:${syncOk ? 'var(--green)' : 'var(--red)'};margin-left:6px">${syncOk ? '✓' : '✗'} délai max ${syncDelay}ms${delayStr ? ' (' + esc(delayStr) + ')' : ''}</span>
-      </div>`;
-				}
+					// ── Score global ─────────────────────────────────────────────
+					if (checkScore != null) {
+						const grade    = metaFull.check_grade || '';
+						const verdict  = metaFull.check_verdict || '';
+						const blocking = metaFull.check_blocking || '';
+						const iaScore  = metaFull.check_ia_score;
 
-				// — verify (trackers + désync) —
-				if (verif) {
-					const hasIss = verif.has_issues;
-					const color = hasIss ? 'var(--red)' : 'var(--green)';
-					const icon = hasIss ? '✗' : '✓';
-					html += `<div style="font-size:.75rem;margin-bottom:3px">
-        <span style="color:var(--text3)">verify</span>
-        <span style="color:${color};margin-left:6px">${icon} ${hasIss ? verif.issues.length + ' problème(s)' : 'OK'}${verif.warnings?.length ? ` <span style="color:var(--orange)">+${verif.warnings.length} avert.</span>` : ''}</span>
-      </div>`;
-					if (hasIss) {
-						verif.issues.forEach(iss => {
-							html += `<div style="font-size:.71rem;color:var(--red);padding:2px 0 2px 8px;border-left:2px solid var(--red)44;margin-bottom:2px">${esc(iss)}</div>`;
-						});
-					}
-					if (verif.warnings?.length) {
-						verif.warnings.forEach(w => {
-							html += `<div style="font-size:.71rem;color:var(--orange);padding:2px 0 2px 8px;border-left:2px solid var(--orange)44;margin-bottom:2px">${esc(w)}</div>`;
-						});
-					}
-					// Stats tracker + vidéo
-					const stats = verif.stats || {};
-					const statParts = [];
-					if (stats.tracker_rows) statParts.push(`${stats.tracker_rows} lignes`);
-					if (stats.tracker_dt_ms) statParts.push(`dt=${stats.tracker_dt_ms}ms`);
-					if (stats.tracker_gaps_200ms) statParts.push(`gaps=${stats.tracker_gaps_200ms}`);
-					if (stats.tracker_lr_dist_mean_m != null) statParts.push(`L-R=${stats.tracker_lr_dist_mean_m}m`);
-					if (stats.video_max_delay_ms != null) statParts.push(`vid_delay=${stats.video_max_delay_ms}ms`);
-					if (statParts.length) html += `<div style="font-size:.7rem;color:var(--text3);margin:3px 0 4px 2px">${statParts.join(' · ')}</div>`;
-				}
+						const scoreColor = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
+						const gradeBg    = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
 
-				// — verify_labels —
-				if (labelVerif) {
-					const lblOk = labelVerif.global_ok;
-					const lblConf = labelVerif.confidence != null ? ` conf ${(labelVerif.confidence * 100).toFixed(0)}%` : '';
-					html += `<div style="font-size:.75rem;margin-bottom:3px">
-        <span style="color:var(--text3)">verify_labels</span>
-        <span style="color:${lblOk ? 'var(--green)' : 'var(--red)'};margin-left:6px">${lblOk ? '✓' : '✗'}${esc(lblConf)}</span>
-      </div>`;
-					if (labelVerif.verdicts?.length) {
-						labelVerif.verdicts.forEach(v => {
-							const ok = v.label_correct ?? v.ok;
-							const declared = v.declared_label ?? v.label;
-							const predicted = v.predicted_label ?? v.predicted;
-							html += `<div style="font-size:.71rem;color:var(--text3);padding:1px 0 1px 8px;border-left:2px solid ${ok ? 'var(--green)' : 'var(--red)'}44;margin-bottom:2px">
-          ${esc(declared)} → ${esc(predicted)} <span style="color:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? '✓' : '✗'}</span>
-        </div>`;
-						});
-					}
-					if (labelVerif.summary) html += `<div style="font-size:.7rem;color:var(--text3);margin:2px 0 4px 2px">${esc(labelVerif.summary)}</div>`;
-				}
-
-				// — validate (ia_sync) —
-				if (metaFull.ia_sync_validated) {
-					const nRel = metaFull.ia_sync_n_reliable;
-					const avgScore = metaFull.ia_sync_avg_score;
-					const shifts = metaFull.ia_sync_shifts_ms || {};
-					html += `<div style="font-size:.75rem;margin-bottom:3px">
-        <span style="color:var(--text3)">validate (ia_sync)</span>
-        <span style="color:var(--green);margin-left:6px">✓${nRel != null ? ` ${nRel} paires` : ''}${avgScore != null ? ` score=${avgScore}` : ''}</span>
-      </div>`;
-					if (Object.keys(shifts).length) {
-						for (const [k, v] of Object.entries(shifts)) {
-							const col = Math.abs(v) < 50 ? 'var(--green)' : Math.abs(v) < 200 ? 'var(--orange)' : 'var(--red)';
-							html += `<div style="font-size:.71rem;color:var(--text3);padding:1px 0 1px 8px;border-left:2px solid var(--border)44;margin-bottom:2px;display:flex;justify-content:space-between">
-          <span>${esc(k)}</span><span style="color:${col};font-family:monospace">${(+v).toFixed(1)}ms</span>
-        </div>`;
+						// Explication humaine du score
+						let scoreExpl = '';
+						if (blocking) {
+							scoreExpl = blocking;
+						} else if (checkScore >= 70) {
+							scoreExpl = 'Synchronisation tracker / caméras correcte.';
+						} else if (checkScore >= 40) {
+							scoreExpl = 'Synchronisation partielle — à vérifier avant export.';
+						} else {
+							scoreExpl = 'Synchronisation insuffisante — session probablement inutilisable.';
 						}
+
+						html += `
+<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:${blocking || iaScore != null ? 8 : 0}px">
+    <div style="background:${gradeBg};color:#fff;font-size:1.3rem;font-weight:900;width:44px;height:44px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;letter-spacing:-.02em">${grade || (checkScore >= 70 ? '✓' : '✗')}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:1.05rem;font-weight:800;color:${scoreColor};line-height:1">${Math.round(checkScore)}<span style="font-size:.65rem;font-weight:500;color:var(--text3);margin-left:2px">/ 100</span></div>
+      <div style="font-size:.78rem;color:var(--text2);margin-top:3px;line-height:1.3">${esc(scoreExpl)}</div>
+    </div>
+  </div>
+  ${blocking ? `<div style="display:flex;align-items:flex-start;gap:7px;background:var(--red)15;border:1px solid var(--red)33;border-radius:5px;padding:7px 10px">
+    <span style="color:var(--red);font-size:.9rem;flex-shrink:0;margin-top:1px">⛔</span>
+    <div>
+      <div style="font-size:.76rem;font-weight:700;color:var(--red);margin-bottom:2px">Bloquant</div>
+      <div style="font-size:.78rem;color:var(--text2);line-height:1.4">${esc(blocking)}</div>
+    </div>
+  </div>` : ''}
+  ${iaScore != null && !blocking ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)44">
+    <span style="font-size:.73rem;color:var(--text3)">Score IA brut</span>
+    <span style="font-size:.78rem;font-weight:600;color:var(--text2);font-family:monospace">${iaScore.toFixed(3)}</span>
+  </div>` : ''}
+</div>`;
+					}
+
+					// ── Problèmes verify (trackers + désync vidéo) ───────────────
+					if (verif) {
+						const issues   = verif.issues || [];
+						const warnings = verif.warnings || [];
+						const stats    = verif.stats || {};
+
+						// Étiquettes humaines pour les types de problèmes connus
+						const issueLabel = (txt) => {
+							if (/gap|trou|manquant/i.test(txt))   return ['Trous dans les données tracker', 'Le tracker a perdu le signal pendant l\'enregistrement.'];
+							if (/vitesse|mouvement|statique/i.test(txt)) return ['Robot immobile ou trop lent', 'Pas assez de mouvement pour valider la synchronisation.'];
+							if (/désync|décalage|vidéo/i.test(txt)) return ['Désynchronisation vidéo', 'Les flux vidéo ne sont pas alignés avec les capteurs.'];
+							if (/inver|swap|gauche|droite/i.test(txt)) return ['Trackers inversés', 'Les trackers gauche et droit semblent être échangés.'];
+							if (/couverture|overlap|coverage/i.test(txt)) return ['Couverture caméra insuffisante', 'Les caméras n\'ont pas enregistré sur toute la durée du tracker.'];
+							if (/quaternion|nan|inf|corrupt/i.test(txt)) return ['Données corrompues', 'Des valeurs invalides ont été détectées dans les quaternions.'];
+							return [null, txt];
+						};
+
+						if (issues.length) {
+							html += `<div style="margin-bottom:8px">
+  <div style="font-size:.73rem;font-weight:700;color:var(--red);margin-bottom:6px;display:flex;align-items:center;gap:5px">
+    <span style="background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:900;flex-shrink:0">${issues.length}</span>
+    Problème${issues.length > 1 ? 's' : ''} détecté${issues.length > 1 ? 's' : ''}
+  </div>`;
+							issues.forEach(iss => {
+								const [title, detail] = issueLabel(iss);
+								html += `
+  <div style="background:var(--red)0d;border:1px solid var(--red)33;border-radius:6px;padding:9px 11px;margin-bottom:6px">
+    <div style="font-size:.8rem;font-weight:700;color:var(--red);margin-bottom:3px">${title ? esc(title) : '⚠ Problème'}</div>
+    <div style="font-size:.78rem;color:var(--text2);line-height:1.45">${esc(detail)}</div>
+  </div>`;
+							});
+							html += `</div>`;
+						}
+
+						if (warnings.length) {
+							html += `<div style="margin-bottom:8px">
+  <div style="font-size:.73rem;font-weight:700;color:var(--orange);margin-bottom:6px">Avertissements (${warnings.length})</div>`;
+							warnings.forEach(w => {
+								const [title, detail] = issueLabel(w);
+								html += `
+  <div style="background:var(--orange)0d;border:1px solid var(--orange)33;border-radius:6px;padding:9px 11px;margin-bottom:6px">
+    <div style="font-size:.8rem;font-weight:700;color:var(--orange);margin-bottom:3px">${title ? esc(title) : '⚠ Avertissement'}</div>
+    <div style="font-size:.78rem;color:var(--text2);line-height:1.45">${esc(detail)}</div>
+  </div>`;
+							});
+							html += `</div>`;
+						}
+
+						// Stats en grille compacte
+						const statRows = [];
+						if (stats.tracker_rows)            statRows.push(['Lignes tracker',      stats.tracker_rows.toLocaleString()]);
+						if (stats.tracker_dt_ms)           statRows.push(['Intervalle tracker',  `${stats.tracker_dt_ms} ms`]);
+						if (stats.tracker_gaps_200ms)      statRows.push(['Trous > 200 ms',      stats.tracker_gaps_200ms, stats.tracker_gaps_200ms > 0 ? 'var(--orange)' : null]);
+						if (stats.tracker_lr_dist_mean_m != null) statRows.push(['Distance L–R (moy.)', `${stats.tracker_lr_dist_mean_m} m`]);
+						if (stats.video_max_delay_ms != null) statRows.push(['Désync vidéo max', `${stats.video_max_delay_ms} ms`, stats.video_max_delay_ms > 500 ? 'var(--red)' : stats.video_max_delay_ms > 200 ? 'var(--orange)' : null]);
+
+						if (statRows.length) {
+							html += `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:8px">`;
+							statRows.forEach(([label, val, col], i) => {
+								html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 11px${i < statRows.length - 1 ? ';border-bottom:1px solid var(--border)33' : ''}">
+  <span style="font-size:.78rem;color:var(--text3)">${label}</span>
+  <span style="font-size:.8rem;font-weight:600;font-family:monospace;color:${col || 'var(--text)'}">${val}</span>
+</div>`;
+							});
+							html += `</div>`;
+						}
+
+						// Désync vidéo (check_sync legacy)
+						const syncDelay = stats.video_max_delay_ms ?? verif?.stats?.video_max_delay_ms;
+						if (syncDelay != null && !issues.length && !warnings.length) {
+							const syncOk = syncDelay <= 500;
+							html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+  <span style="font-size:1rem">${syncOk ? '✅' : '🔴'}</span>
+  <div>
+    <div style="font-size:.8rem;font-weight:600;color:${syncOk ? 'var(--green)' : 'var(--red)'}">${syncOk ? 'Synchronisation vidéo OK' : 'Désynchronisation vidéo'}</div>
+    <div style="font-size:.75rem;color:var(--text3);margin-top:1px">Délai max entre flux : ${syncDelay} ms</div>
+  </div>
+</div>`;
+						}
+					}
+
+					// ── Labels caméra ────────────────────────────────────────────
+					if (labelVerif) {
+						const lblOk   = labelVerif.global_ok;
+						const conf    = labelVerif.confidence;
+						const verdicts = labelVerif.verdicts || [];
+						const nOk     = verdicts.filter(v => v.label_correct ?? v.ok).length;
+						const nFail   = verdicts.length - nOk;
+
+						html += `<div style="background:var(--bg3);border:1px solid ${lblOk ? 'var(--green)' : 'var(--red)'}44;border-radius:6px;padding:10px 12px;margin-bottom:8px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${verdicts.length ? 8 : 0}px">
+    <div>
+      <div style="font-size:.82rem;font-weight:700;color:${lblOk ? 'var(--green)' : 'var(--red)'}">${lblOk ? '✓ Labels caméra corrects' : '✗ Labels caméra incorrects'}</div>
+      ${conf != null ? `<div style="font-size:.74rem;color:var(--text3);margin-top:2px">Confiance : ${(conf * 100).toFixed(0)} %</div>` : ''}
+    </div>
+    <div style="font-size:.75rem;color:var(--text3)">${nOk}/${verdicts.length}</div>
+  </div>`;
+						if (verdicts.length) {
+							verdicts.forEach(v => {
+								const ok        = v.label_correct ?? v.ok;
+								const declared  = v.declared_label ?? v.label;
+								const predicted = v.predicted_label ?? v.predicted;
+								html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid var(--border)33;font-size:.78rem">
+  <span style="color:var(--text2)">${esc(declared)}</span>
+  <span style="color:var(--text3);font-size:.7rem">→ prédit :</span>
+  <span style="color:${ok ? 'var(--green)' : 'var(--red)'}; font-weight:600">${esc(predicted)} ${ok ? '✓' : '✗'}</span>
+</div>`;
+							});
+						}
+						if (labelVerif.summary) html += `<div style="font-size:.74rem;color:var(--text3);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)33">${esc(labelVerif.summary)}</div>`;
+						html += `</div>`;
+					}
+
+					// ── Validation IA sync ───────────────────────────────────────
+					if (metaFull.ia_sync_validated) {
+						const nRel    = metaFull.ia_sync_n_reliable;
+						const avgSc   = metaFull.ia_sync_avg_score;
+						const shifts  = metaFull.ia_sync_shifts_ms || {};
+						const nShifts = Object.keys(shifts).length;
+
+						html += `<div style="background:var(--bg3);border:1px solid var(--green)44;border-radius:6px;padding:10px 12px;margin-bottom:8px">
+  <div style="font-size:.82rem;font-weight:700;color:var(--green);margin-bottom:${nShifts ? 8 : 0}px">
+    ✓ Validation IA synchronisation
+    ${nRel != null ? `<span style="font-size:.73rem;font-weight:400;color:var(--text3);margin-left:6px">${nRel} paires fiables${avgSc != null ? `  ·  score ${avgSc}` : ''}</span>` : ''}
+  </div>`;
+						if (nShifts) {
+							html += `<div style="font-size:.73rem;color:var(--text3);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Décalages appliqués</div>`;
+							for (const [k, v] of Object.entries(shifts)) {
+								const col = Math.abs(v) < 50 ? 'var(--green)' : Math.abs(v) < 200 ? 'var(--orange)' : 'var(--red)';
+								const bar_w = Math.min(100, Math.abs(v) / 5);
+								html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid var(--border)33">
+  <span style="font-size:.78rem;color:var(--text2)">${esc(k)}</span>
+  <span style="font-size:.8rem;font-weight:700;color:${col};font-family:monospace">${v > 0 ? '+' : ''}${(+v).toFixed(1)} ms</span>
+</div>`;
+							}
+						}
+						html += `</div>`;
 					}
 				}
 			}

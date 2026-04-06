@@ -6374,11 +6374,13 @@
 			ge('btn-drawer-verify').style.display = isLR ? 'none' : '';
 			renderDrawerContent(sess);
 			ge('sess-drawer').classList.add('open');
+			refreshExportBtn();
 		}
 
 		function closeDrawer() {
 			ge('sess-drawer').classList.remove('open');
 			S.drawerSess = null;
+			refreshExportBtn();
 		}
 
 		function renderDrawerContent(sess) {
@@ -9651,8 +9653,9 @@
 		// ── Boutons export/reject : activer/désactiver selon sélection ──────
 		function refreshExportBtn() {
 			const n = S.selected.size;
+			const hasAction = n > 0 || !!S.drawerSess;
 			const btn = ge('btn-export-big');
-			if (btn) btn.disabled = n === 0;
+			if (btn) btn.disabled = !hasAction;
 			const rbtn = ge('btn-reject-big');
 			if (rbtn) rbtn.disabled = n === 0;
 			const vebtn = ge('btn-verify-export');
@@ -10057,8 +10060,17 @@
 
 		// ── Modal export ────────────────────────────────────────────────────
 		function openExportModal() {
-			const sessions = [...S.selected];
-			if (!sessions.length) return;
+			let sessions;
+			if (_exportOverrideSessions !== null) {
+				sessions = [..._exportOverrideSessions];
+			} else if (S.selected.size > 0) {
+				sessions = [...S.selected];
+			} else if (S.drawerSess) {
+				_exportOverrideSessions = [S.drawerSess.path];
+				sessions = [S.drawerSess.path];
+			} else {
+				return;
+			}
 
 			const cfg = getExportCfg();
 
@@ -11727,6 +11739,100 @@
 			// Rafraîchir la liste après le déplacement
 			s3bLoad(S3B.prefix);
 		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Raccourcis clavier globaux
+		// ══════════════════════════════════════════════════════════════════
+
+		// Retourne la liste ordonnée des sessions visibles dans le viewer TV
+		function _tvVisibleSessions() {
+			const out = [];
+			const groups = new Map();
+			S.sessions.forEach(s => {
+				const key = _sessPostKey(s);
+				if (!groups.has(key)) groups.set(key, []);
+				groups.get(key).push(s);
+			});
+			groups.forEach(sessions => {
+				sessions.forEach(s => {
+					if (TV._gradeFilter && _sessGrade(s) !== TV._gradeFilter) return;
+					out.push(s);
+				});
+			});
+			return out;
+		}
+
+		// Navigation entre sessions (delta = +1 ou -1)
+		function tvNavigateSession(delta) {
+			const list = _tvVisibleSessions();
+			if (!list.length) return;
+			const idx = list.findIndex(s => s.path === TV.sessPath);
+			let next;
+			if (idx === -1) {
+				next = delta > 0 ? list[0] : list[list.length - 1];
+			} else {
+				const ni = idx + delta;
+				if (ni < 0 || ni >= list.length) return;
+				next = list[ni];
+			}
+			tvSelectSession(next.path);
+			// Scroll l'item dans la liste latérale
+			setTimeout(() => {
+				const el = [...document.querySelectorAll('#tv-sess-list .tv-sess-item')]
+					.find(el => el.title === next.path);
+				el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+			}, 50);
+		}
+
+		document.addEventListener('keydown', e => {
+			// Ignorer si focus sur champ de saisie
+			const tag = document.activeElement?.tagName;
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+			if (document.activeElement?.isContentEditable) return;
+
+			const viewerActive = ge('page-viewer')?.classList.contains('active');
+			const exportModalOpen = ge('export-modal-backdrop')?.classList.contains('open');
+
+			// Entrée quand modal export ouvert → confirmer l'export
+			if (e.key === 'Enter' && exportModalOpen) {
+				e.preventDefault();
+				doExport();
+				return;
+			}
+
+			// Shift+Entrée → ouvrir le modal export
+			if (e.key === 'Enter' && e.shiftKey) {
+				e.preventDefault();
+				openExportModal();
+				return;
+			}
+
+			if (!viewerActive) return;
+
+			// Shift+↑ / Shift+↓ → navigation entre sessions
+			if (e.shiftKey && e.key === 'ArrowUp') {
+				e.preventDefault();
+				tvNavigateSession(-1);
+				return;
+			}
+			if (e.shiftKey && e.key === 'ArrowDown') {
+				e.preventDefault();
+				tvNavigateSession(+1);
+				return;
+			}
+
+			// ← / → → avancer/reculer dans la session (sans Shift)
+			if (!e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+				if (!TV.sessPath || !TV.duration_ms) return;
+				e.preventDefault();
+				// Ctrl → 1 s, sinon ~1 frame (33 ms)
+				const step = e.ctrlKey || e.metaKey ? 1000 : 33;
+				const dir = e.key === 'ArrowRight' ? 1 : -1;
+				const t = Math.max(0, Math.min(TV.duration_ms, TV.t_ms + dir * step));
+				tvRenderAt(t);
+				return;
+			}
+		});
 	</script>
 	<script src="/static/tv3d.js"></script>
 	<script src="/static/annotator.js"></script>

@@ -310,106 +310,155 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
         _log_job(job, f"Scan de {scan_dir}…{_cap}")
 
         import utils.sync as ia
-        # Découverte SUPERFICIELLE (max 3 niveaux) via os.scandir.
-        # Structure attendue :
-        #   scan_dir/session/                  ← niveau 1
-        #   scan_dir/action/session/           ← niveau 2
-        #   scan_dir/scenario/action/session/  ← niveau 3
-        # Une session est reconnue si elle contient metadata.json OU un dossier videos/.
-        # On NE descend PAS à l'intérieur d'une session détectée (évite de traverser
-        # les vidéos mp4, jsonl, etc. qui peuvent peser plusieurs To).
 
-        def _is_session_dir(p: Path) -> bool:
-            try:
-                names = {e.name for e in os.scandir(p) if not e.name.startswith(".")}
-            except PermissionError:
-                return False
-            return "metadata.json" in names or "videos" in names
+        # ── Phase 1 : Découverte parallèle superficielle ──────────────────────
+        # On explore max 3 niveaux de dossiers avec os.scandir (jamais rglob).
+        # Chaque niveau est parallélisé via ThreadPoolExecutor (I/O-bound sur NFS).
+        # Dès que `limit` sessions sont trouvées on arrête immédiatement.
+
+        SCAN_WORKERS = min(32, (os.cpu_count() or 4) * 4)  # threads I/O
 
         def _skip_dir(name: str) -> bool:
-            return (name.startswith("_") or name.startswith(".")
-                    or name == "__FAILED" or "__FAILED" in name)
+            return name.startswith(("_", ".")) or "__FAILED" in name
 
-        _seen = set()
-        sessions = []
-
-        def _scan_level(parent: Path, depth: int):
-            """Parcourt parent/ avec scandir. Si un sous-dossier ressemble à une
-            session, l'ajoute. Sinon, si depth > 0, descend d'un niveau."""
-            if not parent.exists():
-                return
+        def _list_subdirs(p: Path):
             try:
-                entries = [e for e in os.scandir(parent) if e.is_dir(follow_symlinks=False)]
+                return [Path(e.path) for e in os.scandir(p)
+                        if e.is_dir(follow_symlinks=False) and not _skip_dir(e.name)]
             except PermissionError:
+                return []
+
+        def _is_session(p: Path) -> bool:
+            """Un seul scandir pour voir si metadata.json ou videos/ est présent."""
+            try:
+                names = {e.name for e in os.scandir(p)}
+                return "metadata.json" in names or "videos" in names
+            except PermissionError:
+                return False
+
+        found_lock = threading.Lock()
+        sessions: list = []
+        stop_flag = threading.Event()
+
+        def _process_candidate(p: Path):
+            if stop_flag.is_set():
                 return
-            for entry in entries:
-                if _skip_dir(entry.name):
-                    continue
-                p = Path(entry.path)
-                if p in _seen:
-                    continue
-                if _is_session_dir(p):
-                    _seen.add(p)
-                    sessions.append(p)
-                elif depth > 0:
-                    _scan_level(p, depth - 1)
+            if _is_session(p):
+                with found_lock:
+                    if not stop_flag.is_set():
+                        sessions.append(p)
+                        if limit and len(sessions) >= limit + offset:
+                            stop_flag.set()
+
+        def _gather_subdirs_parallel(parents: list, ex) -> list:
+            """Récupère en parallèle les sous-dossiers de chaque dossier parent."""
+            if not parents:
+                return []
+            futs = {ex.submit(_list_subdirs, p): p for p in parents}
+            result = []
+            for fut in concurrent.futures.as_completed(futs):
+                result.extend(fut.result())
+            return result
 
         if scan_dir.exists():
-            _scan_level(scan_dir, depth=2)  # 3 niveaux au total
+            with concurrent.futures.ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
+                # Niveau 1 : tester chaque sous-dossier direct
+                lvl1 = _list_subdirs(scan_dir)
+                futs1 = [ex.submit(_process_candidate, p) for p in lvl1]
+                concurrent.futures.wait(futs1)
+
+                if not stop_flag.is_set():
+                    # Niveau 2 : descendre dans les dossiers qui ne sont pas des sessions
+                    sess_set = set(sessions)
+                    non_sess1 = [p for p in lvl1 if p not in sess_set]
+                    lvl2 = _gather_subdirs_parallel(non_sess1, ex)
+                    futs2 = [ex.submit(_process_candidate, p) for p in lvl2]
+                    concurrent.futures.wait(futs2)
+
+                if not stop_flag.is_set():
+                    # Niveau 3
+                    sess_set = set(sessions)
+                    non_sess2 = [p for p in lvl2 if p not in sess_set]
+                    lvl3 = _gather_subdirs_parallel(non_sess2, ex)
+                    futs3 = [ex.submit(_process_candidate, p) for p in lvl3]
+                    concurrent.futures.wait(futs3)
+
         model_exists = (MODEL_DIR / "model.pt").exists()
         total_found = len(sessions)
-        # Trier, puis paginer
+        # Trier, paginer
         all_sorted = sorted(sessions, key=lambda p: p.name)
         if offset:
             all_sorted = all_sorted[offset:]
         if limit:
             all_sorted = all_sorted[:limit]
-        result = []
-        total = max(len(all_sorted), 1)
-        for idx, s in enumerate(all_sorted):
-            _update_job(job, progress=10 + int(88 * idx / total))
-            meta_path = s / "metadata.json"
+
+        # ── Phase 2 : Enrichissement parallèle ───────────────────────────────
+        # Pour chaque session retenue, lire metadata.json + flags en parallèle.
+        RESULTS_JSON = getattr(ia, "RESULTS_JSON", None) if True else None
+        try:
+            import utils.sync as _ia2
+            RESULTS_JSON = getattr(_ia2, "RESULTS_JSON", None)
+        except Exception:
+            pass
+
+        def _enrich(s: Path) -> dict:
             meta = {}
+            meta_path = s / "metadata.json"
             if meta_path.exists():
                 try:
                     meta = json.loads(meta_path.read_text())
                 except Exception:
                     pass
-            has_tracker   = (s / "tracker_positions.csv").exists()
-            has_gripper   = (s / "gripper_left_data.csv").exists() or (s / "gripper_right_data.csv").exists()
-            has_ux        = (s / "ux_data.csv").exists()
-            has_flux_csv  = any((s / "videos").glob("*_flux.csv")) if (s / "videos").exists() else False
-            has_jsonl     = any((s / "videos").glob("*.jsonl"))    if (s / "videos").exists() else False
-            has_subtitle  = (s / "episode_subtitle.json").exists()
-            # Rotation 180° — présence du marqueur .rotate_done dans videos/
-            rotate_marker = s / "videos" / ".rotate_done"
-            video_rotated = rotate_marker.exists()
+
+            vid_dir = s / "videos"
+            vid_exists = vid_dir.is_dir()
+            vid_names: set = set()
+            if vid_exists:
+                try:
+                    vid_names = {e.name for e in os.scandir(vid_dir)}
+                except Exception:
+                    pass
+
+            has_flux_csv  = any(n.endswith("_flux.csv") for n in vid_names)
+            has_jsonl     = any(n.endswith(".jsonl") for n in vid_names)
+            rotate_marker = vid_dir / ".rotate_done"
+            video_rotated = ".rotate_done" in vid_names
             rotate_info   = None
             if video_rotated:
                 try:
                     rotate_info = json.loads(rotate_marker.read_text(encoding="utf-8"))
                 except Exception:
                     rotate_info = {}
-            # Statut pipeline
-            pipeline_steps = {}
-            pipeline_done  = False
-            ps_path = s / "pipeline_state.json"
-            if ps_path.exists():
+
+            try:
+                root_names = {e.name for e in os.scandir(s)}
+            except Exception:
+                root_names = set()
+
+            has_tracker  = "tracker_positions.csv" in root_names
+            has_gripper  = ("gripper_left_data.csv" in root_names
+                            or "gripper_right_data.csv" in root_names)
+            has_ux       = "ux_data.csv" in root_names
+            has_subtitle = "episode_subtitle.json" in root_names
+
+            pipeline_steps: dict = {}
+            pipeline_done = False
+            if "pipeline_state.json" in root_names:
                 try:
-                    ps = json.loads(ps_path.read_text())
+                    ps = json.loads((s / "pipeline_state.json").read_text())
                     pipeline_steps = ps.get("steps", {})
                     pipeline_done  = ps.get("finished", False) and ps.get("success", False)
                 except Exception:
                     pass
-            result_json = s / ia.RESULTS_JSON if hasattr(ia, "RESULTS_JSON") else None
+
             last_result = None
-            if result_json and result_json.exists():
+            if RESULTS_JSON and RESULTS_JSON in root_names:
                 try:
-                    last_result = json.loads(result_json.read_text())
+                    last_result = json.loads((s / RESULTS_JSON).read_text())
                 except Exception:
                     pass
 
-            result.append({
+            return {
                 "name":           s.name,
                 "path":           str(s),
                 "action":         s.parent.name,
@@ -425,7 +474,22 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
                 "last_result":    last_result,
                 "pipeline_done":  pipeline_done,
                 "pipeline_steps": pipeline_steps,
-            })
+            }
+
+        _update_job(job, progress=50)
+        result = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
+            futs = {ex.submit(_enrich, s): s for s in all_sorted}
+            done_count = 0
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    result.append(fut.result())
+                except Exception:
+                    pass
+                done_count += 1
+                _update_job(job, progress=50 + int(48 * done_count / max(len(all_sorted), 1)))
+        # Rétablir l'ordre alphabétique (as_completed ne le garantit pas)
+        result.sort(key=lambda r: r["name"])
 
         has_more = bool(limit and (offset + len(result)) < total_found)
         _log_job(job, f"{len(result)} sessions retournées (total trouvé: {total_found}).", "OK")

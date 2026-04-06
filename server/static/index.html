@@ -2648,13 +2648,13 @@
 			display: flex;
 			align-items: center;
 			gap: 10px;
-			flex-wrap: wrap;
+			flex-wrap: nowrap;
 			flex-shrink: 0;
 			padding: 10px 16px 0 24px;
 		}
 
 		#tv-sess-name {
-			flex: 1;
+			flex: 0 1 auto;
 			min-width: 0;
 			font-size: .85rem;
 			font-weight: 700;
@@ -2663,6 +2663,62 @@
 			overflow: hidden;
 			text-overflow: ellipsis
 		}
+
+		/* Panneau score/problèmes dans la toolbar */
+		#tv-score-panel {
+			flex: 1 1 auto;
+			min-width: 0;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			flex-wrap: wrap;
+			justify-content: flex-end;
+		}
+		#tv-score-badge {
+			display: none;
+			align-items: center;
+			gap: 5px;
+			padding: 3px 9px;
+			border-radius: 5px;
+			font-size: .75rem;
+			font-weight: 700;
+			border: 1.5px solid transparent;
+			white-space: nowrap;
+			cursor: default;
+		}
+		#tv-score-badge.visible { display: flex; }
+		#tv-score-badge.grade-A { background: var(--green)22; border-color: var(--green)66; color: var(--green); }
+		#tv-score-badge.grade-B { background: #22c55e22; border-color: #22c55e66; color: #22c55e; }
+		#tv-score-badge.grade-C { background: var(--orange)22; border-color: var(--orange)66; color: var(--orange); }
+		#tv-score-badge.grade-D { background: #f9731622; border-color: #f9731666; color: #f97316; }
+		#tv-score-badge.grade-F { background: var(--red)22; border-color: var(--red)66; color: var(--red); }
+		#tv-score-badge.grade-none { background: var(--bg3); border-color: var(--border); color: var(--text3); }
+		#tv-score-reason {
+			font-size: .72rem;
+			color: var(--text3);
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			max-width: 280px;
+		}
+		#tv-score-reason.bad { color: var(--red); }
+		#tv-score-reason.warn { color: var(--orange); }
+		.tv-fix-btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			padding: 3px 9px;
+			border-radius: 5px;
+			border: 1.5px solid;
+			font-size: .72rem;
+			font-weight: 600;
+			cursor: pointer;
+			white-space: nowrap;
+			transition: opacity .12s;
+			background: transparent;
+		}
+		.tv-fix-btn:hover { opacity: .8; }
+		.tv-fix-btn:disabled { opacity: .4; cursor: default; }
 
 		/* Onglets */
 		#tv-tabs {
@@ -4149,6 +4205,12 @@
 						<!-- Barre de contrôles -->
 						<div id="tv-toolbar">
 							<div id="tv-sess-name">— Sélectionnez une session —</div>
+							<!-- Panneau score + raison + boutons de fix -->
+							<div id="tv-score-panel">
+								<span id="tv-score-reason"></span>
+								<div id="tv-score-fix-btns"></div>
+								<div id="tv-score-badge"></div>
+							</div>
 							<button id="tv-play-btn" onclick="tvTogglePlay()">▶</button>
 						</div>
 
@@ -5711,7 +5773,7 @@
 					if (job.result.ia_score != null) sess.meta.check_ia_score = job.result.ia_score;
 					if (job.result.blocking_reason != null) sess.meta.check_blocking = job.result.blocking_reason;
 					sess.meta.repair_perfect = !!job.result.fix_applied;
-					renderSessionsList();
+					_patchSessRow(sessPath);
 					// Rafraîchir le drawer si ouvert sur cette session
 					if (S.drawerSess && S.drawerSess.path === sessPath) {
 						renderDrawerContent(S.drawerSess);
@@ -6029,7 +6091,7 @@
 					const missing = r.missing_data || [];
 					if (missing.length) log(`  ⚠ Manquant: ${missing.join(', ')}`, 'WARN');
 
-					// Propager dans S.sessions et afficher immédiatement
+					// Propager dans S.sessions et mettre à jour uniquement cette ligne
 					const s = S.sessions.find(s => s.path === sess.path);
 					if (s) {
 						if (!s.meta) s.meta = {};
@@ -6041,7 +6103,7 @@
 						s.meta.repair_perfect = r.repair_perfect ?? false;
 						s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
 						s.meta.repair_score = r.repair_score ?? score;
-						renderSessionsList();
+						_patchSessRow(sess.path);
 					}
 
 					if (r.tracker_auto_fixed) {
@@ -6817,7 +6879,7 @@
 				// Propager dans S.sessions si l'objet n'est pas le même
 				const _s = S.sessions.find(s => s.path === S.drawerSess.path);
 				if (_s && _s !== S.drawerSess) { _s.meta = { ...(_s.meta || {}), ...S.drawerSess.meta }; }
-				renderSessionsList();
+				_patchSessRow(S.drawerSess.path);
 
 				const grade = r.grade || '?';
 				const verdict = r.verdict || '';
@@ -6941,8 +7003,7 @@
 			if (idx >= 0) S.sessions[idx].meta = S.drawerSess.meta;
 			await loadSessionPipelineState(S.drawerSess);
 			renderDrawerContent(S.drawerSess);
-			renderPipelineBoard();
-			renderSessionsList();
+			_patchSessRow(S.drawerSess.path);
 		}
 
 		async function unlockDrawer() {
@@ -7259,6 +7320,19 @@
 			tr.appendChild(tdRot);
 
 			return tr;
+		}
+
+		// Mise à jour ciblée d'une seule ligne du tableau sans re-render global.
+		// À utiliser quand seul le meta d'une session a changé (check_score, swap, etc.)
+		function _patchSessRow(sessPath) {
+			const sess = S.sessions.find(s => s.path === sessPath);
+			if (!sess) return;
+			const tbody = ge('sess-list');
+			if (!tbody) return;
+			const existing = tbody.querySelector(`tr[data-path="${CSS.escape(sessPath)}"]`);
+			if (!existing) return; // pas encore visible → pas de patch
+			const newRow = _buildSessRow(sess);
+			existing.replaceWith(newRow);
 		}
 
 		function _saveSelection() {
@@ -7811,7 +7885,10 @@
 						if (cb.checked) S.selected.add(s.path); else S.selected.delete(s.path);
 						div.classList.toggle('selected', cb.checked);
 						_saveSelection();
-						renderSessionsList();
+						// Mettre à jour la classe de sélection sur la ligne sans re-render global
+						const tr = ge('sess-list')?.querySelector(`tr[data-path="${CSS.escape(s.path)}"]`);
+						if (tr) tr.classList.toggle('st-selected', S.selected.has(s.path));
+						_updateSessActions();
 						refreshExportBtn();
 						renderPipelineBoard();
 					};
@@ -8037,6 +8114,7 @@
 
 			const sess = S.sessions.find(s => s.path === path);
 			ge('tv-sess-name').textContent = sess ? sess.name : path.split('/').pop();
+			tvUpdateScorePanel(sess || null);
 			document.querySelectorAll('.tv-sess-item').forEach(el =>
 				el.classList.toggle('active', el.title === path));
 
@@ -8119,6 +8197,112 @@
 			}
 		}
 
+
+		// ── Score panel (toolbar haut droite) ────────────────────────────
+
+		function tvUpdateScorePanel(sess) {
+			const badge   = ge('tv-score-badge');
+			const reason  = ge('tv-score-reason');
+			const fixArea = ge('tv-score-fix-btns');
+			if (!badge || !reason || !fixArea) return;
+
+			if (!sess || sess.meta?.check_score == null) {
+				badge.className = '';
+				badge.textContent = '';
+				reason.textContent = '';
+				reason.className = '';
+				fixArea.innerHTML = '';
+				return;
+			}
+
+			const meta   = sess.meta || {};
+			const score  = meta.check_score;
+			const grade  = meta.check_grade || '';
+			const verdict = meta.check_verdict || '';
+			const blocking = meta.check_blocking || '';
+			const verif  = meta.verification || null;
+
+			// Badge grade + score
+			const gradeClass = grade ? `grade-${grade}` : 'grade-none';
+			badge.className = `visible ${gradeClass}`;
+			badge.textContent = grade
+				? `${grade}  ${Math.round(score)}%`
+				: `${Math.round(score)}%`;
+
+			// Raison (blocking > issues > verdict > ok)
+			const issuesList = verif?.issues || [];
+			if (blocking) {
+				reason.textContent = '✗ ' + blocking;
+				reason.className = 'bad';
+			} else if (issuesList.length) {
+				reason.textContent = '⚠ ' + issuesList[0] + (issuesList.length > 1 ? ` (+${issuesList.length - 1})` : '');
+				reason.className = issuesList.length > 0 ? 'warn' : '';
+			} else if (verdict === 'FAIL') {
+				reason.textContent = '✗ Score insuffisant';
+				reason.className = 'bad';
+			} else if (score >= 70) {
+				reason.textContent = verdict === 'OK' ? '✓ Session valide' : '✓ Score OK';
+				reason.className = '';
+				reason.style.color = 'var(--green)';
+				// reset au prochain appel via className
+			} else {
+				reason.textContent = verdict ? verdict : '';
+				reason.className = score < 40 ? 'bad' : 'warn';
+			}
+			// reset inline color si pas good
+			if (score < 70) reason.style.color = '';
+
+			// Boutons de fix contextuels
+			const fixes = [];
+
+			// Caméra offset (repair)
+			const camIss = issuesList.some(i => /caméra|camera|décalage|offset|drift/i.test(i))
+				|| /caméra|camera|offset|drift/i.test(blocking);
+			if (camIss) fixes.push({
+				label: '🔧 Fix offset caméra',
+				color: 'var(--accent3)',
+				action: 'tvViewerRepair()'
+			});
+
+			// Rotation vidéo
+			const rotIss = issuesList.some(i => /rotation|upside|retourné|rotée/i.test(i))
+				|| /rotation|upside|retourné/i.test(blocking);
+			if (rotIss) fixes.push({
+				label: '↻ Rotate 180°',
+				color: 'var(--accent2)',
+				action: 'tvViewerRotate()'
+			});
+
+			// Désync vidéo
+			const vidIss = issuesList.some(i => /vidéo|désync|décalage vidéo/i.test(i))
+				|| verif?.stats?.video_max_delay_ms > 500;
+			if (vidIss) fixes.push({
+				label: '⏱ Fix sync vidéo',
+				color: 'var(--accent)',
+				action: 'tvViewerRepair()'
+			});
+
+			// Tracker swap
+			const trkIss = issuesList.some(i => /tracker.*inver|inver.*tracker|swap|gauche.*droite|droite.*gauche/i.test(i));
+			if (trkIss) fixes.push({
+				label: '🔄 Swap trackers',
+				color: 'var(--yellow)',
+				action: "document.getElementById('tv-rp-btn-repair')?.click()"
+			});
+
+			// Trim SW
+			const swIss = /switch|sw.*off|trim/i.test(blocking)
+				|| issuesList.some(i => /switch|sw.*off|trim/i.test(i));
+			if (swIss) fixes.push({
+				label: '✂ Trim SW',
+				color: 'var(--yellow)',
+				action: 'tvViewerTrimSW()'
+			});
+
+			fixArea.innerHTML = fixes.map(f =>
+				`<button class="tv-fix-btn" style="color:${f.color};border-color:${f.color}88" onclick="${f.action}">${f.label}</button>`
+			).join('');
+		}
 
 		// ── Tracker Swap (panneau paramètres viewer) ─────────────────────
 
@@ -10244,7 +10428,8 @@
 								if (r.verdict)  sess.meta.check_verdict = r.verdict;
 								if (r.ia_score != null) sess.meta.check_ia_score = r.ia_score;
 								if (r.blocking_reason != null) sess.meta.check_blocking = r.blocking_reason;
-								renderSessionsList();
+								_patchSessRow(sessPath);
+								if (TV.sessPath === sessPath) tvUpdateScorePanel(sess);
 							}
 						}
 					} else if (j.status === 'error') {

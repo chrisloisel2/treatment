@@ -310,30 +310,52 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
         _log_job(job, f"Scan de {scan_dir}…{_cap}")
 
         import utils.sync as ia
-        # Découverte récursive : sessions = dossiers contenant metadata.json
-        # OU dossiers contenant un sous-dossier videos/ avec au moins un .mp4.
-        # Exclus : dossiers __FAILED et dossiers cachés/internes.
+        # Découverte SUPERFICIELLE (max 3 niveaux) via os.scandir.
+        # Structure attendue :
+        #   scan_dir/session/                  ← niveau 1
+        #   scan_dir/action/session/           ← niveau 2
+        #   scan_dir/scenario/action/session/  ← niveau 3
+        # Une session est reconnue si elle contient metadata.json OU un dossier videos/.
+        # On NE descend PAS à l'intérieur d'une session détectée (évite de traverser
+        # les vidéos mp4, jsonl, etc. qui peuvent peser plusieurs To).
+
+        def _is_session_dir(p: Path) -> bool:
+            try:
+                names = {e.name for e in os.scandir(p) if not e.name.startswith(".")}
+            except PermissionError:
+                return False
+            return "metadata.json" in names or "videos" in names
+
+        def _skip_dir(name: str) -> bool:
+            return (name.startswith("_") or name.startswith(".")
+                    or name == "__FAILED" or "__FAILED" in name)
+
         _seen = set()
         sessions = []
+
+        def _scan_level(parent: Path, depth: int):
+            """Parcourt parent/ avec scandir. Si un sous-dossier ressemble à une
+            session, l'ajoute. Sinon, si depth > 0, descend d'un niveau."""
+            if not parent.exists():
+                return
+            try:
+                entries = [e for e in os.scandir(parent) if e.is_dir(follow_symlinks=False)]
+            except PermissionError:
+                return
+            for entry in entries:
+                if _skip_dir(entry.name):
+                    continue
+                p = Path(entry.path)
+                if p in _seen:
+                    continue
+                if _is_session_dir(p):
+                    _seen.add(p)
+                    sessions.append(p)
+                elif depth > 0:
+                    _scan_level(p, depth - 1)
+
         if scan_dir.exists():
-            # 1. Par metadata.json (méthode historique)
-            for p in scan_dir.rglob("metadata.json"):
-                s = p.parent
-                if s in _seen: continue
-                if s.name.startswith("_") or s.name.startswith("."): continue
-                if "__FAILED" in str(s): continue
-                _seen.add(s)
-                sessions.append(s)
-            # 2. Par videos/*.mp4 (sessions sans metadata.json)
-            for p in scan_dir.rglob("*.mp4"):
-                s = p.parent.parent  # session_dir/videos/X.mp4 → session_dir
-                if s == scan_dir: continue  # exclure la racine elle-même
-                if s in _seen: continue
-                if s.name.startswith("_") or s.name.startswith("."): continue
-                if "__FAILED" in str(s): continue
-                if not (s / "videos").is_dir(): continue
-                _seen.add(s)
-                sessions.append(s)
+            _scan_level(scan_dir, depth=2)  # 3 niveaux au total
         model_exists = (MODEL_DIR / "model.pt").exists()
         total_found = len(sessions)
         # Trier, puis paginer

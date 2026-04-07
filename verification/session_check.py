@@ -2756,6 +2756,106 @@ def _load_session_metadata(session_path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _dim_gripper_health(session_path: Path) -> DimensionResult:
+    """
+    Dimension : santé matérielle des pinces (gripper_health).
+
+    Détecte une pince défectueuse : moyenne de toutes les valeurs opening_mm
+    exactement égale à 0.000 (précis — hardware mort ou déconnecté).
+
+    Poids = 0 : ne contribue pas au score global, mais bloque la session
+    si une pince est défectueuse (porte bloquante hard).
+    """
+    sides      = ("left", "right")
+    diags: List[str]   = []
+    repairs: List[str] = []
+    details: Dict[str, Any] = {}
+
+    defective: List[str] = []
+    missing:   List[str] = []
+    ok_sides:  List[str] = []
+
+    for side in sides:
+        csv_path = session_path / f"gripper_{side}_data.csv"
+        if not csv_path.exists():
+            missing.append(side)
+            details[side] = {"status": "missing"}
+            continue
+        try:
+            import pandas as _pd
+            df = _pd.read_csv(csv_path)
+            if "opening_mm" not in df.columns:
+                missing.append(side)
+                details[side] = {"status": "no_column"}
+                continue
+            vals = _pd.to_numeric(df["opening_mm"], errors="coerce").dropna().to_numpy()
+            if len(vals) == 0:
+                missing.append(side)
+                details[side] = {"status": "empty"}
+                continue
+
+            mean_val = float(vals.mean())
+            min_val  = float(vals.min())
+            max_val  = float(vals.max())
+            n        = int(len(vals))
+
+            details[side] = {
+                "mean_mm":  round(mean_val, 6),
+                "min_mm":   round(min_val,  3),
+                "max_mm":   round(max_val,  3),
+                "n_samples": n,
+            }
+
+            # Défectueuse = moyenne EXACTEMENT 0.000 (pas d'arrondi : comparaison stricte)
+            if mean_val == 0.0:
+                defective.append(side)
+                details[side]["defective"] = True
+                diags.append(f"  {side} ✗ PINCE DEFECTUEUSE — opening_mm toujours 0.000"
+                             f" (n={n}, min={min_val:.3f}, max={max_val:.3f})")
+                repairs.append(f"gripper_{side}: pince défectueuse (mean=0.000) — vérifier le câblage/capteur")
+            else:
+                details[side]["defective"] = False
+                ok_sides.append(side)
+                diags.append(f"  {side} ✓ opening_mm mean={mean_val:.3f}mm"
+                             f"  range=[{min_val:.1f}, {max_val:.1f}]  n={n}")
+
+        except Exception as e:
+            missing.append(side)
+            details[side] = {"status": "error", "error": str(e)}
+            diags.append(f"  {side} ✗ erreur lecture : {e}")
+
+    if defective:
+        summary  = f"Pince(s) défectueuse(s) : {', '.join(defective)}"
+        return DimensionResult(
+            name="gripper_health", score=0.0, weight=0.0,
+            grade="F", ok=False, blocking=True, confidence=1.0,
+            summary=summary, diagnostics=diags, repairs=repairs,
+            details={**details, "defective": defective, "missing": missing},
+            error=None,
+        )
+
+    if len(missing) == len(sides):
+        # Aucune donnée gripper — non conclusif (pas bloquant)
+        return DimensionResult(
+            name="gripper_health", score=50.0, weight=0.0,
+            grade="C", ok=True, blocking=False, confidence=0.0,
+            summary="Aucune donnée gripper disponible",
+            diagnostics=diags, repairs=[], details={"missing": missing},
+            error=None,
+        )
+
+    n_ok  = len(ok_sides)
+    summary = (f"Pinces saines ({n_ok}/{len(sides) - len(missing)} côtés vérifiés)"
+               + (f" — données manquantes : {', '.join(missing)}" if missing else ""))
+    return DimensionResult(
+        name="gripper_health", score=100.0, weight=0.0,
+        grade="A", ok=True, blocking=False, confidence=1.0 if not missing else 0.7,
+        summary=summary, diagnostics=diags, repairs=[],
+        details={**details, "defective": [], "missing": missing},
+        error=None,
+    )
+
+
 def check_session_full(session_path, model=None) -> dict:
     """
     Point d'entrée principal — appelé par server.py via /api/pipeline/check_score.
@@ -2776,7 +2876,8 @@ def check_session_full(session_path, model=None) -> dict:
     if model is None:
         model = _chk_load_model()
 
-    # ── Exécuter les 5 dimensions ──────────────────────────────────────────
+    # ── Exécuter les 6 dimensions ──────────────────────────────────────────
+    dim_gh  = _dim_gripper_health(session_path)        # bloquant si pince morte
     dim_gt  = _dim_gripper_ts(session_path)
     dim_vt  = _dim_video_tracker_sync(session_path, model=model)
     dim_tp  = _dim_tracker_placement(session_path)
@@ -2784,6 +2885,7 @@ def check_session_full(session_path, model=None) -> dict:
     dim_gf  = _dim_gripper_frame_sync(session_path)
 
     dims = {
+        "gripper_health":         dim_gh,
         "gripper_timestamp_sync": dim_gt,
         "video_tracker_sync":     dim_vt,
         "tracker_placement":      dim_tp,
@@ -2904,6 +3006,7 @@ def check_session_full(session_path, model=None) -> dict:
 
         # Dimensions détaillées
         "components": {
+            "gripper_health":         _dim_to_dict(dim_gh),
             "gripper_timestamp_sync": _dim_to_dict(dim_gt),
             "video_tracker_sync":     _dim_to_dict(dim_vt),
             "tracker_placement":      _dim_to_dict(dim_tp),
@@ -2979,9 +3082,10 @@ def _print_report(result: dict, full: bool = False) -> None:
     print(f"  {'Dimension':<30}  {'Score':>6}  {'Grade':>5}  Résumé")
     print(f"{'─'*60}")
 
-    dim_order = ["gripper_timestamp_sync", "video_tracker_sync",
+    dim_order = ["gripper_health", "gripper_timestamp_sync", "video_tracker_sync",
                  "tracker_placement", "video_quality", "gripper_frame_sync"]
     labels = {
+        "gripper_health":         "Santé pinces         (gate)",
         "gripper_timestamp_sync": "Gripper TS sync      (25%)",
         "video_tracker_sync":     "Vidéo/tracker IA     (25%)",
         "tracker_placement":      "Placement trackers   (15%)",

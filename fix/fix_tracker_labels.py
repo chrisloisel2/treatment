@@ -21,11 +21,14 @@ TEST 3 — PROFIL DE MOBILITÉ
     La tête bouge moins vite que les mains
     (médiane de la norme de déplacement inter-frame).
 
-TEST 4 — PROJECTION LATÉRALE (left/right)
-    Les deux mains sont projetées sur l'axe latéral du head
-    (calculé depuis les quaternions du head).
-    Main droite → côté positif de l'axe X du head.
-    Main gauche → côté négatif.
+TEST 4 — POSITION MOYENNE RELATIVE À LA TÊTE (left/right)
+    Pour chaque main, la POSITION MOYENNE sur toute la session (relative à la
+    tête) est projetée sur l'axe X MOYEN du head (calculé depuis la moyenne
+    des matrices de rotation quaternion, stable aux outliers).
+    Main droite → projection positive (axe X local du head).
+    Main gauche → projection négative.
+    NOTE : seul ce test détermine left/right dans le consensus — les tests
+    1-3 n'ont pas d'information physique sur la latéralité.
 
 CERTITUDE :
     Un rôle est CERTAIN si au moins 3/4 tests s'accordent ET
@@ -253,30 +256,43 @@ def _test_mobility(blocks: list) -> TestResult:
 
 def _test_lateral(blocks: list, head_label: str) -> TestResult:
     """
-    Test 4 : projection latérale (left/right).
-    Projette chaque main sur l'axe X du repère head (colonne 0 de la matrice
-    de rotation quaternion).
-    Main droite → projection positive. Main gauche → projection négative.
+    Test 4 : position MOYENNE relative à la tête (left/right).
+
+    Algorithme robuste :
+    1. Pour chaque main, calcule la POSITION MOYENNE relative à la tête
+       sur l'ensemble de la session (intégration temporelle complète).
+    2. Projette ce vecteur moyen sur l'axe X MOYEN du head (calculé depuis
+       la moyenne des matrices de rotation quaternion → stable aux outliers).
+    3. Main droite → projection positive (axe X local = droite du head).
+       Main gauche → projection négative.
+
+    Avantage vs frame-par-frame avec médiane :
+    - La moyenne des positions lisse les artefacts de tracking.
+    - L'axe X moyen de la tête est insensible aux sauts de quaternion.
+    - Résultat déterministe et robuste sur toute la session.
     """
     head_block   = next(b for b in blocks if b[0] == head_label)
     other_blocks = [b for b in blocks if b[0] != head_label]
 
     _, head_pos, head_quat = head_block
-    R = _quat_rotmat(head_quat)       # (n,3,3)
-    x_axis = R[:, :, 0]               # colonne 0 = axe X du head
+    R = _quat_rotmat(head_quat)          # (n,3,3)
+
+    # Axe X MOYEN de la tête (normalisé) — robuste aux sauts de quaternion
+    mean_x_axis = np.mean(R[:, :, 0], axis=0)
+    mean_x_axis /= float(np.linalg.norm(mean_x_axis)) + 1e-12
 
     projs = {}
     for label, pos, _ in other_blocks:
-        n = min(len(head_pos), len(pos), len(x_axis))
-        diff = pos[:n] - head_pos[:n]
-        proj = np.sum(diff * x_axis[:n], axis=1)
-        projs[label] = float(np.median(proj))
+        n = min(len(head_pos), len(pos))
+        # Position MOYENNE relative à la tête sur toute la session
+        mean_rel = np.mean(pos[:n] - head_pos[:n], axis=0)   # (3,)
+        projs[label] = float(np.dot(mean_rel, mean_x_axis))
 
     labels_other = list(projs.keys())
     p0, p1 = projs[labels_other[0]], projs[labels_other[1]]
     separation = abs(p0 - p1)
 
-    # right → projection plus grande (positive)
+    # right → projection plus grande (positive = à droite de la tête)
     if p0 >= p1:
         right_label, left_label = labels_other[0], labels_other[1]
     else:
@@ -288,15 +304,15 @@ def _test_lateral(blocks: list, head_label: str) -> TestResult:
     conf = float(np.clip(separation / (pos_range + 1e-6), 0.0, 1.0))
 
     return TestResult(
-        name="lateral_projection",
+        name="lateral_mean_position",
         head_vote=head_label,
         left_vote=left_label,
         right_vote=right_label,
         confidence=conf,
         evidence={
-            "projections_m": {lb: round(v, 4) for lb, v in projs.items()},
-            "separation_m":  round(separation, 4),
-            "conf":          round(conf, 3),
+            "mean_proj_m":  {lb: round(v, 4) for lb, v in projs.items()},
+            "separation_m": round(separation, 4),
+            "conf":         round(conf, 3),
         },
     )
 
@@ -305,21 +321,39 @@ def _test_lateral(blocks: list, head_label: str) -> TestResult:
 
 def _consensus(tests: list[TestResult]) -> tuple[dict, int, bool]:
     """
-    Vote majoritaire sur head / left / right.
+    Consensus head / left / right.
+
+    Stratégie :
+    - HEAD     : vote majoritaire de tous les tests (tests 1-4).
+    - LEFT/RIGHT : UNIQUEMENT le test de position moyenne (test 4).
+      Les tests 1-3 (hauteur, centralité, mobilité) n'ont aucune information
+      physique sur gauche/droite — leurs votes pour left/right sont arbitraires
+      et ne doivent PAS participer au consensus gauche/droite.
 
     Returns:
         predicted : {role: label_csv}
-        agree_count : nombre de tests en accord
+        agree_count : nombre de tests qui s'accordent sur le head
         certain : True si critère hauteur ≥ ZSCORE_CERTAIN et ≥ AGREE_MIN tests s'accordent
     """
     from collections import Counter
-    head_votes  = Counter(t.head_vote  for t in tests)
-    right_votes = Counter(t.right_vote for t in tests)
-    left_votes  = Counter(t.left_vote  for t in tests)
+    head_votes = Counter(t.head_vote for t in tests)
 
-    head_pred  = head_votes.most_common(1)[0][0]
-    right_pred = right_votes.most_common(1)[0][0]
-    left_pred  = left_votes.most_common(1)[0][0]
+    head_pred = head_votes.most_common(1)[0][0]
+
+    # Left/right : uniquement depuis le test de position moyenne
+    lateral = next(
+        (t for t in tests if t.name == "lateral_mean_position"),
+        None,
+    )
+    if lateral is not None:
+        right_pred = lateral.right_vote
+        left_pred  = lateral.left_vote
+    else:
+        # Fallback si le test latéral est absent (ne devrait pas arriver)
+        right_votes = Counter(t.right_vote for t in tests)
+        left_votes  = Counter(t.left_vote  for t in tests)
+        right_pred  = right_votes.most_common(1)[0][0]
+        left_pred   = left_votes.most_common(1)[0][0]
 
     # Nb de tests qui s'accordent sur head
     agree_count = int(head_votes[head_pred])

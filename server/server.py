@@ -3805,98 +3805,241 @@ def _worker_fix_all_bulk(job: Job, req: FixAllBulkRequest):
     for i, sess_str in enumerate(req.sessions):
         sess_path = Path(sess_str)
         name = sess_path.name
-        _log_job(job, f"[{i+1}/{total}] ── {name} ──", "INFO")
+        _log_job(job, f"", "INFO")
+        _log_job(job, f"═══════════════════════════════════════════════════", "INFO")
+        _log_job(job, f"[{i+1}/{total}] {name}", "INFO")
+
+        # Snapshot metadata avant tous les fix
+        _meta_before: dict = {}
+        try:
+            mp = sess_path / "metadata.json"
+            if mp.exists():
+                _meta_before = json.loads(mp.read_text(encoding="utf-8"))
+                dur = _meta_before.get("duration_seconds", _meta_before.get("duration", 0))
+                n_trk = len(_meta_before.get("trackers", {}))
+                n_cam = len(_meta_before.get("cameras", {}))
+                prev_score = _meta_before.get("check_score")
+                prev_grade = _meta_before.get("check_grade", "")
+                score_str  = f"  score={prev_score:.0f}% ({prev_grade})" if prev_score is not None else ""
+                _log_job(job,
+                    f"  durée={dur:.1f}s  trackers={n_trk}  caméras={n_cam}{score_str}",
+                    "INFO")
+        except Exception:
+            pass
+        _log_job(job, f"═══════════════════════════════════════════════════", "INFO")
+
         sess_result = {"session": sess_str, "fixes": {}}
 
         # ── 1. Labels trackers ────────────────────────────────────────────────
         if req.run_tracker_labels:
+            _log_job(job, "  ┌─ TRACKERS ─────────────────────────────────────", "INFO")
             try:
                 r = fix_tracker_labels(sess_path, dry_run=False, force=req.force)
                 s = r.status
-                z = next((t.evidence.get("zscore", 0) for t in r.tests
-                           if t.name == "height_Y"), 0)
+
+                # Avant
+                old = r.old_assignment or {"head": "head", "left": "left", "right": "right"}
+                _log_job(job,
+                    f"  │ AVANT  head={old.get('head','?')}  left={old.get('left','?')}  right={old.get('right','?')}",
+                    "INFO")
+
+                # Détail des 4 tests
+                for t in r.tests:
+                    ev = t.evidence
+                    if t.name == "height_Y":
+                        med = ev.get("medians_Y", {})
+                        med_str = "  ".join(f"{k}={v:.3f}m" for k, v in med.items())
+                        _log_job(job,
+                            f"  │ Test1 height_Y    head={t.head_vote:8s} conf={t.confidence:.2f}"
+                            f"  z={ev.get('zscore', 0):.1f}σ  Δy={ev.get('delta_Y_m', 0):.3f}m"
+                            f"  [{med_str}]",
+                            "INFO")
+                    elif t.name == "centrality_3D":
+                        dist = ev.get("mean_dist_m", {})
+                        d_str = "  ".join(f"{k}={v:.3f}m" for k, v in dist.items())
+                        _log_job(job,
+                            f"  │ Test2 centrality  head={t.head_vote:8s} conf={t.confidence:.2f}"
+                            f"  sep={ev.get('separation', 0):.2f}  [{d_str}]",
+                            "INFO")
+                    elif t.name == "mobility":
+                        spd = ev.get("median_speed_m_per_frame", {})
+                        s_str = "  ".join(f"{k}={v:.5f}" for k, v in spd.items())
+                        _log_job(job,
+                            f"  │ Test3 mobility    head={t.head_vote:8s} conf={t.confidence:.2f}"
+                            f"  sep={ev.get('separation', 0):.2f}  [{s_str}]",
+                            "INFO")
+                    elif t.name == "lateral_projection":
+                        proj = ev.get("projections_m", {})
+                        p_str = "  ".join(f"{k}={v:+.3f}m" for k, v in proj.items())
+                        _log_job(job,
+                            f"  │ Test4 lateral     left={t.left_vote:8s} right={t.right_vote:8s}"
+                            f"  conf={t.confidence:.2f}  sep={ev.get('separation_m', 0):.3f}m  [{p_str}]",
+                            "INFO")
+
+                # Consensus
+                z = next((t.evidence.get("zscore", 0) for t in r.tests if t.name == "height_Y"), 0)
+                _log_job(job,
+                    f"  │ Accord {r.agreement_count}/4 tests  z={z:.1f}σ"
+                    f"  → {'CERTAIN' if s in ('ok','corrected') else 'INCERTAIN'}",
+                    "OK" if s in ("ok", "corrected") else "WARN")
+
+                # Après
                 if s == "corrected":
-                    _log_job(job, f"  trackers  ↺ corrigé ({r.agreement_count}/4 tests, z={z:.1f}σ) : {r.predicted}", "OK")
+                    pred = r.predicted
+                    _log_job(job,
+                        f"  │ APRÈS  head={pred.get('head','?')}  left={pred.get('left','?')}  right={pred.get('right','?')}"
+                        f"  ← CORRIGÉ",
+                        "OK")
                 elif s == "ok":
-                    _log_job(job, f"  trackers  ✓ correct ({r.agreement_count}/4 tests, z={z:.1f}σ)", "INFO")
+                    _log_job(job, f"  │ APRÈS  inchangé (labels corrects)", "INFO")
                 elif s == "uncertain":
-                    _log_job(job, f"  trackers  ⚠ incertain : {r.reason}", "WARN")
+                    _log_job(job, f"  │ APRÈS  inchangé — {r.reason}", "WARN")
+                elif s == "skipped":
+                    _log_job(job, f"  │ APRÈS  ignoré (déjà vérifié)", "INFO")
                 else:
-                    _log_job(job, f"  trackers  [{s}] {r.reason}", "WARN")
+                    _log_job(job, f"  │ [{s}] {r.reason}", "WARN")
+
                 sess_result["fixes"]["tracker_labels"] = {"status": s, "reason": r.reason,
                                                            "predicted": r.predicted}
             except Exception as e:
-                _log_job(job, f"  trackers  ✗ erreur : {e}", "ERROR")
+                _log_job(job, f"  │ ✗ erreur : {e}", "ERROR")
                 sess_result["fixes"]["tracker_labels"] = {"status": "error", "error": str(e)}
+            _log_job(job, "  └────────────────────────────────────────────────", "INFO")
 
         # ── 2. Labels caméras ─────────────────────────────────────────────────
         if req.run_camera_labels:
+            _log_job(job, "  ┌─ CAMERAS ──────────────────────────────────────", "INFO")
             try:
                 r = fix_camera_labels(sess_path, dry_run=False, force=req.force)
                 s = r.status
-                conf = next((src.confidence for src in r.sources
-                              if src.name == "serial_calibration"), 0.0)
+
+                # Avant
+                cur = r.current or {}
+                if cur:
+                    cur_str = "  ".join(f"{pos}={ser}" for pos, ser in sorted(cur.items()))
+                    _log_job(job, f"  │ AVANT  {cur_str}", "INFO")
+
+                # Sources
+                for src in r.sources:
+                    ev = src.evidence
+                    detail_parts = []
+                    for pos, info in (ev.get("predictions", {}) or {}).items():
+                        if isinstance(info, dict):
+                            detail_parts.append(f"{pos}={info.get('serial','?')}({info.get('frac',0)*100:.0f}%)")
+                        else:
+                            detail_parts.append(f"{pos}={info}")
+                    detail = "  ".join(detail_parts) if detail_parts else str(ev)[:60]
+                    _log_job(job,
+                        f"  │ Source [{src.name:28s}] conf={src.confidence:.2f}  {detail}",
+                        "INFO")
+
+                # Après
+                pred = r.predicted or {}
                 if s == "corrected":
-                    _log_job(job, f"  cameras   ↺ corrigé (conf={conf:.2f}) : {r.predicted}", "OK")
+                    pred_str = "  ".join(f"{pos}={ser}" for pos, ser in sorted(pred.items()))
+                    _log_job(job, f"  │ APRÈS  {pred_str}  ← CORRIGÉ", "OK")
                 elif s == "ok":
-                    _log_job(job, f"  cameras   ✓ correct (conf={conf:.2f})", "INFO")
+                    _log_job(job, f"  │ APRÈS  inchangé (labels corrects)", "INFO")
                 elif s == "uncertain":
-                    _log_job(job, f"  cameras   ⚠ incertain : {r.reason}", "WARN")
+                    _log_job(job, f"  │ APRÈS  inchangé — {r.reason}", "WARN")
+                elif s == "skipped":
+                    _log_job(job, f"  │ APRÈS  ignoré (déjà vérifié)", "INFO")
                 else:
-                    _log_job(job, f"  cameras   [{s}] {r.reason}", "WARN")
+                    _log_job(job, f"  │ [{s}] {r.reason}", "WARN")
+
                 sess_result["fixes"]["camera_labels"] = {"status": s, "reason": r.reason}
             except Exception as e:
-                _log_job(job, f"  cameras   ✗ erreur : {e}", "ERROR")
+                _log_job(job, f"  │ ✗ erreur : {e}", "ERROR")
                 sess_result["fixes"]["camera_labels"] = {"status": "error", "error": str(e)}
+            _log_job(job, "  └────────────────────────────────────────────────", "INFO")
 
         # ── 3. Offset caméra (fix_camera_offset legacy) ───────────────────────
         if req.run_camera_offset and _cam_fix_mod is not None:
+            _log_job(job, "  ┌─ CAMERA OFFSET ────────────────────────────────", "INFO")
             try:
                 report = _cam_fix_mod.fix_session(sess_path, dry_run=False, force=req.force)
                 s = report.get("status", "?")
                 if s == "corrected":
                     cams = report.get("cameras_fixed", [])
-                    _log_job(job, f"  cam_offset ↺ {len(cams)} caméra(s) recalée(s)", "OK")
+                    shifts = report.get("shifts", report.get("offsets", {}))
+                    for cam_name, cam_info in (shifts.items() if isinstance(shifts, dict) else {}):
+                        before_ms = cam_info.get("before_ms", cam_info.get("old_ms", "?"))
+                        after_ms  = cam_info.get("after_ms",  cam_info.get("new_ms", cam_info.get("shift_ms", "?")))
+                        _log_job(job,
+                            f"  │ {cam_name:12s}  AVANT={before_ms}ms  APRÈS={after_ms}ms",
+                            "OK")
+                    if not shifts:
+                        _log_job(job, f"  │ {len(cams)} caméra(s) recalée(s) : {cams}", "OK")
                 else:
-                    _log_job(job, f"  cam_offset [{s}] {report.get('reason','')}", "INFO")
+                    _log_job(job, f"  │ [{s}] {report.get('reason','')}", "INFO")
                 sess_result["fixes"]["camera_offset"] = {"status": s}
             except Exception as e:
-                _log_job(job, f"  cam_offset ✗ erreur : {e}", "ERROR")
+                _log_job(job, f"  │ ✗ erreur : {e}", "ERROR")
                 sess_result["fixes"]["camera_offset"] = {"status": "error", "error": str(e)}
+            _log_job(job, "  └────────────────────────────────────────────────", "INFO")
 
         # ── 4. Vérification timestamps (lecture seule) ─────────────────────────
         if req.run_timestamp_sync:
+            _log_job(job, "  ┌─ TIMESTAMPS ───────────────────────────────────", "INFO")
             try:
                 r = analyse_timestamp_sync(sess_path)
+
+                # Détail par flux
+                for st in r.streams:
+                    gaps_str = f"{st.n_gaps} gap(s) +{st.total_gap_ms:.0f}ms" if st.n_gaps else "0 gaps"
+                    drift_str = f"  drift={st.drift_ppm:+.0f}ppm" if st.drift_ppm is not None else ""
+                    cov_str   = f"  cov={st.coverage*100:.0f}%" if st.coverage is not None else ""
+                    icon = "✓" if st.status == "ok" else ("⚠" if st.status == "warn" else "✗")
+                    _log_job(job,
+                        f"  │ {icon} {st.name:20s}  {st.n_samples:5d} samples"
+                        f"  {st.duration_ms/1000:.1f}s  {st.sample_rate_hz:.1f}Hz"
+                        f"  {gaps_str}{drift_str}{cov_str}",
+                        "INFO" if st.status == "ok" else "WARN")
+
+                # Alignements paires
+                for pa in r.pairs:
+                    aligned_str = "aligné" if pa.aligned else f"DECALE Δstart={pa.delta_start_ms:+.0f}ms"
+                    _log_job(job,
+                        f"  │   {pa.stream_a:15s} ↔ {pa.stream_b:15s}"
+                        f"  overlap={pa.overlap_ms/1000:.1f}s  ±lag={pa.max_lag_searchable_ms:.0f}ms  {aligned_str}",
+                        "INFO" if pa.aligned else "WARN")
+
+                # Issues
+                for issue in r.issues:
+                    _log_job(job, f"  │ ⚠ {issue}", "WARN")
+
+                if not r.issues:
+                    _log_job(job, f"  │ ✓ Tous les flux sont synchronisés", "INFO")
+
                 deltas = r.summary.get("camera_start_deltas_ms", {})
-                if r.status == "ok":
-                    delta_str = "  ".join(f"{k.replace('cam_','')}={v:+.0f}ms"
-                                          for k, v in deltas.items())
-                    _log_job(job, f"  timestamps ✓ OK  Δstart: {delta_str}", "INFO")
-                else:
-                    for issue in r.issues[:3]:
-                        _log_job(job, f"  timestamps ⚠ {issue}", "WARN")
                 sess_result["fixes"]["timestamp_sync"] = {
                     "status": r.status, "issues": r.issues,
                     "camera_deltas_ms": deltas,
                 }
             except Exception as e:
-                _log_job(job, f"  timestamps ✗ erreur : {e}", "ERROR")
+                _log_job(job, f"  │ ✗ erreur : {e}", "ERROR")
                 sess_result["fixes"]["timestamp_sync"] = {"status": "error", "error": str(e)}
+            _log_job(job, "  └────────────────────────────────────────────────", "INFO")
 
         # ── 5. Vérification gripper-vidéo (lecture seule) ─────────────────────
         if req.run_gripper_sync:
+            _log_job(job, "  ┌─ GRIPPER SYNC ─────────────────────────────────", "INFO")
             try:
                 r = analyse_gripper_video_sync(sess_path, level=1)
                 if r.status == "no_data":
-                    _log_job(job, f"  gripper    – pas de données gripper", "INFO")
-                elif r.status == "ok":
-                    parts = [f"{res.side} Δ={res.temporal_delta_start_ms:+.0f}ms"
-                              for res in r.results]
-                    _log_job(job, f"  gripper    ✓ {' | '.join(parts)}", "INFO")
+                    _log_job(job, "  │ – pas de données gripper", "INFO")
                 else:
-                    for issue in r.issues[:2]:
-                        _log_job(job, f"  gripper    ⚠ {issue}", "WARN")
+                    for res in r.results:
+                        aligned_str = "aligné" if res.temporal_aligned else "DECALE"
+                        _log_job(job,
+                            f"  │ {res.side:6s}  Δstart={res.temporal_delta_start_ms:+7.0f}ms"
+                            f"  overlap={res.temporal_overlap_ms/1000:.1f}s  {aligned_str}",
+                            "INFO" if res.temporal_aligned else "WARN")
+                    for issue in r.issues:
+                        _log_job(job, f"  │ ⚠ {issue}", "WARN")
+                    if not r.issues:
+                        _log_job(job, f"  │ ✓ Gripper synchronisé", "INFO")
+
                 sess_result["fixes"]["gripper_sync"] = {
                     "status": r.status, "issues": r.issues,
                     "results": [{"side": res.side,
@@ -3906,8 +4049,9 @@ def _worker_fix_all_bulk(job: Job, req: FixAllBulkRequest):
                                 for res in r.results],
                 }
             except Exception as e:
-                _log_job(job, f"  gripper    ✗ erreur : {e}", "ERROR")
+                _log_job(job, f"  │ ✗ erreur : {e}", "ERROR")
                 sess_result["fixes"]["gripper_sync"] = {"status": "error", "error": str(e)}
+            _log_job(job, "  └────────────────────────────────────────────────", "INFO")
 
         results.append(sess_result)
         _update_job(job, progress=round((i + 1) / total * 100, 1))

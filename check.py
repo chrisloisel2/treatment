@@ -86,8 +86,8 @@ MODEL_PATH    = MODEL_DIR / "check_model.pt"
 
 # ── Hyper-paramètres signal ────────────────────────────────────────────────────
 RESAMPLE_MS       = 10.0
-MAX_LAG_MS        = 500.0
-WINDOW_MS         = 2000.0       # fenêtre plus large pour mieux capturer la corrélation
+MAX_LAG_MS        = 3000.0       # plage de recherche entraînée
+WINDOW_MS         = 2500.0       # fenêtre entraînée
 WINDOW_STRIDE_MS  = 500.0        # stride plus serré = plus d'exemples
 MIN_OVERLAP_MS    = 800.0
 EDGE_MARGIN_MS    = 30.0
@@ -100,7 +100,7 @@ TRAIN_EPOCHS      = 24           # plus d'epochs pour converger
 BATCH_SIZE        = 64
 LR                = 8e-4
 WEIGHT_DECAY      = 1e-4
-EMB               = 128          # embedding plus grand = plus expressif
+EMB               = 256          # embedding plus grand = plus expressif
 
 # ── Seuils structurels (portes binaires) ───────────────────────────────────────
 # Ces seuils déterminent si la session est utilisable (score = 0 si bloquée)
@@ -544,14 +544,15 @@ if _TORCH:
         def __init__(self, in_ch=3, emb=EMB):
             super().__init__()
             self.backbone = nn.Sequential(
-                ConvBlock(in_ch, 32),  nn.MaxPool1d(2),
-                ConvBlock(32, 64),     nn.MaxPool1d(2),
-                ConvBlock(64, 96),     nn.MaxPool1d(2),
-                ConvBlock(96, emb),    nn.AdaptiveAvgPool1d(1),
+                ConvBlock(in_ch, 32),   nn.MaxPool1d(2),
+                ConvBlock(32, 64),      nn.MaxPool1d(2),
+                ConvBlock(64, 96),      nn.MaxPool1d(2),
+                ConvBlock(96, 128),     nn.MaxPool1d(2),
+                ConvBlock(128, emb),    nn.AdaptiveAvgPool1d(1),
             )
             self.proj = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(emb, emb), nn.GELU(), nn.Dropout(0.1),
+                nn.Linear(emb, emb), nn.GELU(), nn.Dropout(0.15),
                 nn.Linear(emb, emb),
             )
 
@@ -564,9 +565,9 @@ if _TORCH:
             self.enc_ref = Encoder1D(emb=emb)
             self.enc_tgt = Encoder1D(emb=emb)
             self.head = nn.Sequential(
-                nn.Linear(emb * 4, 256), nn.GELU(), nn.Dropout(0.2),
-                nn.Linear(256, 64),      nn.GELU(),
-                nn.Linear(64, 1),
+                nn.Linear(emb * 4, 512), nn.GELU(), nn.Dropout(0.2),
+                nn.Linear(512, 128),     nn.GELU(), nn.Dropout(0.1),
+                nn.Linear(128, 1),
             )
 
         def forward(self, xa, xb):
@@ -679,11 +680,15 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
               f"neg={sum(1 for _,_,y in all_examples if y==0)}")
 
     dataset = PairWindowDataset(all_examples)
-    n_dl_workers = min(4, max(0, (os.cpu_count() or 1) - 1))
+    # Sur macOS/MPS, fork après ProcessPoolExecutor → crash DataLoader workers.
+    # Les données sont toutes en RAM → num_workers=0 suffit.
+    _is_mps = str(DEVICE) == "mps"
+    n_dl_workers = 0 if _is_mps else min(4, max(0, (os.cpu_count() or 1) - 1))
     loader  = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                          num_workers=n_dl_workers, pin_memory=(str(DEVICE) == "cuda"),
                          persistent_workers=(n_dl_workers > 0))
 
+    torch.set_float32_matmul_precision("high")
     model = CrossModalAligner().to(DEVICE)
     opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     sched = torch.optim.lr_scheduler.OneCycleLR(
@@ -691,7 +696,7 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
         anneal_strategy="cos",
     )
 
-    print(f"\n[train] Démarrage — {epochs} epochs  device={DEVICE}  batch={batch_size}  emb={EMB}")
+    print(f"\n[train] Démarrage — {epochs} epochs  device={DEVICE}  batch={batch_size}  emb={EMB}", flush=True)
     t0 = time.time()
     best_acc = 0.0
     best_state = None
@@ -723,7 +728,7 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
 
         print(f"  epoch {epoch+1:02d}/{epochs}  loss={np.mean(losses):.4f}  "
-              f"acc={acc:.1f}%  best={best_acc:.1f}%  t={time.time()-t0:.0f}s")
+              f"acc={acc:.1f}%  best={best_acc:.1f}%  t={time.time()-t0:.0f}s", flush=True)
 
     # Restaurer le meilleur modèle
     if best_state is not None:
@@ -739,6 +744,8 @@ def train(sync_dir: Path = SYNC_DIR, desync_dir: Path = DESYNC_DIR,
         "n_neg": n_neg,
         "epochs": epochs,
         "emb": EMB,
+        "max_lag_ms": MAX_LAG_MS,
+        "window_ms": WINDOW_MS,
         "best_acc": round(best_acc, 2),
     }
     (model_dir / "train_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -751,9 +758,28 @@ def load_model() -> Optional["CrossModalAligner"]:
     path = MODEL_DIR / "check_model.pt"
     if not path.exists():
         return None
-    model = CrossModalAligner().to(DEVICE)
+    # Lire les hyperparamètres depuis train_meta.json
+    meta_path = MODEL_DIR / "train_meta.json"
+    emb = EMB
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            emb = int(meta.get("emb", EMB))
+            # Restaurer les constantes d'inférence correspondant à l'entraînement
+            global MAX_LAG_MS, WINDOW_MS
+            MAX_LAG_MS = float(meta.get("max_lag_ms", MAX_LAG_MS))
+            WINDOW_MS  = float(meta.get("window_ms",  WINDOW_MS))
+        except Exception:
+            pass
+    model = CrossModalAligner(emb=emb).to(DEVICE)
     state = torch.load(path, map_location=DEVICE, weights_only=True)
-    model.load_state_dict(state)
+    try:
+        model.load_state_dict(state)
+    except RuntimeError as e:
+        # Architecture incompatible (ancien modèle) — ignorer
+        import warnings as _w
+        _w.warn(f"[load_model] Modèle incompatible ignoré (retraining requis): {e}", stacklevel=2)
+        return None
     model.eval()
     return model
 
@@ -820,9 +846,10 @@ def _ia_score_pair(model: "CrossModalAligner", ref: Flux, tgt: Flux,
         k = max(1, int(2.0 / RESAMPLE_MS * 2))
         kernel = np.ones((1, k), dtype=np.float32) / k
         # Convolution rapide via cumsum (O(n) au lieu de O(n*k))
-        ea_cs = np.cumsum(np.pad(ea_raw, ((0,0),(k-1,0))), axis=1)
+        # Padding k (pas k-1) pour que ea_cs[k:] - ea_cs[:-k] ait la bonne longueur win
+        ea_cs = np.cumsum(np.pad(ea_raw, ((0,0),(k,0))), axis=1)
         ea_arr = (ea_cs[:, k:] - ea_cs[:, :-k]) / k
-        eb_cs = np.cumsum(np.pad(eb_raw, ((0,0),(k-1,0))), axis=1)
+        eb_cs = np.cumsum(np.pad(eb_raw, ((0,0),(k,0))), axis=1)
         eb_arr = (eb_cs[:, k:] - eb_cs[:, :-k]) / k
 
         xa_batch = np.stack([wa_arr, da_arr, ea_arr], axis=1).astype(np.float32)  # (n,3,win)

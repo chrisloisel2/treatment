@@ -1905,6 +1905,64 @@
 			justify-content: flex-end
 		}
 
+		/* ── Fix modal ────────────────────────────────────────────────────── */
+		#fix-modal-backdrop {
+			display: none;
+			position: fixed;
+			inset: 0;
+			background: rgba(0,0,0,.55);
+			z-index: 200;
+			align-items: center;
+			justify-content: center;
+		}
+		#fix-modal-backdrop.open { display: flex }
+		#fix-modal {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			padding: 18px 22px;
+			min-width: 340px;
+			max-width: 500px;
+			width: 93vw;
+			box-shadow: 0 8px 32px #0009;
+		}
+		#fix-modal h3 { margin:0 0 3px; font-size:.9rem; color:var(--text) }
+		#fix-modal .sm-sub { font-size:.72rem; color:var(--text3); margin-bottom:4px }
+		#fix-modal .sm-section {
+			font-size:.68rem; font-weight:700; color:var(--text3);
+			text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;
+		}
+		.fix-opt {
+			display: grid;
+			grid-template-columns: 18px 22px 1fr;
+			grid-template-rows: auto auto;
+			column-gap: 6px;
+			align-items: start;
+			cursor: pointer;
+			padding: 6px 8px;
+			border-radius: 5px;
+			margin-bottom: 3px;
+			transition: background .12s;
+		}
+		.fix-opt:hover { background: var(--bg3) }
+		.fix-opt input[type=checkbox] { grid-row:1; margin-top:2px; cursor:pointer }
+		.fix-opt-icon { grid-row:1; font-size:.85rem; text-align:center }
+		.fix-opt-label { grid-row:1; font-size:.8rem; font-weight:600; color:var(--text) }
+		.fix-opt-label em { font-weight:400; font-style:normal; color:var(--accent2,#e8a020) }
+		.fix-opt-desc {
+			grid-column: 3; grid-row:2;
+			font-size:.68rem; color:var(--text3); line-height:1.4;
+		}
+		.fix-force-row {
+			margin-top: 10px;
+			font-size: .75rem;
+			color: var(--text2);
+			padding: 6px 8px;
+			background: var(--bg3);
+			border-radius: 5px;
+		}
+		.fix-force-row label { cursor:pointer }
+
 		/* ── Scripts section ──────────────────────────────────────────────── */
 		.script-chip {
 			display: inline-flex;
@@ -3972,9 +4030,9 @@
 							<button class="btn p" id="btn-sess-run" onclick="openStepsModal('selected')" disabled>
 								▶ Lancer sur sélectionnées
 							</button>
-							<button class="btn" id="btn-sess-fix" onclick="fixSelected()" disabled
+							<button class="btn" id="btn-sess-fix" onclick="openFixModal()" disabled
 								style="background:var(--accent2,#e8a020);color:#fff"
-								title="Appliquer fix_camera_offset sur les sessions sélectionnées">
+								title="Appliquer les corrections sur les sessions sélectionnées">
 								🔧 Fix
 							</button>
 							<button class="btn" id="btn-sess-trim" onclick="trimSelected()" disabled
@@ -5454,6 +5512,57 @@
 			<div class="sm-btns">
 				<button class="btn" onclick="stepsModalCancel()">Annuler</button>
 				<button class="btn p" onclick="stepsModalConfirm()">▶ Lancer sélection</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- ══ Fix modal ═══════════════════════════════════════════════════ -->
+	<div id="fix-modal-backdrop" onclick="fixModalClose(event)">
+		<div id="fix-modal">
+			<h3>🔧 Fix sessions</h3>
+			<div class="sm-sub" id="fix-modal-sub">0 session(s) sélectionnée(s)</div>
+
+			<div class="sm-section" style="margin-top:14px">Corrections (modifient les données)</div>
+			<label class="fix-opt"><input type="checkbox" id="fix-opt-tracker" checked>
+				<span class="fix-opt-icon">📍</span>
+				<span class="fix-opt-label">Labels trackers <em>head/left/right</em></span>
+				<span class="fix-opt-desc">4 tests géométriques indépendants — hauteur Y, centralité, mobilité, projection latérale</span>
+			</label>
+			<label class="fix-opt"><input type="checkbox" id="fix-opt-camera-lbl" checked>
+				<span class="fix-opt-icon">🎥</span>
+				<span class="fix-opt-label">Labels caméras <em>head/left/right</em></span>
+				<span class="fix-opt-desc">Calibration par numéro de série + corrélation gripper</span>
+			</label>
+			<label class="fix-opt"><input type="checkbox" id="fix-opt-offset" checked>
+				<span class="fix-opt-icon">⏱</span>
+				<span class="fix-opt-label">Offset caméra / tracker</span>
+				<span class="fix-opt-desc">Recale les timestamps caméra sur la fenêtre tracker</span>
+			</label>
+
+			<div class="sm-section" style="margin-top:10px">Vérifications (lecture seule, résultats dans les logs)</div>
+			<label class="fix-opt"><input type="checkbox" id="fix-opt-ts" checked>
+				<span class="fix-opt-icon">📊</span>
+				<span class="fix-opt-label">Synchronisation timestamps</span>
+				<span class="fix-opt-desc">Δt_start, gaps internes, dérive d'horloge, fenêtres atteignables</span>
+			</label>
+			<label class="fix-opt"><input type="checkbox" id="fix-opt-gripper" checked>
+				<span class="fix-opt-icon">🤖</span>
+				<span class="fix-opt-label">Sync gripper ↔ vidéo</span>
+				<span class="fix-opt-desc">Alignement temporel capteur gripper / flux caméra correspondant</span>
+			</label>
+
+			<div class="fix-force-row">
+				<label><input type="checkbox" id="fix-opt-force">
+					Forcer (ré-appliquer même si déjà vérifié)
+				</label>
+			</div>
+
+			<div class="sm-btns" style="margin-top:14px">
+				<button class="btn" onclick="fixModalCancel()">Annuler</button>
+				<button class="btn p" id="fix-modal-confirm" onclick="fixModalConfirm()"
+					style="background:var(--accent2,#e8a020);color:#fff">
+					🔧 Lancer le fix
+				</button>
 			</div>
 		</div>
 	</div>
@@ -7511,19 +7620,57 @@
 			refreshExportBtn();
 		}
 
-		async function fixSelected() {
+		// ── Fix modal ─────────────────────────────────────────────────────────
+		function openFixModal() {
 			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }
+			const n = S.selected.size;
+			const sub = ge('fix-modal-sub');
+			if (sub) sub.textContent = `${n} session(s) sélectionnée(s)`;
+			ge('fix-modal-backdrop').classList.add('open');
+		}
+
+		function fixModalClose(e) {
+			if (e.target.id === 'fix-modal-backdrop')
+				ge('fix-modal-backdrop').classList.remove('open');
+		}
+
+		function fixModalCancel() {
+			ge('fix-modal-backdrop').classList.remove('open');
+		}
+
+		async function fixModalConfirm() {
 			const sessions = [...S.selected];
 			const n = sessions.length;
-			if (!confirm(`Appliquer fix_camera_offset sur ${n} session(s) sélectionnée(s) ?`)) return;
+
+			const payload = {
+				sessions,
+				force:               ge('fix-opt-force')?.checked      ?? false,
+				run_tracker_labels:  ge('fix-opt-tracker')?.checked    ?? true,
+				run_camera_labels:   ge('fix-opt-camera-lbl')?.checked ?? true,
+				run_camera_offset:   ge('fix-opt-offset')?.checked     ?? true,
+				run_timestamp_sync:  ge('fix-opt-ts')?.checked         ?? true,
+				run_gripper_sync:    ge('fix-opt-gripper')?.checked    ?? true,
+			};
+
+			// Vérifier qu'au moins une option est cochée
+			const anyActive = payload.run_tracker_labels || payload.run_camera_labels
+				|| payload.run_camera_offset || payload.run_timestamp_sync
+				|| payload.run_gripper_sync;
+			if (!anyActive) { alert('Sélectionnez au moins une correction.'); return; }
+
+			ge('fix-modal-backdrop').classList.remove('open');
+
 			try {
-				const res = await api('POST', '/api/session/fix_camera_offset_bulk', { sessions, force: false });
+				const res = await api('POST', '/api/session/fix_all_bulk', payload);
 				log(`Fix lancé sur ${n} session(s) — job ${res.job_id}`, 'OK');
 				nav('jobs', null);
 			} catch (e) {
-				log('Erreur fix bulk : ' + e.message, 'ERROR');
+				log('Erreur fix : ' + e.message, 'ERROR');
 			}
 		}
+
+		// Conserver l'ancienne fonction pour rétrocompatibilité (appelée par d'autres endroits éventuels)
+		async function fixSelected() { openFixModal(); }
 
 		async function trimSelected() {
 			if (!S.selected.size) { alert('Sélectionnez des sessions.'); return; }

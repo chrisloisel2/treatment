@@ -1,8 +1,0 @@
-======================================================================
-RAPPORT ALIGNEMENT PINCE
-Session : session_20260327_194351
-Côté    : LEFT
-Statut  : FAILED
-======================================================================
-
-ECHEC : Fichiers absents : ['left.jsonl', 'gripper_left_data.csv']

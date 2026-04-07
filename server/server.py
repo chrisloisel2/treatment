@@ -3828,6 +3828,198 @@ async def fix_camera_offset_bulk(req: FixCameraOffsetBulkRequest):
     return {"job_id": job.id}
 
 
+# ── Fix complet (tous les scripts) ────────────────────────────────────────────
+
+class FixAllBulkRequest(BaseModel):
+    sessions: List[str]
+    force: bool = False
+    # Quels modules activer (True par défaut)
+    run_tracker_labels:    bool = True
+    run_camera_labels:     bool = True
+    run_camera_offset:     bool = True
+    run_timestamp_sync:    bool = True   # vérification uniquement (pas de modification)
+    run_gripper_sync:      bool = True   # vérification uniquement (pas de modification)
+
+
+def _worker_fix_all_bulk(job: Job, req: FixAllBulkRequest):
+    """Worker qui enchaîne les 4 nouveaux fix + camera_offset sur chaque session."""
+    import sys as _sys
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+
+    # Importer les modules fix
+    fix_root = _ROOT
+    if str(fix_root) not in _sys.path:
+        _sys.path.insert(0, str(fix_root))
+
+    try:
+        from fix.fix_tracker_labels  import fix_tracker_labels
+        from fix.fix_camera_labels   import fix_camera_labels
+        from fix.fix_timestamp_sync  import analyse_timestamp_sync
+        from fix.fix_gripper_video_sync import analyse_gripper_video_sync
+    except ImportError as e:
+        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
+        _log_job(job, f"Erreur import fix modules : {e}", "ERROR")
+        return
+
+    # Charger fix_camera_offset (legacy)
+    import importlib.util
+    _cam_fix_mod = None
+    if req.run_camera_offset:
+        try:
+            fix_script = _ROOT / "fix_camera_offset.py"
+            spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
+            _cam_fix_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_cam_fix_mod)
+        except Exception as e:
+            _log_job(job, f"[WARN] fix_camera_offset.py introuvable : {e}", "WARN")
+
+    total = len(req.sessions)
+    results = []
+
+    for i, sess_str in enumerate(req.sessions):
+        sess_path = Path(sess_str)
+        name = sess_path.name
+        _log_job(job, f"[{i+1}/{total}] ── {name} ──", "INFO")
+        sess_result = {"session": sess_str, "fixes": {}}
+
+        # ── 1. Labels trackers ────────────────────────────────────────────────
+        if req.run_tracker_labels:
+            try:
+                r = fix_tracker_labels(sess_path, dry_run=False, force=req.force)
+                s = r.status
+                z = next((t.evidence.get("zscore", 0) for t in r.tests
+                           if t.name == "height_Y"), 0)
+                if s == "corrected":
+                    _log_job(job, f"  trackers  ↺ corrigé ({r.agreement_count}/4 tests, z={z:.1f}σ) : {r.predicted}", "OK")
+                elif s == "ok":
+                    _log_job(job, f"  trackers  ✓ correct ({r.agreement_count}/4 tests, z={z:.1f}σ)", "INFO")
+                elif s == "uncertain":
+                    _log_job(job, f"  trackers  ⚠ incertain : {r.reason}", "WARN")
+                else:
+                    _log_job(job, f"  trackers  [{s}] {r.reason}", "WARN")
+                sess_result["fixes"]["tracker_labels"] = {"status": s, "reason": r.reason,
+                                                           "predicted": r.predicted}
+            except Exception as e:
+                _log_job(job, f"  trackers  ✗ erreur : {e}", "ERROR")
+                sess_result["fixes"]["tracker_labels"] = {"status": "error", "error": str(e)}
+
+        # ── 2. Labels caméras ─────────────────────────────────────────────────
+        if req.run_camera_labels:
+            try:
+                r = fix_camera_labels(sess_path, dry_run=False, force=req.force)
+                s = r.status
+                conf = next((src.confidence for src in r.sources
+                              if src.name == "serial_calibration"), 0.0)
+                if s == "corrected":
+                    _log_job(job, f"  cameras   ↺ corrigé (conf={conf:.2f}) : {r.predicted}", "OK")
+                elif s == "ok":
+                    _log_job(job, f"  cameras   ✓ correct (conf={conf:.2f})", "INFO")
+                elif s == "uncertain":
+                    _log_job(job, f"  cameras   ⚠ incertain : {r.reason}", "WARN")
+                else:
+                    _log_job(job, f"  cameras   [{s}] {r.reason}", "WARN")
+                sess_result["fixes"]["camera_labels"] = {"status": s, "reason": r.reason}
+            except Exception as e:
+                _log_job(job, f"  cameras   ✗ erreur : {e}", "ERROR")
+                sess_result["fixes"]["camera_labels"] = {"status": "error", "error": str(e)}
+
+        # ── 3. Offset caméra (fix_camera_offset legacy) ───────────────────────
+        if req.run_camera_offset and _cam_fix_mod is not None:
+            try:
+                report = _cam_fix_mod.fix_session(sess_path, dry_run=False, force=req.force)
+                s = report.get("status", "?")
+                if s == "corrected":
+                    cams = report.get("cameras_fixed", [])
+                    _log_job(job, f"  cam_offset ↺ {len(cams)} caméra(s) recalée(s)", "OK")
+                else:
+                    _log_job(job, f"  cam_offset [{s}] {report.get('reason','')}", "INFO")
+                sess_result["fixes"]["camera_offset"] = {"status": s}
+            except Exception as e:
+                _log_job(job, f"  cam_offset ✗ erreur : {e}", "ERROR")
+                sess_result["fixes"]["camera_offset"] = {"status": "error", "error": str(e)}
+
+        # ── 4. Vérification timestamps (lecture seule) ─────────────────────────
+        if req.run_timestamp_sync:
+            try:
+                r = analyse_timestamp_sync(sess_path)
+                deltas = r.summary.get("camera_start_deltas_ms", {})
+                if r.status == "ok":
+                    delta_str = "  ".join(f"{k.replace('cam_','')}={v:+.0f}ms"
+                                          for k, v in deltas.items())
+                    _log_job(job, f"  timestamps ✓ OK  Δstart: {delta_str}", "INFO")
+                else:
+                    for issue in r.issues[:3]:
+                        _log_job(job, f"  timestamps ⚠ {issue}", "WARN")
+                sess_result["fixes"]["timestamp_sync"] = {
+                    "status": r.status, "issues": r.issues,
+                    "camera_deltas_ms": deltas,
+                }
+            except Exception as e:
+                _log_job(job, f"  timestamps ✗ erreur : {e}", "ERROR")
+                sess_result["fixes"]["timestamp_sync"] = {"status": "error", "error": str(e)}
+
+        # ── 5. Vérification gripper-vidéo (lecture seule) ─────────────────────
+        if req.run_gripper_sync:
+            try:
+                r = analyse_gripper_video_sync(sess_path, level=1)
+                if r.status == "no_data":
+                    _log_job(job, f"  gripper    – pas de données gripper", "INFO")
+                elif r.status == "ok":
+                    parts = [f"{res.side} Δ={res.temporal_delta_start_ms:+.0f}ms"
+                              for res in r.results]
+                    _log_job(job, f"  gripper    ✓ {' | '.join(parts)}", "INFO")
+                else:
+                    for issue in r.issues[:2]:
+                        _log_job(job, f"  gripper    ⚠ {issue}", "WARN")
+                sess_result["fixes"]["gripper_sync"] = {
+                    "status": r.status, "issues": r.issues,
+                    "results": [{"side": res.side,
+                                 "delta_ms": res.temporal_delta_start_ms,
+                                 "overlap_ms": res.temporal_overlap_ms,
+                                 "aligned": res.temporal_aligned}
+                                for res in r.results],
+                }
+            except Exception as e:
+                _log_job(job, f"  gripper    ✗ erreur : {e}", "ERROR")
+                sess_result["fixes"]["gripper_sync"] = {"status": "error", "error": str(e)}
+
+        results.append(sess_result)
+        _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+    # Résumé final
+    n_corr = sum(
+        1 for r in results
+        if any(f.get("status") == "corrected" for f in r["fixes"].values())
+    )
+    n_warn = sum(
+        1 for r in results
+        if any(f.get("status") in ("uncertain", "warn")
+               for f in r["fixes"].values())
+    )
+    _log_job(job,
+             f"Fix terminé : {n_corr} session(s) modifiée(s), "
+             f"{n_warn} avertissement(s) sur {total} session(s)",
+             "OK")
+    _update_job(job, status=JobStatus.DONE, ended_at=_now(),
+                result={"corrected": n_corr, "warned": n_warn,
+                        "total": total, "details": results})
+
+
+@app.post("/api/session/fix_all_bulk")
+async def fix_all_bulk(req: FixAllBulkRequest):
+    """Applique tous les fix (labels trackers, labels caméras, offset caméra,
+    vérification timestamps, vérification sync gripper) sur les sessions sélectionnées."""
+    if not req.sessions:
+        raise HTTPException(400, "sessions manquantes")
+    job = _new_job("fix_all_bulk")
+    threading.Thread(
+        target=_worker_fix_all_bulk,
+        args=(job, req),
+        daemon=True,
+    ).start()
+    return {"job_id": job.id}
+
+
 class TrimStreamsBulkRequest(BaseModel):
     sessions: List[str]
     force: bool = False

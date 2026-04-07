@@ -34,3 +34,11 @@ _lerobot_work/
 # Logs et états serveur
 server/static/logs/
 *.log
+
+# Données d'entraînement et modèles (trop lourds pour git)
+_training/
+_check_model/
+verify_results/
+sync/
+desync/
+camera_calibration.json

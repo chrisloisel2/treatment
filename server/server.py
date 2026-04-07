@@ -1590,82 +1590,8 @@ async def pipeline_check_score(req: PipelineStateRequest):
 
     result = await loop.run_in_executor(None, _run)
 
-    # ── Auto-fix inversion trackers ───────────────────────────────────────────
     tracker_auto_fixed = False
     tracker_fix_mapping: dict = {}
-
-    tp_comp = result.get("components", {}).get("tracker_placement", {})
-    tp_blocking = tp_comp.get("blocking", False)
-    tp_det = tp_comp.get("details", {})
-    pred_raw  = tp_det.get("pred", {})
-    truth_raw = tp_det.get("truth", {})
-
-    if tp_blocking and pred_raw and truth_raw and not tp_det.get("error"):
-        # Construire le mapping {dst_role: src_role} pour corriger les headers CSV.
-        # pred[role] = index_bloc prédit réel pour ce rôle
-        # truth[role] = index_bloc actuellement étiqueté dans le CSV pour ce rôle
-        # On veut renommer les colonnes tracker_<truth_role>_* → tracker_<pred_role>_*
-        # i.e. pour chaque index i : son vrai rôle est pred_inv[i], son label actuel est truth_inv[i]
-        # → mapping[pred_inv[i]] = truth_inv[i]  (dst = pred, src = truth)
-        pred_inv  = {v: k for k, v in pred_raw.items()}   # index → rôle_prédit
-        truth_inv = {v: k for k, v in truth_raw.items()}  # index → rôle_CSV_actuel
-        sides = ("head", "left", "right")
-        mapping = {role: role for role in sides}
-        for idx in range(3):
-            true_role = pred_inv.get(idx)
-            csv_role  = truth_inv.get(idx)
-            if true_role and csv_role:
-                mapping[true_role] = csv_role   # dst ← src
-
-        # Vérifier que c'est bien une permutation non-identité
-        is_permutation = (set(mapping.keys()) == set(sides) and set(mapping.values()) == set(sides))
-        is_noop = all(mapping[s] == s for s in sides)
-
-        if is_permutation and not is_noop:
-            import pandas as _pd
-            trk_path = sess / "tracker_positions.csv"
-            if trk_path.exists():
-                try:
-                    df_trk = _pd.read_csv(trk_path)
-                    rename_map = {}
-                    for dst, src in mapping.items():
-                        if src == dst:
-                            continue
-                        for col in df_trk.columns:
-                            if col.startswith(f"tracker_{src}_"):
-                                suffix = col[len(f"tracker_{src}_"):]
-                                rename_map[col] = f"tracker_{dst}_{suffix}"
-                    if rename_map:
-                        df_trk = df_trk.rename(columns=rename_map)
-                        tmp_path = trk_path.with_name("__autofix_tmp_tracker_positions.csv")
-                        df_trk.to_csv(tmp_path, index=False)
-                        tmp_path.replace(trk_path)
-                        tracker_auto_fixed = True
-                        tracker_fix_mapping = mapping
-
-                        # Mettre à jour metadata.json["trackers"] si roles présents
-                        meta_path_tmp = sess / "metadata.json"
-                        try:
-                            if meta_path_tmp.exists():
-                                meta_tmp = json.loads(meta_path_tmp.read_text())
-                                if "trackers" in meta_tmp:
-                                    new_trackers = {}
-                                    for tid, tinfo in meta_tmp["trackers"].items():
-                                        role = tinfo.get("role")
-                                        new_role = next(
-                                            (dst for dst, src in mapping.items() if src == role),
-                                            role
-                                        ) if role else role
-                                        new_trackers[tid] = {**tinfo, "role": new_role}
-                                    meta_tmp["trackers"] = new_trackers
-                                    meta_path_tmp.write_text(json.dumps(meta_tmp, indent=2, ensure_ascii=False))
-                        except Exception:
-                            pass
-
-                        # Relancer le check avec le CSV corrigé
-                        result = await loop.run_in_executor(None, _run)
-                except Exception:
-                    pass
 
     score      = result["score"]
     grade      = result.get("grade", "?")

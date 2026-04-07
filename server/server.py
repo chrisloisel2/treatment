@@ -3916,27 +3916,29 @@ def _worker_fix_all_bulk(job: Job, req: FixAllBulkRequest):
                 # Avant
                 cur = r.current or {}
                 if cur:
-                    cur_str = "  ".join(f"{pos}={ser}" for pos, ser in sorted(cur.items()))
+                    cur_str = "  ".join(f"{pos}={lbl}" for pos, lbl in sorted(cur.items()))
                     _log_job(job, f"  │ AVANT  {cur_str}", "INFO")
 
-                # Sources
-                for src in r.sources:
-                    ev = src.evidence
-                    detail_parts = []
-                    for pos, info in (ev.get("predictions", {}) or {}).items():
-                        if isinstance(info, dict):
-                            detail_parts.append(f"{pos}={info.get('serial','?')}({info.get('frac',0)*100:.0f}%)")
-                        else:
-                            detail_parts.append(f"{pos}={info}")
-                    detail = "  ".join(detail_parts) if detail_parts else str(ev)[:60]
-                    _log_job(job,
-                        f"  │ Source [{src.name:28s}] conf={src.confidence:.2f}  {detail}",
-                        "INFO")
+                # Trackers corrigés
+                if r.tracker_prediction:
+                    trk_str = "  ".join(
+                        f"{role}←{csv}" for role, csv in sorted(r.tracker_prediction.items())
+                        if role != csv
+                    )
+                    if trk_str:
+                        _log_job(job, f"  │ Trackers swap : {trk_str}", "INFO")
+
+                # Scores flux optique
+                for cam_file, scores in (r.flow_scores or {}).items():
+                    if cam_file == "head":
+                        continue
+                    scores_str = "  ".join(f"{role}={v:.2f}" for role, v in sorted(scores.items()))
+                    _log_job(job, f"  │ Flux [{cam_file:5s}] {scores_str}", "INFO")
 
                 # Après
                 pred = r.predicted or {}
                 if s == "corrected":
-                    pred_str = "  ".join(f"{pos}={ser}" for pos, ser in sorted(pred.items()))
+                    pred_str = "  ".join(f"{cam}→{role}" for cam, role in sorted(pred.items()))
                     _log_job(job, f"  │ APRÈS  {pred_str}  ← CORRIGÉ", "OK")
                 elif s == "ok":
                     _log_job(job, f"  │ APRÈS  inchangé (labels corrects)", "INFO")

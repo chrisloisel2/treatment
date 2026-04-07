@@ -750,6 +750,17 @@ class VerificationReport:
 # ── Niveau 1 — Géométrie tracker 3D ──────────────────────────────────────────
 
 def analyze_trackers(csv_path: str) -> TrackerAssignment:
+    """
+    Identifie les rôles head/left/right des trackers depuis tracker_positions.csv.
+
+    Utilise l'algorithme robuste de fix_tracker_labels :
+    - Head : tracker avec hauteur Y la plus élevée (z-score statistique)
+    - Left/Right : projection de la POSITION MOYENNE relative à la tête sur
+      l'axe X MOYEN du head (quaternion) → robuste à toutes les orientations.
+
+    Cette approche remplace l'ancienne (world X axis) qui échouait à ~50%
+    quand le joueur ne fait pas face à une direction fixe.
+    """
     result = TrackerAssignment()
     try:
         df = pd.read_csv(csv_path)
@@ -761,83 +772,134 @@ def analyze_trackers(csv_path: str) -> TrackerAssignment:
         result.details.append(f"Trop peu de lignes dans le tracker CSV ({len(df)})")
         return result
 
-    trackers_data: Dict[str, Dict[str, np.ndarray]] = {}
-    for label in ("head", "left", "right"):
-        xcol, ycol, zcol = f"tracker_{label}_x", f"tracker_{label}_y", f"tracker_{label}_z"
-        if xcol not in df.columns:
-            result.details.append(f"Colonne manquante : {xcol}")
-            continue
-        trackers_data[label] = {
-            "x": df[xcol].dropna().to_numpy(),
-            "y": df[ycol].dropna().to_numpy(),
-            "z": df[zcol].dropna().to_numpy(),
-        }
+    # Déléguer à fix_tracker_labels (algorithme validé à 93%+)
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _root = _Path(csv_path).resolve().parent.parent
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from fix.fix_tracker_labels import (
+            _load_blocks, _test_height, _test_centrality,
+            _test_mobility, _test_lateral, _consensus,
+        )
+        blocks = _load_blocks(df)
+        if blocks is None:
+            result.details.append("Colonnes tracker manquantes dans le CSV")
+            return result
 
-    if len(trackers_data) < 3:
-        result.details.append("Données tracker incomplètes.")
+        t1 = _test_height(blocks)
+        t2 = _test_centrality(blocks)
+        t3 = _test_mobility(blocks)
+        t4 = _test_lateral(blocks, t1.head_vote)
+        predicted, agree_count, certain = _consensus([t1, t2, t3, t4])
+        # predicted = {role: csv_label}  ex: {head:'head', left:'right', right:'left'}
+
+    except Exception as e:
+        result.details.append(f"Erreur fix_tracker_labels : {e}")
         return result
 
-    means: Dict[str, Dict[str, float]] = {}
-    for label, axes in trackers_data.items():
-        means[label] = {
-            "x": float(np.median(axes["x"])),
-            "y": float(np.median(axes["y"])),
-            "z": float(np.median(axes["z"])),
-        }
+    # Remplir TrackerAssignment depuis le résultat
+    head_csv  = predicted.get("head",  "head")
+    left_csv  = predicted.get("left",  "left")
+    right_csv = predicted.get("right", "right")
 
-    by_height = sorted(means.keys(), key=lambda l: means[l]["y"], reverse=True)
-    head_by_y = by_height[0]
-    laterals  = [l for l in means.keys() if l != head_by_y]
-    laterals_by_x = sorted(laterals, key=lambda l: means[l]["x"])
-    left_by_x  = laterals_by_x[0]
-    right_by_x = laterals_by_x[1]
+    result.head_tracker_id  = head_csv
+    result.left_tracker_id  = left_csv
+    result.right_tracker_id = right_csv
 
-    vert_sep  = abs(means[head_by_y]["y"] - means[laterals[0]]["y"])
-    horiz_sep = abs(means[right_by_x]["x"] - means[left_by_x]["x"])
+    # Positions moyennes
+    for role, csv_label, attr in [
+        ("head",  head_csv,  "head_mean_pos"),
+        ("left",  left_csv,  "left_mean_pos"),
+        ("right", right_csv, "right_mean_pos"),
+    ]:
+        try:
+            x = float(np.median(df[f"tracker_{csv_label}_x"].dropna()))
+            y = float(np.median(df[f"tracker_{csv_label}_y"].dropna()))
+            z = float(np.median(df[f"tracker_{csv_label}_z"].dropna()))
+            setattr(result, attr, (x, y, z))
+        except Exception:
+            pass
 
-    result.head_tracker_id  = head_by_y
-    result.left_tracker_id  = left_by_x
-    result.right_tracker_id = right_by_x
-    result.head_mean_pos    = (means[head_by_y]["x"],  means[head_by_y]["y"],  means[head_by_y]["z"])
-    result.left_mean_pos    = (means[left_by_x]["x"],  means[left_by_x]["y"],  means[left_by_x]["z"])
-    result.right_mean_pos   = (means[right_by_x]["x"], means[right_by_x]["y"], means[right_by_x]["z"])
-    result.vertical_separation_m   = vert_sep
-    result.horizontal_separation_m = horiz_sep
+    # Séparations
+    try:
+        head_y  = result.head_mean_pos[1]
+        left_y  = result.left_mean_pos[1]
+        right_y = result.right_mean_pos[1]
+        vert_sep  = abs(head_y - max(left_y, right_y))
+        # Séparation latérale sur l'axe X local du head (projection moyenne)
+        block_h = next(b for b in blocks if b[0] == head_csv)
+        block_l = next(b for b in blocks if b[0] == left_csv)
+        block_r = next(b for b in blocks if b[0] == right_csv)
+        _, hp, hq = block_h
+        _, lp, _ = block_l
+        _, rp, _ = block_r
+
+        def _qrot(q):
+            q = q.astype(float)
+            q /= np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-12)
+            w, x, y, z = q[:,0], q[:,1], q[:,2], q[:,3]
+            R = np.empty((len(q),3,3))
+            R[:,0,0]=1-2*(y*y+z*z); R[:,0,1]=2*(x*y-z*w); R[:,0,2]=2*(x*z+y*w)
+            R[:,1,0]=2*(x*y+z*w);   R[:,1,1]=1-2*(x*x+z*z); R[:,1,2]=2*(y*z-x*w)
+            R[:,2,0]=2*(x*z-y*w);   R[:,2,1]=2*(y*z+x*w);   R[:,2,2]=1-2*(x*x+y*y)
+            return R
+
+        R = _qrot(hq)
+        mean_x = np.mean(R[:,:,0], axis=0); mean_x /= np.linalg.norm(mean_x)+1e-12
+        n = min(len(hp), len(lp), len(rp))
+        proj_l = float(np.dot(np.mean(lp[:n]-hp[:n], axis=0), mean_x))
+        proj_r = float(np.dot(np.mean(rp[:n]-hp[:n], axis=0), mean_x))
+        horiz_sep = abs(proj_r - proj_l)
+
+        result.vertical_separation_m   = vert_sep
+        result.horizontal_separation_m = horiz_sep
+    except Exception:
+        vert_sep  = 0.0
+        horiz_sep = 0.0
 
     issues = []
-    if vert_sep  < TRACKER_SEPARATION_MIN_M:
-        issues.append(f"Séparation verticale head/latéraux faible ({vert_sep*100:.1f} cm)")
-    if horiz_sep < TRACKER_SEPARATION_MIN_M:
-        issues.append(f"Séparation horizontale left/right faible ({horiz_sep*100:.1f} cm)")
+    if result.vertical_separation_m   < TRACKER_SEPARATION_MIN_M:
+        issues.append(f"Séparation verticale head/latéraux faible ({result.vertical_separation_m*100:.1f} cm)")
+    if result.horizontal_separation_m < TRACKER_SEPARATION_MIN_M:
+        issues.append(f"Séparation latérale left/right faible ({result.horizontal_separation_m*100:.1f} cm)")
 
-    tracker_label_matches = (head_by_y == "head" and left_by_x == "left" and right_by_x == "right")
+    tracker_label_matches = (head_csv == "head" and left_csv == "left" and right_csv == "right")
 
     result.details.append(
-        f"Positions médianes — "
-        f"head=({means['head']['x']:.3f}, {means['head']['y']:.3f}, {means['head']['z']:.3f})  "
-        f"left=({means['left']['x']:.3f}, {means['left']['y']:.3f}, {means['left']['z']:.3f})  "
-        f"right=({means['right']['x']:.3f}, {means['right']['y']:.3f}, {means['right']['z']:.3f})"
+        f"Trackers identifiés — head←{head_csv}  left←{left_csv}  right←{right_csv}  "
+        f"(accord {agree_count}/4 tests, certain={certain})"
     )
-    result.details.append(f"Plus haut tracker (Y)    : '{head_by_y}'  (Y={means[head_by_y]['y']:.3f} m)")
-    result.details.append(f"Tracker le plus à gauche : '{left_by_x}'  (X={means[left_by_x]['x']:.3f} m)")
-    result.details.append(f"Tracker le plus à droite : '{right_by_x}'  (X={means[right_by_x]['x']:.3f} m)")
-    result.details.append(f"Séparation verticale head/latéraux : {vert_sep*100:.1f} cm")
-    result.details.append(f"Séparation horizontale left/right  : {horiz_sep*100:.1f} cm")
+    result.details.append(
+        f"Positions — "
+        f"head=({result.head_mean_pos[0]:.3f},{result.head_mean_pos[1]:.3f},{result.head_mean_pos[2]:.3f})  "
+        f"left=({result.left_mean_pos[0]:.3f},{result.left_mean_pos[1]:.3f},{result.left_mean_pos[2]:.3f})  "
+        f"right=({result.right_mean_pos[0]:.3f},{result.right_mean_pos[1]:.3f},{result.right_mean_pos[2]:.3f})"
+    )
+    result.details.append(f"Séparation verticale : {result.vertical_separation_m*100:.1f} cm")
+    result.details.append(f"Séparation latérale  : {result.horizontal_separation_m*100:.1f} cm")
     if issues:
         result.details += [f"⚠ {i}" for i in issues]
 
-    if not issues and tracker_label_matches:
+    if certain and not issues:
         result.confidence = 1.0
-        result.details.append("✓ Géométrie 3D cohérente avec les labels déclarés")
-    elif not issues and not tracker_label_matches:
-        result.confidence = 0.95
-        result.details.append(f"! Géométrie 3D indique : head→{head_by_y}, left→{left_by_x}, right→{right_by_x}")
-    elif issues and tracker_label_matches:
-        result.confidence = 0.75
-        result.details.append("⚠ Séparations faibles mais labels cohérents")
+        result.details.append("✓ Labels trackers certains (4 tests concordants)")
+    elif certain and issues:
+        result.confidence = 0.85
+        result.details.append("⚠ Labels certains mais séparations faibles")
+    elif agree_count >= 3:
+        result.confidence = 0.80
+        result.details.append(f"~ Labels probables ({agree_count}/4 tests concordants)")
     else:
         result.confidence = 0.55
-        result.details.append("⚠ Séparations faibles et labels incohérents")
+        result.details.append(f"⚠ Confiance faible ({agree_count}/4 tests)")
+
+    if not tracker_label_matches:
+        result.details.append(
+            f"! Labels CSV incorrects : head→{head_csv}, left→{left_csv}, right→{right_csv}"
+        )
+        # La confiance reste celle calculée ci-dessus — c'est un résultat valide
 
     result.ok = (result.confidence >= 0.70)
     return result

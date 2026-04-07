@@ -52,7 +52,7 @@ from fix.problems import (
 from fix.diagnosis import diagnose_session, format_diagnosis
 from fix.repair import process_session
 from fix.fix_tracker_labels import fix_tracker_labels
-from fix.fix_camera_labels import fix_camera_labels, build_calibration_from_sessions
+from fix.fix_camera_labels import fix_camera_labels
 from fix.fix_timestamp_sync import analyse_timestamp_sync
 from fix.fix_gripper_video_sync import analyse_gripper_video_sync
 
@@ -66,7 +66,6 @@ __all__ = [
     "process_session",
     "fix_tracker_labels",
     "fix_camera_labels",
-    "build_calibration_from_sessions",
     "analyse_timestamp_sync",
     "analyse_gripper_video_sync",
 ]

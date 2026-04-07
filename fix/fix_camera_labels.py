@@ -1,53 +1,49 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fix/fix_camera_labels.py — Identification CERTAINE des caméras head/left/right.
+fix/fix_camera_labels.py — Identification des caméras head/left/right.
 
-Objectif : vérifier et corriger les assignements head.jsonl / left.jsonl /
-right.jsonl en utilisant 3 sources d'information indépendantes.
+Approche en deux étapes :
 
-Sources d'information (par ordre de fiabilité) :
-─────────────────────────────────────────────────
-SOURCE 1 — Table de calibration des numéros de série
-    Chaque caméra physique a un numéro de série unique (metadata.cameras[i].serial).
-    Une fois mappé position↔serial dans un fichier de calibration local
-    (auto-construit par apprentissage sur N sessions), l'assignement est CERTAIN.
-    → Certitude si ≥ MIN_SESSIONS_AGREEMENT sessions historiques s'accordent.
+ÉTAPE 1 — POSITION DES TRACKERS (certitude physique)
+    Utilise fix_tracker_labels pour déterminer quel tracker CSV est
+    head / left / right à partir de la hauteur Y, centralité, mobilité
+    et projection latérale basée sur la POSITION MOYENNE relative à la tête.
 
-SOURCE 2 — Corrélation gripper-caméra (si gripper_*.csv disponibles)
-    Quand le gripper DROIT est actif (opening_mm varie), la caméra DROITE devrait
-    enregistrer plus de frames (framerate légèrement perturbé par l'activité).
-    Et vice-versa pour le gauche.
-    → Corrélation entre variance IFI de chaque caméra et activité gripper
-      correspondante.
+ÉTAPE 2 — CORRESPONDANCE CAMÉRA ↔ TRACKER (flux optique)
+    Chaque caméra est physiquement fixée sur un gripper ou la tête.
+    Son mouvement (flux optique) est donc directement lié au mouvement
+    du tracker correspondant.
 
-SOURCE 3 — Cohérence temporelle (sanity-check)
-    Toutes les caméras doivent couvrir approximativement la même plage temporelle
-    que le tracker. Une caméra avec une plage anormale est probablement mislabeled
-    (ou défectueuse).
+    a) HEAD : la caméra avec le flux optique moyen le plus faible.
+       La tête bouge moins vite que les mains → signal fiable.
 
-ALGORITHME DE CORRECTION :
-    1. Calculer le score de chaque source pour chaque assignement possible.
-    2. Prendre l'intersection des sources qui s'accordent (≥ 2/3).
-    3. Appliquer uniquement si certitude ≥ CERTAINTY_THRESHOLD.
-    4. Renommer les fichiers .jsonl et mettre à jour metadata.json.
+    b) LEFT / RIGHT : pour les deux caméras restantes, on calcule un score
+       d'association avec chaque tracker de main :
+       - Signal global : corrélation entre flux optique et vitesse tracker
+         (avec recherche de décalage temporel ±15 frames pour robustesse)
+       - Signal asymétrique : quand un tracker est CLAIREMENT plus actif
+         que l'autre (ratio ≥ 2.5×), la caméra correspondante devrait
+         montrer un flux plus élevé.
+       Le score combiné donne un vote robuste même quand les deux mains
+       bougent en même temps.
 
-CALIBRATION AUTO-APPRENTISSAGE :
-    Après chaque session vérifiée, le script met à jour un fichier de calibration
-    local (camera_calibration.json dans le répertoire racine du projet).
-    → Les sessions suivantes bénéficient de la calibration accumulée.
+NOTE : les numéros de série des caméras ne sont PAS utilisés car les flux
+vidéo ne correspondent pas toujours aux numéros de série enregistrés.
 
 Usage :
     python -m fix.fix_camera_labels /chemin/session [--dry-run] [--force]
-    python -m fix.fix_camera_labels /chemin/session --learn   # mise à jour calibration uniquement
-    python -m fix.fix_camera_labels /chemin/root --batch      # toutes les sessions du répertoire
+    python -m fix.fix_camera_labels /chemin/root --batch
+
+    from fix.fix_camera_labels import fix_camera_labels
+    report = fix_camera_labels(Path("/chemin/session"))
 """
 from __future__ import annotations
 
 import argparse
 import json
 import shutil
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
@@ -57,8 +53,6 @@ import numpy as np
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
-CALIB_PATH = _ROOT / "camera_calibration.json"
-
 for _p in [str(_ROOT), str(_HERE)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -69,362 +63,312 @@ try:
 except ImportError:
     _PANDAS = False
 
+try:
+    import cv2
+    _CV2 = True
+except ImportError:
+    _CV2 = False
+
+from fix.fix_tracker_labels import (
+    fix_tracker_labels,
+    _load_blocks,
+    _test_height,
+    _test_centrality,
+    _test_mobility,
+    _test_lateral,
+    _consensus,
+)
+
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-MARKER_KEY             = "camera_labels_verified"
-CAMERAS                = ("head", "left", "right")
-MIN_SESSIONS_AGREEMENT = 3      # sessions pour valider un serial → position
-CERTAINTY_THRESHOLD    = 0.75   # score minimal pour appliquer une correction
-IFI_CORR_WINDOW_MS     = 500.0  # fenêtre de lissage IFI pour corrélation gripper
+MARKER_KEY         = "camera_labels_verified"
+CAMERAS            = ("head", "left", "right")
+MAX_FLOW_FRAMES    = 800        # frames max pour le flux optique
+FLOW_RESIZE        = (160, 90)  # taille de redimensionnement (speed vs precision)
+LAG_MAX_FRAMES     = 15         # décalage max ±15 frames ≈ ±500ms à 30fps
+ASYM_RATIO         = 2.5        # ratio vitesse pour définir une période asymétrique
+ASYM_MIN_FRAMES    = 5          # frames asymétriques minimales pour le signal
+CONFIDENCE_CERTAIN = 0.15       # séparation minimale (score_best - score_2nd) pour certitude
 
 
 # ── Structures ────────────────────────────────────────────────────────────────
 
 @dataclass
-class SourceResult:
-    name: str
-    assignment: dict       # {position: serial}
-    confidence: float      # 0–1
-    evidence: dict = field(default_factory=dict)
-
-
-@dataclass
 class CameraLabelReport:
     session: str
-    status: str            # "ok"|"corrected"|"uncertain"|"error"|"skipped"
+    status: str           # "ok"|"corrected"|"uncertain"|"error"|"skipped"
     reason: str = ""
-    sources: list[SourceResult] = field(default_factory=list)
-    predicted: dict = field(default_factory=dict)   # {position: serial}
-    current: dict = field(default_factory=dict)     # {position: serial}
+    predicted: dict = field(default_factory=dict)   # {cam_file: role}
+    current: dict = field(default_factory=dict)     # {cam_file: role} (metadata actuel)
+    tracker_prediction: dict = field(default_factory=dict)  # {role: csv_label}
+    flow_scores: dict = field(default_factory=dict) # {cam_file: {role: score}}
     corrected: bool = False
     dry_run: bool = False
 
 
-# ── Calibration locale ────────────────────────────────────────────────────────
+# ── Flux optique ──────────────────────────────────────────────────────────────
 
-def _load_calibration() -> dict:
-    """Charge la table serial→{position: count} depuis camera_calibration.json."""
-    if not CALIB_PATH.exists():
-        return {}
-    try:
-        return json.loads(CALIB_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _save_calibration(calib: dict) -> None:
-    CALIB_PATH.write_text(json.dumps(calib, indent=2, ensure_ascii=False),
-                          encoding="utf-8")
-
-
-def _update_calibration(serial_to_position: dict[str, str]) -> None:
-    """Met à jour la calibration avec un nouvel assignement vérifié."""
-    calib = _load_calibration()
-    for serial, position in serial_to_position.items():
-        if serial not in calib:
-            calib[serial] = {}
-        calib[serial][position] = calib[serial].get(position, 0) + 1
-    _save_calibration(calib)
-
-
-def _calibration_predict(serials: dict[str, str]) -> tuple[dict, float]:
+def _optical_flow_signal(
+    video_path: Path,
+    max_frames: int = MAX_FLOW_FRAMES,
+) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
-    Prédit {position: serial} depuis la calibration locale.
-    serials : {camera_idx: serial}
-    Returns: ({position: serial}, confidence)
+    Calcule la magnitude moyenne du flux optique frame-par-frame.
+
+    Returns:
+        (flow_mag, timestamps_ms) ou (None, None) si la vidéo est inaccessible.
     """
-    calib = _load_calibration()
-    predictions: dict[str, tuple[str, float]] = {}   # {position: (serial, conf)}
+    if not _CV2:
+        return None, None
 
-    for idx, serial in serials.items():
-        if serial not in calib:
-            continue
-        counts = calib[serial]
-        total  = sum(counts.values())
-        best_pos  = max(counts, key=counts.get)
-        best_frac = counts[best_pos] / total   # cohérence : 1.0 si toujours au même endroit
-        # Confiance = cohérence × facteur volume (saturé à 1 après 3 sessions)
-        volume_factor = min(1.0, total / MIN_SESSIONS_AGREEMENT)
-        conf = best_frac * (0.7 + 0.3 * volume_factor)   # min 70% si cohérence=1
-        if conf < 0.5:
-            continue
-        predictions[best_pos] = (serial, conf)
+    cap = cv2.VideoCapture(str(video_path))
+    ret, prev = cap.read()
+    if not ret:
+        cap.release()
+        return None, None
 
-    if not predictions:
-        return {}, 0.0
-
-    # Vérifier que les 3 positions sont couvertes et sans collision
-    assigned_serials = set()
-    result: dict[str, str] = {}
-    min_conf = 1.0
-    for pos in CAMERAS:
-        if pos not in predictions:
-            return {}, 0.0
-        serial, conf = predictions[pos]
-        if serial in assigned_serials:
-            return {}, 0.0   # collision
-        result[pos] = serial
-        assigned_serials.add(serial)
-        min_conf = min(min_conf, conf)
-
-    return result, min_conf
-
-
-# ── Source 1 : calibration des numéros de série ───────────────────────────────
-
-def _source_serial_calibration(meta: dict) -> SourceResult:
-    """Prédit l'assignement depuis la table de calibration locale."""
-    cameras = meta.get("cameras", {})
-    serials = {idx: cam["serial"] for idx, cam in cameras.items()
-               if "serial" in cam}
-
-    predicted, conf = _calibration_predict(serials)
-    evidence = {
-        "n_known_serials": len(predicted),
-        "min_confidence":  round(conf, 3),
-        "calibration_file": str(CALIB_PATH),
-        "calibration_exists": CALIB_PATH.exists(),
-    }
-
-    if not predicted or conf < CERTAINTY_THRESHOLD:
-        return SourceResult(
-            name="serial_calibration",
-            assignment={},
-            confidence=0.0,
-            evidence=evidence,
-        )
-
-    return SourceResult(
-        name="serial_calibration",
-        assignment=predicted,   # {position: serial}
-        confidence=float(conf),
-        evidence=evidence,
+    prev_gray = cv2.resize(
+        cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY), FLOW_RESIZE
     )
 
-
-# ── Source 2 : corrélation IFI caméra / activité gripper ─────────────────────
-
-def _load_jsonl_times(path: Path) -> Optional[np.ndarray]:
-    if not path.exists():
-        return None
-    times = []
-    try:
-        with open(path, errors="ignore") as f:
+    # Lire les timestamps depuis le .jsonl correspondant
+    jsonl = video_path.with_suffix(".jsonl")
+    times: list[float] = []
+    if jsonl.exists():
+        with open(jsonl, errors="ignore") as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
                 try:
                     times.append(float(json.loads(line)["capture_time"]))
                 except Exception:
-                    continue
-    except Exception:
-        return None
-    return np.array(times, dtype=np.float64) if len(times) > 10 else None
+                    pass
+
+    mags: list[float] = []
+    while len(mags) < max_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), FLOW_RESIZE)
+        flow = cv2.calcOpticalFlowFarneback(
+            prev_gray, gray, None, 0.5, 3, 10, 3, 5, 1.2, 0
+        )
+        mag, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+        mags.append(float(np.mean(mag)))
+        prev_gray = gray
+
+    cap.release()
+    if not mags:
+        return None, None
+
+    t = np.array(times, dtype=float)
+    n = len(mags)
+    if len(t) > n:
+        t_out = t[1 : n + 1]
+    else:
+        # Fallback : timestamps synthétiques à 30fps
+        t0 = float(t[0]) if len(t) > 0 else 0.0
+        t_out = np.arange(n) * 33.0 + t0
+
+    return np.array(mags, dtype=float), t_out[:n]
 
 
-def _ifi_variance_signal(times: np.ndarray, win_ms: float = 200.0) -> np.ndarray:
+# ── Vitesse des trackers ───────────────────────────────────────────────────────
+
+def _tracker_speed_at(
+    df: pd.DataFrame,
+    csv_label: str,
+    times_ms: np.ndarray,
+) -> np.ndarray:
     """
-    Signal de variance IFI lissée à la fenêtre win_ms.
-    Indicateur d'instabilité locale du framerate.
+    Calcule la vitesse 3D (m/s) du tracker `csv_label` rééchantillonnée
+    aux instants `times_ms` (millisecondes).
     """
-    ifi = np.diff(times)
-    med = float(np.median(ifi))
-    dev = np.abs(ifi - med)
-    k   = max(1, int(win_ms / med)) if med > 0 else 5
-    sig = np.convolve(dev, np.ones(k) / k, mode="same")
-    return sig.astype(np.float32)
+    pos = df[
+        [f"tracker_{csv_label}_x",
+         f"tracker_{csv_label}_y",
+         f"tracker_{csv_label}_z"]
+    ].to_numpy(float)
+    ts   = df["timestamp_ns"].to_numpy(float) / 1e6   # → ms
+    dt   = np.diff(ts)
+    speed = (
+        np.linalg.norm(np.diff(pos, axis=0), axis=1)
+        / np.maximum(dt / 1000.0, 1e-6)
+    )
+    t_mid = 0.5 * (ts[:-1] + ts[1:])
+    return np.interp(times_ms, t_mid, speed)
 
 
-def _gripper_activity_signal(csv_path: Path) -> Optional[np.ndarray]:
-    """Renvoie le signal d'activité gripper rééchantillonné à 10ms."""
-    if not _PANDAS or not csv_path.exists():
-        return None
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception:
-        return None
-    if "timestamp_ns" not in df.columns or "opening_mm" not in df.columns:
-        return None
+# ── Score caméra ↔ tracker ───────────────────────────────────────────────────
 
-    t_ms = pd.to_numeric(df["timestamp_ns"], errors="coerce").to_numpy() / 1e6
-    v    = pd.to_numeric(df["opening_mm"], errors="coerce").to_numpy()
-    valid = np.isfinite(t_ms) & np.isfinite(v)
-    t_ms, v = t_ms[valid], v[valid]
-    if len(t_ms) < 10:
-        return None
-
-    # Rééchantillonner à 10ms
-    t0, t1 = t_ms[0], t_ms[-1]
-    grid   = np.arange(t0, t1, 10.0)
-    if len(grid) < 20:
-        return None
-    resampled = np.interp(grid, t_ms, v).astype(np.float32)
-    # Dérivée absolue = activité
-    return np.abs(np.diff(resampled, prepend=resampled[0]))
+def _xcorr_lagged(a: np.ndarray, b: np.ndarray, max_lag: int = LAG_MAX_FRAMES) -> float:
+    """Corrélation normalisée maximale avec décalage ±max_lag."""
+    n = min(len(a), len(b))
+    a, b = a[:n], b[:n]
+    if np.std(a) < 1e-8 or np.std(b) < 1e-8:
+        return 0.0
+    an = (a - a.mean()) / a.std()
+    bn = (b - b.mean()) / b.std()
+    best = -1.0
+    for lag in range(-max_lag, max_lag + 1):
+        if lag == 0:
+            c = float(np.mean(an * bn))
+        elif lag > 0:
+            c = float(np.mean(an[lag:] * bn[:-lag]))
+        else:
+            c = float(np.mean(an[:lag] * bn[-lag:]))
+        if c > best:
+            best = c
+    return best
 
 
-def _source_gripper_correlation(session_path: Path, meta: dict) -> SourceResult:
+def _asymmetric_score(
+    cam_mag: np.ndarray,
+    sp_a: np.ndarray,
+    sp_b: np.ndarray,
+    ratio: float = ASYM_RATIO,
+) -> float:
     """
-    Corrèle le signal IFI de chaque caméra avec l'activité gripper correspondante.
-    La caméra droite devrait avoir un IFI plus variable quand le gripper droit
-    est actif (vibrations mécaniques, focus automatique).
+    Score asymétrique : combien de fois le mouvement de la caméra est-il
+    plus élevé quand le tracker A est actif que quand le tracker B est actif ?
+
+    Valeur positive → caméra suit le tracker A.
+    Valeur négative → caméra suit le tracker B.
     """
-    cameras = meta.get("cameras", {})
+    n = min(len(cam_mag), len(sp_a), len(sp_b))
+    cam = cam_mag[:n]
+    a   = sp_a[:n]
+    b   = sp_b[:n]
 
-    # Charger les signaux IFI pour chaque caméra ACTUELLE
-    ifi_signals: dict[str, Optional[np.ndarray]] = {}
-    for pos in CAMERAS:
-        t = _load_jsonl_times(session_path / "videos" / f"{pos}.jsonl")
-        ifi_signals[pos] = _ifi_variance_signal(t) if t is not None else None
+    # Lissage pour réduire le bruit frame-par-frame
+    k = 5
+    cam = np.convolve(cam, np.ones(k) / k, "same")
+    a   = np.convolve(a,   np.ones(k) / k, "same")
+    b   = np.convolve(b,   np.ones(k) / k, "same")
 
-    # Charger les signaux gripper
-    gripper: dict[str, Optional[np.ndarray]] = {
-        "left":  _gripper_activity_signal(session_path / "gripper_left_data.csv"),
-        "right": _gripper_activity_signal(session_path / "gripper_right_data.csv"),
+    eps   = 1e-3
+    mask_a = a > ratio * (b + eps)   # A clairement plus actif
+    mask_b = b > ratio * (a + eps)   # B clairement plus actif
+
+    n_a = int(mask_a.sum())
+    n_b = int(mask_b.sum())
+
+    if n_a < ASYM_MIN_FRAMES and n_b < ASYM_MIN_FRAMES:
+        return 0.0   # pas assez de signal asymétrique
+
+    cam_a = float(np.mean(cam[mask_a])) if n_a >= ASYM_MIN_FRAMES else float(np.median(cam))
+    cam_b = float(np.mean(cam[mask_b])) if n_b >= ASYM_MIN_FRAMES else float(np.median(cam))
+
+    return cam_a - cam_b
+
+
+def _camera_tracker_score(
+    cam_mag: np.ndarray,
+    sp_a: np.ndarray,
+    sp_b: np.ndarray,
+) -> float:
+    """
+    Score combiné pour évaluer si `cam_mag` suit le tracker A plutôt que B.
+
+    Combine :
+    - corrélation globale (avec décalage ±15 frames)
+    - score asymétrique (comportement pendant les mouvements unilatéraux)
+    """
+    corr  = _xcorr_lagged(cam_mag, sp_a)
+    asym  = _asymmetric_score(cam_mag, sp_a, sp_b)
+
+    # Normalisation de l'asymétrie sur la plage attendue (~0–2 pixel/frame)
+    asym_norm = float(np.clip(asym / 0.5, -1.0, 1.0))
+
+    return 0.5 * corr + 0.5 * asym_norm
+
+
+# ── Attribution caméra → rôle ─────────────────────────────────────────────────
+
+def _assign_cameras(
+    cam_signals: dict[str, tuple[np.ndarray, np.ndarray]],
+    df: pd.DataFrame,
+    tracker_prediction: dict[str, str],
+) -> tuple[dict[str, str], dict[str, dict[str, float]], float]:
+    """
+    Attribue chaque flux caméra à un rôle (head/left/right).
+
+    Returns:
+        assignment  : {cam_file: role}
+        score_matrix: {cam_file: {role: score}}
+        confidence  : séparation best - 2nd pour la décision la plus ambiguë
+    """
+    # Étape 1 — HEAD : caméra avec flux optique moyen le plus faible
+    mean_flows = {cf: float(np.mean(mag)) for cf, (mag, _) in cam_signals.items()}
+    head_cam   = min(mean_flows, key=mean_flows.get)
+    hand_cams  = [c for c in cam_signals if c != head_cam]
+
+    assignment: dict[str, str] = {head_cam: "head"}
+
+    if len(hand_cams) < 2:
+        # Pas assez de caméras hand → assigner par défaut
+        for cf in hand_cams:
+            assignment[cf] = "left" if cf == "left" else "right"
+        return assignment, {}, 0.0
+
+    c0, c1    = hand_cams[0], hand_cams[1]
+    mag0, t0  = cam_signals[c0]
+    mag1, t1  = cam_signals[c1]
+
+    # Roles des mains (exclure head)
+    hand_roles = [r for r in tracker_prediction if r != "head"]
+    r0, r1     = hand_roles[0], hand_roles[1]
+    csv0, csv1 = tracker_prediction[r0], tracker_prediction[r1]
+
+    # Étape 2 — MAIN GAUCHE / DROITE : score asymétrique + corrélation globale
+    sp0_on_c0 = _tracker_speed_at(df, csv0, t0)
+    sp1_on_c0 = _tracker_speed_at(df, csv1, t0)
+    sp0_on_c1 = _tracker_speed_at(df, csv0, t1)
+    sp1_on_c1 = _tracker_speed_at(df, csv1, t1)
+
+    score_c0_r0 = _camera_tracker_score(mag0, sp0_on_c0, sp1_on_c0)
+    score_c0_r1 = _camera_tracker_score(mag0, sp1_on_c0, sp0_on_c0)
+    score_c1_r0 = _camera_tracker_score(mag1, sp0_on_c1, sp1_on_c1)
+    score_c1_r1 = _camera_tracker_score(mag1, sp1_on_c1, sp0_on_c1)
+
+    score_matrix: dict[str, dict[str, float]] = {
+        c0: {r0: round(score_c0_r0, 3), r1: round(score_c0_r1, 3)},
+        c1: {r0: round(score_c1_r0, 3), r1: round(score_c1_r1, 3)},
+        head_cam: {"head": 1.0},
     }
 
-    if gripper["left"] is None and gripper["right"] is None:
-        return SourceResult(
-            name="gripper_correlation",
-            assignment={},
-            confidence=0.0,
-            evidence={"reason": "gripper CSV absent"},
-        )
+    # Décision : c0→r0 ou c0→r1 ?
+    # Vote de c0 ET de c1 (cohérence croisée)
+    vote_c0_r0 = score_c0_r0 - score_c0_r1   # > 0 si c0 préfère r0
+    vote_c1_r0 = score_c1_r1 - score_c1_r0   # > 0 si c1 préfère r1 (= c0 va vers r0)
 
-    # Corrélation croisée (version simplifiée : corrélation sur la variance)
-    corr_scores: dict[str, dict[str, float]] = {}   # corr_scores[cam_pos][gripper_side]
-    for cam_pos, ifi_sig in ifi_signals.items():
-        if ifi_sig is None:
-            continue
-        corr_scores[cam_pos] = {}
-        for g_side, g_sig in gripper.items():
-            if g_sig is None:
-                continue
-            # Aligner sur la longueur minimale
-            n = min(len(ifi_sig), len(g_sig))
-            a = ifi_sig[:n].astype(float)
-            b = g_sig[:n].astype(float)
-            if np.std(a) < 1e-8 or np.std(b) < 1e-8:
-                corr_scores[cam_pos][g_side] = 0.0
-                continue
-            a = (a - a.mean()) / a.std()
-            b = (b - b.mean()) / b.std()
-            corr_scores[cam_pos][g_side] = float(np.mean(a * b))
+    # Score global pour l'assignement c0→r0
+    combined = vote_c0_r0 + vote_c1_r0
+    confidence = abs(combined) / 2.0   # normalisation approximative [0, 1]
 
-    if not corr_scores:
-        return SourceResult(
-            name="gripper_correlation",
-            assignment={},
-            confidence=0.0,
-            evidence={"corr_scores": {}, "reason": "signaux IFI absents"},
-        )
+    if combined >= 0:
+        assignment[c0] = r0
+        assignment[c1] = r1
+    else:
+        assignment[c0] = r1
+        assignment[c1] = r0
 
-    # Trouver l'assignement qui maximise la corrélation caméra↔gripper côté
-    # La caméra correspondant à un gripper devrait avoir r > les autres
-    assignment: dict[str, str] = {}
-    confidences = []
-    for g_side in ("left", "right"):
-        best_cam  = max(
-            (cam for cam in corr_scores if g_side in corr_scores[cam]),
-            key=lambda c: corr_scores[c].get(g_side, -99),
-            default=None,
-        )
-        if best_cam is None:
-            continue
-        scores_for_g = [corr_scores[c].get(g_side, 0.0) for c in corr_scores]
-        scores_sorted = sorted(scores_for_g, reverse=True)
-        separation = scores_sorted[0] - scores_sorted[1] if len(scores_sorted) > 1 else 0.0
-        conf = float(np.clip(separation / 0.1, 0.0, 1.0))   # 0.1 = séparation typique attendue
-        assignment[g_side] = best_cam
-        confidences.append(conf)
-
-    head_cam = next((c for c in CAMERAS if c not in assignment.values()), None)
-    if head_cam:
-        assignment["head"] = head_cam
-
-    conf = float(np.mean(confidences)) if confidences else 0.0
-
-    return SourceResult(
-        name="gripper_correlation",
-        assignment=assignment,   # {position: camera_file_label} — différent de serial!
-        confidence=conf,
-        evidence={"corr_scores": {k: {kk: round(vv, 4)
-                                       for kk, vv in v.items()}
-                                   for k, v in corr_scores.items()}},
-    )
+    return assignment, score_matrix, float(confidence)
 
 
-# ── Source 3 : cohérence temporelle ───────────────────────────────────────────
+# ── Lecture de l'état actuel ──────────────────────────────────────────────────
 
-def _source_temporal_consistency(session_path: Path, meta: dict) -> SourceResult:
+def _current_camera_assignment(session_path: Path) -> dict[str, str]:
     """
-    Vérifie que toutes les caméras couvrent la même plage temporelle.
-    Une caméra avec coverage < 70% de la médiane est suspecte.
+    Retourne l'assignement actuel des fichiers caméra depuis les noms de fichiers JSONL.
+    Retourne {cam_file: role_label} où role_label est déduit du nom de fichier.
+    Par convention : head.jsonl → "head", left.jsonl → "left", right.jsonl → "right".
     """
-    durations: dict[str, Optional[float]] = {}
-    frame_counts: dict[str, int] = {}
-    for pos in CAMERAS:
-        t = _load_jsonl_times(session_path / "videos" / f"{pos}.jsonl")
-        if t is None:
-            durations[pos] = None
-        else:
-            durations[pos] = float(t[-1] - t[0])
-            frame_counts[pos] = len(t)
-
-    valid = {p: d for p, d in durations.items() if d is not None}
-    if len(valid) < 2:
-        return SourceResult(
-            name="temporal_consistency",
-            assignment={},
-            confidence=0.0,
-            evidence={"durations_ms": durations},
-        )
-
-    med_dur = float(np.median(list(valid.values())))
-    anomalies = {p: d for p, d in valid.items() if abs(d - med_dur) / (med_dur + 1e-6) > 0.3}
-    conf = 1.0 - len(anomalies) / len(valid)
-
-    return SourceResult(
-        name="temporal_consistency",
-        assignment={},   # Ce test ne prédit pas d'assignement, il détecte des anomalies
-        confidence=float(conf),
-        evidence={
-            "durations_ms":  {p: round(d, 0) if d else None for p, d in durations.items()},
-            "frame_counts":  frame_counts,
-            "median_dur_ms": round(med_dur, 0),
-            "anomalies":     anomalies,
-        },
-    )
-
-
-# ── Logique de décision ───────────────────────────────────────────────────────
-
-def _decide(sources: list[SourceResult], current_serials: dict) -> tuple[dict, float]:
-    """
-    Combine les sources pour décider de l'assignement final.
-    current_serials : {position: serial} (état actuel du metadata)
-    Returns: (new_serials_assignment, confidence)
-    """
-    # Source 1 (calibration) est la plus fiable — si confiance > seuil, elle prime
-    serial_src = next((s for s in sources if s.name == "serial_calibration"), None)
-    if serial_src and serial_src.confidence >= CERTAINTY_THRESHOLD:
-        return serial_src.assignment, serial_src.confidence
-
-    # Sinon, vérifier la source gripper (mais elle travaille sur les labels courants)
-    gripper_src = next((s for s in sources if s.name == "gripper_correlation"), None)
-    if gripper_src and gripper_src.confidence >= CERTAINTY_THRESHOLD:
-        # La source gripper retourne {position: cam_label} pas {position: serial}
-        # → convertir en {position: serial} en utilisant current_serials
-        pos_to_serial: dict[str, str] = {}
-        for pos, cam_label in gripper_src.assignment.items():
-            if cam_label in current_serials:
-                pos_to_serial[pos] = current_serials[cam_label]
-        if len(pos_to_serial) == 3:
-            return pos_to_serial, gripper_src.confidence
-
-    return {}, 0.0
+    current: dict[str, str] = {}
+    videos_dir = session_path / "videos"
+    for role in CAMERAS:
+        if (videos_dir / f"{role}.jsonl").exists():
+            current[role] = role
+    return current
 
 
 # ── Point d'entrée principal ──────────────────────────────────────────────────
@@ -433,19 +377,44 @@ def fix_camera_labels(
     session_path: Path,
     dry_run: bool = False,
     force: bool = False,
-    learn_only: bool = False,
 ) -> CameraLabelReport:
     """
-    Vérifie et corrige les labels head/left/right des caméras.
+    Identifie et corrige (si nécessaire) les labels head/left/right des caméras.
 
-    learn_only=True : met à jour uniquement la calibration, sans corriger.
+    Algorithme :
+    1. Corrige les labels de trackers (fix_tracker_labels).
+    2. Calcule le flux optique de chaque vidéo (mp4 requis).
+    3. Attribue chaque caméra au rôle dont le tracker a la vitesse la plus
+       corrélée, en privilégiant les périodes de mouvement asymétrique.
+
+    Retourne un CameraLabelReport avec status :
+      "ok"        — labels déjà corrects
+      "corrected" — labels corrigés
+      "uncertain" — corrélation insuffisante / ambiguë
+      "error"     — données manquantes ou incompatibles
+      "skipped"   — déjà vérifié (MARKER_KEY présent)
     """
+    if not _PANDAS:
+        return CameraLabelReport(session=str(session_path.name),
+                                  status="error", reason="pandas non disponible")
+    if not _CV2:
+        return CameraLabelReport(session=str(session_path.name),
+                                  status="error", reason="cv2 non disponible (pip install opencv-python)")
+
     name      = session_path.name
     meta_path = session_path / "metadata.json"
+    csv_path  = session_path / "tracker_positions.csv"
+    videos_dir = session_path / "videos"
 
     if not meta_path.exists():
         return CameraLabelReport(session=name, status="error",
                                   reason="metadata.json absent")
+    if not csv_path.exists():
+        return CameraLabelReport(session=name, status="error",
+                                  reason="tracker_positions.csv absent")
+    if not videos_dir.exists():
+        return CameraLabelReport(session=name, status="error",
+                                  reason="répertoire videos/ absent")
 
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -453,198 +422,199 @@ def fix_camera_labels(
         return CameraLabelReport(session=name, status="error",
                                   reason=f"metadata.json illisible: {e}")
 
-    if not force and not learn_only and meta.get(MARKER_KEY):
+    if not force and meta.get(MARKER_KEY):
         return CameraLabelReport(session=name, status="skipped",
-                                  reason="labels déjà vérifiés")
+                                  reason="labels déjà vérifiés (MARKER_KEY présent)")
 
-    cameras = meta.get("cameras", {})
-    if not cameras:
+    # ── Étape 1 : correction des labels trackers ──────────────────────────────
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
         return CameraLabelReport(session=name, status="error",
-                                  reason="cameras absent dans metadata.json")
+                                  reason=f"tracker_positions.csv illisible: {e}")
 
-    # Construire l'état actuel {position: serial}
-    current_by_pos: dict[str, str] = {}
-    current_by_label: dict[str, str] = {}   # {cam_label: serial}
-    for idx, cam in cameras.items():
-        pos    = cam.get("position", "")
-        serial = cam.get("serial", "")
-        if pos and serial:
-            current_by_pos[pos]   = serial
-            current_by_label[pos] = serial
+    blocks = _load_blocks(df)
+    if blocks is None:
+        return CameraLabelReport(session=name, status="error",
+                                  reason="colonnes tracker manquantes dans le CSV")
 
-    # ── Exécuter les sources ──────────────────────────────────────────────────
-    s1 = _source_serial_calibration(meta)
-    s2 = _source_gripper_correlation(session_path, meta)
-    s3 = _source_temporal_consistency(session_path, meta)
-    sources = [s1, s2, s3]
+    t1 = _test_height(blocks)
+    t2 = _test_centrality(blocks)
+    t3 = _test_mobility(blocks)
+    t4 = _test_lateral(blocks, t1.head_vote)
+    tracker_prediction, _, _ = _consensus([t1, t2, t3, t4])
+    # tracker_prediction = {role: csv_label}  ex: {head:'head', left:'right', right:'left'}
 
-    # ── Mode apprentissage uniquement ─────────────────────────────────────────
-    if learn_only:
-        if len(current_by_pos) == 3:
-            _update_calibration(current_by_pos)
+    # ── Étape 2 : flux optique des caméras ────────────────────────────────────
+    # Chercher les mp4 dans videos/
+    cam_signals: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    missing_mp4: list[str] = []
+
+    for cam_file in CAMERAS:
+        mp4 = videos_dir / f"{cam_file}.mp4"
+        if not mp4.exists():
+            missing_mp4.append(cam_file)
+            continue
+        mag, times = _optical_flow_signal(mp4)
+        if mag is None or times is None:
+            missing_mp4.append(cam_file)
+            continue
+        cam_signals[cam_file] = (mag, times)
+
+    if len(cam_signals) < 3:
         return CameraLabelReport(
-            session=name, status="learned",
-            reason=f"Calibration mise à jour : {current_by_pos}",
-            sources=sources, current=current_by_pos,
+            session=name, status="error",
+            reason=f"mp4 manquants ou illisibles: {missing_mp4}",
+            tracker_prediction=tracker_prediction,
         )
 
-    # ── Décision ─────────────────────────────────────────────────────────────
-    predicted_serials, conf = _decide(sources, current_by_label)
-
-    report = CameraLabelReport(
-        session=name, status="",
-        sources=sources,
-        predicted=predicted_serials,
-        current=current_by_pos,
+    # ── Étape 3 : attribution caméra → rôle ──────────────────────────────────
+    assignment, score_matrix, confidence = _assign_cameras(
+        cam_signals, df, tracker_prediction
     )
 
-    if not predicted_serials or conf < CERTAINTY_THRESHOLD:
+    # État actuel : par convention les fichiers sont nommés par leur rôle actuel
+    current = _current_camera_assignment(session_path)
+
+    # Est-ce que les noms de fichiers doivent changer ?
+    # assignment = {cam_file_actuel: rôle_prédit}
+    # On cherche si le rôle prédit ≠ nom de fichier actuel
+    needs_correction = any(
+        assignment.get(cf) != cf for cf in CAMERAS if cf in assignment
+    )
+
+    report = CameraLabelReport(
+        session=name,
+        status="",
+        predicted=assignment,
+        current=current,
+        tracker_prediction=tracker_prediction,
+        flow_scores=score_matrix,
+    )
+
+    if confidence < CONFIDENCE_CERTAIN and needs_correction:
         report.status = "uncertain"
         report.reason = (
-            f"Confiance insuffisante ({conf:.2f} < {CERTAINTY_THRESHOLD}). "
-            f"Lancez --learn sur des sessions déjà vérifiées pour enrichir la calibration."
+            f"Corrélation ambiguë (confiance={confidence:.3f} < {CONFIDENCE_CERTAIN}). "
+            f"Les deux mains bougent trop similairement pour distinguer."
         )
         if not dry_run:
             meta[MARKER_KEY] = False
-            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False),
-                                  encoding="utf-8")
+            meta["camera_labels_confidence"] = round(confidence, 3)
+            meta_path.write_text(
+                json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
         return report
 
-    # Comparer predicted vs current
-    needs_correction = predicted_serials != current_by_pos and len(predicted_serials) == 3
     if not needs_correction:
         report.status = "ok"
-        report.reason = f"Labels caméra corrects (conf={conf:.2f})"
+        report.reason = (
+            f"Labels caméra corrects "
+            f"(confiance={confidence:.3f}, tracker={tracker_prediction})"
+        )
         if not dry_run:
             meta[MARKER_KEY] = True
-            _update_calibration(current_by_pos)
-            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False),
-                                  encoding="utf-8")
+            meta["camera_labels_confidence"] = round(confidence, 3)
+            meta_path.write_text(
+                json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
         return report
 
     if dry_run:
         report.status  = "would_correct"
         report.dry_run = True
-        report.reason  = f"Correction nécessaire (conf={conf:.2f})"
+        report.reason  = (
+            f"Correction nécessaire (confiance={confidence:.3f}). "
+            f"Assignement prédit: {assignment}"
+        )
         return report
 
-    # ── Appliquer la correction ───────────────────────────────────────────────
-    # 1. Construire le mapping old_label → new_label pour les fichiers JSONL
-    old_to_new: dict[str, str] = {}
-    for new_pos, serial in predicted_serials.items():
-        # Trouver l'ancienne position de ce serial
-        old_pos = next((p for p, s in current_by_pos.items() if s == serial), None)
-        if old_pos and old_pos != new_pos:
-            old_to_new[old_pos] = new_pos
+    # ── Appliquer la correction : renommer les fichiers JSONL (et MP4) ─────────
+    # assignment = {ancien_nom: nouveau_rôle}
+    # On veut renommer : ancien_nom.jsonl → nouveau_rôle.jsonl (et même pour .mp4)
+    old_to_new: dict[str, str] = {
+        cf: assignment[cf]
+        for cf in assignment
+        if assignment[cf] != cf
+    }
 
-    # 2. Renommer les JSONL (avec fichiers temporaires pour éviter les collisions)
-    videos_dir = session_path / "videos"
-    if old_to_new and videos_dir.exists():
-        # Phase 1 : vers des noms temporaires
+    for ext in (".jsonl", ".mp4"):
+        # Phase 1 : vers noms temporaires
         for old_name, new_name in old_to_new.items():
-            src = videos_dir / f"{old_name}.jsonl"
-            tmp = videos_dir / f"__tmp_{new_name}.jsonl"
+            src = videos_dir / f"{old_name}{ext}"
+            tmp = videos_dir / f"__tmp_{new_name}{ext}"
             if src.exists():
                 shutil.move(str(src), str(tmp))
-        # Phase 2 : noms temporaires vers noms finaux
+        # Phase 2 : noms temporaires → noms finaux
         for old_name, new_name in old_to_new.items():
-            tmp = videos_dir / f"__tmp_{new_name}.jsonl"
-            dst = videos_dir / f"{new_name}.jsonl"
+            tmp = videos_dir / f"__tmp_{new_name}{ext}"
+            dst = videos_dir / f"{new_name}{ext}"
             if tmp.exists():
                 shutil.move(str(tmp), str(dst))
 
-    # 3. Mettre à jour metadata.json
-    for idx, cam in cameras.items():
-        serial = cam.get("serial", "")
-        new_pos = next((p for p, s in predicted_serials.items() if s == serial), None)
-        if new_pos:
-            cameras[idx]["position"] = new_pos
-
-    meta["cameras"]            = cameras
-    meta[MARKER_KEY]           = True
-    meta["camera_labels_old"]  = current_by_pos
-    meta["camera_labels_new"]  = predicted_serials
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False),
-                          encoding="utf-8")
-    _update_calibration(predicted_serials)
+    # Mise à jour metadata.json
+    meta[MARKER_KEY]               = True
+    meta["camera_labels_confidence"] = round(confidence, 3)
+    meta["camera_labels_old"]      = {cf: cf for cf in CAMERAS}
+    meta["camera_labels_new"]      = assignment
+    meta["camera_labels_method"]   = "optical_flow_tracker_correlation"
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     report.status    = "corrected"
     report.corrected = True
     report.reason    = (
-        f"Labels corrigés (conf={conf:.2f}). "
-        f"JSONL renommés : {old_to_new}"
+        f"Labels corrigés (confiance={confidence:.3f}). "
+        f"Renommages: {old_to_new}"
     )
     return report
-
-
-# ── Mode batch : construction de la calibration ───────────────────────────────
-
-def build_calibration_from_sessions(root: Path) -> int:
-    """
-    Parcourt tous les metadata.json sous root et met à jour la calibration.
-    Retourne le nombre de sessions traitées.
-    """
-    count = 0
-    for meta_path in root.rglob("metadata.json"):
-        try:
-            meta    = json.loads(meta_path.read_text(encoding="utf-8"))
-            cameras = meta.get("cameras", {})
-            # Format attendu par _update_calibration : {serial: position}
-            mapping = {cam["serial"]: cam["position"]
-                       for cam in cameras.values()
-                       if "position" in cam and "serial" in cam}
-            if len(mapping) == 3:
-                _update_calibration(mapping)
-                count += 1
-        except Exception:
-            continue
-    return count
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _print_report(r: CameraLabelReport) -> None:
-    icons = {"ok": "✓", "corrected": "↺", "uncertain": "⚠", "error": "✗",
-             "skipped": "–", "learned": "⊕", "would_correct": "~"}
+    icons = {
+        "ok": "✓", "corrected": "↺", "uncertain": "⚠",
+        "error": "✗", "skipped": "–", "would_correct": "~",
+    }
     icon = icons.get(r.status, "?")
     print(f"\n{icon} [{r.status.upper()}] {r.session}")
     if r.reason:
-        print(f"  Raison : {r.reason}")
-    print(f"  Actuel  : {r.current}")
+        print(f"  Raison       : {r.reason}")
+    if r.tracker_prediction:
+        print(f"  Trackers     : {r.tracker_prediction}")
     if r.predicted:
-        print(f"  Prédit  : {r.predicted}")
-    for src in r.sources:
-        print(f"  [{src.name:25s}] conf={src.confidence:.2f}  {src.evidence}")
+        print(f"  Caméras préd : {r.predicted}")
+    if r.flow_scores:
+        for cam, scores in r.flow_scores.items():
+            print(f"  [{cam:5s}] {scores}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Vérifie et corrige le labeling head/left/right des caméras."
+        description="Vérifie et corrige le labeling head/left/right des caméras "
+                    "par corrélation flux optique ↔ trackers."
     )
     parser.add_argument("sessions", nargs="+", type=Path,
-                        help="Répertoires de session(s) ou racine avec --batch")
-    parser.add_argument("--dry-run",   action="store_true")
-    parser.add_argument("--force",     action="store_true")
-    parser.add_argument("--learn",     action="store_true",
-                        help="Mise à jour calibration uniquement (sans corriger)")
-    parser.add_argument("--build-calib", action="store_true",
-                        help="Construire la calibration depuis tous les metadata.json")
-    parser.add_argument("--batch",     action="store_true",
+                        help="Répertoires de session(s)")
+    parser.add_argument("--dry-run",  action="store_true",
+                        help="Analyse uniquement, sans modifier")
+    parser.add_argument("--force",    action="store_true",
+                        help="Ré-analyse même si MARKER_KEY présent")
+    parser.add_argument("--batch",    action="store_true",
                         help="Traiter toutes les sessions sous chaque chemin")
-    parser.add_argument("--json",      action="store_true")
+    parser.add_argument("--json",     action="store_true",
+                        help="Sortie JSON")
     args = parser.parse_args()
 
-    # Expansion des sessions si --batch
     sessions: list[Path] = []
     for p in args.sessions:
         p = p.resolve()
         if args.batch and p.is_dir():
-            if args.build_calib:
-                n = build_calibration_from_sessions(p)
-                print(f"Calibration construite depuis {n} sessions sous {p}")
-                continue
             sessions.extend(
-                m.parent for m in p.rglob("metadata.json")
+                m.parent
+                for m in p.rglob("metadata.json")
                 if (m.parent / "videos").exists()
             )
         else:
@@ -654,22 +624,23 @@ def main() -> None:
     for s in sessions:
         if not s.is_dir():
             continue
-        r = fix_camera_labels(s, dry_run=args.dry_run, force=args.force,
-                               learn_only=args.learn)
+        r = fix_camera_labels(s, dry_run=args.dry_run, force=args.force)
         results.append(r)
         if not args.json:
             _print_report(r)
 
     if args.json:
-        print(json.dumps([asdict(r) for r in results], indent=2, ensure_ascii=False,
-                          default=str))
+        import dataclasses
+        print(json.dumps(
+            [asdict(r) for r in results],
+            indent=2, ensure_ascii=False, default=str,
+        ))
 
     if not args.json and results:
         counts = Counter(r.status for r in results)
         print(f"\n{'─'*60}")
-        print(f"Total {len(results)} : " +
+        print("Total %d : " % len(results) +
               "  ".join(f"{k}={v}" for k, v in counts.items()))
-        print(f"Calibration : {CALIB_PATH}")
 
 
 if __name__ == "__main__":

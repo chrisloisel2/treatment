@@ -87,6 +87,16 @@ ROI_HORIZ_FRAC  = 0.15    # bandes verticales latérales à exclure
 # Seuil de luminosité pour "voir le gripper" (percentile)
 GRIP_BRIGHT_PERCENTILE = 85
 
+# ── Paramètres analyse position fermée (convolution) ─────────────────────────
+
+CLOSED_FRAC             = 0.25   # seuil adaptatif : fermé si opening < 25% de la plage
+CONV_SAMPLE_FPS         = 10     # fps vidéo pour l'analyse position fermée
+CONV_RESAMPLE_MS        = 50.0   # résolution grille de convolution (ms)
+CONV_MAX_LAG_MS         = 2000.0 # fenêtre de recherche décalage (±2s)
+CONV_MIN_CLOSED_FRAMES  = 10     # événements "fermé" minimum requis
+OFFSET_SIGNIFICANT_MS   = 50.0   # décalage > 50ms → significatif (à corriger)
+GRIPPER_SYNC_MARKER_KEY = "gripper_closed_sync_applied"
+
 
 # ── Structures ────────────────────────────────────────────────────────────────
 
@@ -117,6 +127,32 @@ class GripperVideoSyncReport:
     results: list[GripperSyncResult]
     issues: list[str]
     summary: dict
+    closed_sync: list["ClosedPositionSyncResult"] = field(default_factory=list)
+
+
+@dataclass
+class ClosedPositionSyncResult:
+    """
+    Résultat de l'analyse de synchronisation par convolution sur la position fermée.
+
+    Convention offset_ms :
+        offset_ms > 0  — capteur EN AVANCE sur la vidéo de offset_ms ms
+                         (le capteur signale "fermé" avant que la vidéo le montre)
+        offset_ms < 0  — capteur EN RETARD sur la vidéo
+        offset_ms ≈ 0  — flux synchronisés
+
+    Correction à appliquer sur les timestamps capteur (CSV) :
+        timestamp_corrigé_ns = timestamp_ns + offset_ms × 1e6
+        (offset > 0 → retarde le capteur ; offset < 0 → l'avance)
+    """
+    side: str
+    n_closed_sensor: int          = 0
+    n_closed_visual: int          = 0
+    peak_correlation: float       = 0.0   # corrélation normalisée au pic [0-1]
+    offset_ms: float              = 0.0   # décalage détecté (ms)
+    snr: float                    = 0.0   # rapport signal/bruit du pic (>2 = fiable)
+    status: str                   = "unknown"
+    issues: list[str]             = field(default_factory=list)
 
 
 # ── Chargement données ────────────────────────────────────────────────────────
@@ -168,6 +204,318 @@ def _resample_to_grid(t: np.ndarray, v: np.ndarray, grid: np.ndarray) -> np.ndar
 def _zscore(x: np.ndarray) -> np.ndarray:
     s = np.std(x)
     return (x - np.mean(x)) / (s + 1e-8)
+
+
+# ── Convolution position fermée ───────────────────────────────────────────────
+
+def _compute_closed_offset(
+    sensor_t_ms: np.ndarray,
+    sensor_opening: np.ndarray,
+    visual_t_ms: np.ndarray,
+    visual_signal: np.ndarray,
+    resample_ms: float = CONV_RESAMPLE_MS,
+    max_lag_ms: float  = CONV_MAX_LAG_MS,
+) -> "tuple[float, float, float, int, int]":
+    """
+    Trouve l'offset temporel entre flux capteur et flux vidéo par convolution
+    (corrélation croisée) des signaux binaires « pince fermée ».
+
+    Algorithme :
+      1. Seuil adaptatif (percentile 25/75) sur chaque signal → binaire fermé/ouvert.
+      2. Rééchantillonnage sur une grille commune (resample_ms).
+      3. Corrélation croisée : corr = np.correlate(visual_binary, sensor_binary, 'full').
+         Le pic à lag > 0 indique que le capteur est EN AVANCE sur la vidéo.
+      4. Interpolation parabolique autour du pic pour précision sub-grille.
+
+    Convention retournée :
+        offset_ms > 0  → capteur en avance sur la vidéo de offset_ms ms
+        offset_ms < 0  → capteur en retard
+
+    Correction : timestamp_corrigé_ns = timestamp_ns + offset_ms × 1e6
+
+    Returns:
+        (offset_ms, peak_corr_norm, snr, n_closed_sensor, n_closed_visual)
+    """
+    # ── 1. Seuils adaptatifs ──────────────────────────────────────────────────
+    g_q25 = float(np.percentile(sensor_opening, 25))
+    g_q75 = float(np.percentile(sensor_opening, 75))
+    if g_q75 - g_q25 < 3.0:
+        return 0.0, 0.0, 0.0, 0, 0
+
+    s_thresh = g_q25 + (g_q75 - g_q25) * CLOSED_FRAC
+    sensor_bin = (sensor_opening <= s_thresh).astype(np.float32)
+
+    v_q25 = float(np.percentile(visual_signal, 25))
+    v_q75 = float(np.percentile(visual_signal, 75))
+    if v_q75 - v_q25 < 0.03:
+        return 0.0, 0.0, 0.0, 0, 0
+
+    v_thresh = v_q25 + (v_q75 - v_q25) * CLOSED_FRAC
+    visual_bin = (visual_signal <= v_thresh).astype(np.float32)
+
+    # ── 2. Grille commune ─────────────────────────────────────────────────────
+    t0 = max(float(sensor_t_ms[0]), float(visual_t_ms[0]))
+    t1 = min(float(sensor_t_ms[-1]), float(visual_t_ms[-1]))
+    if t1 - t0 < 2000.0:
+        return 0.0, 0.0, 0.0, 0, 0
+
+    grid = np.arange(t0, t1, resample_ms)
+    s_grid = (np.interp(grid, sensor_t_ms, sensor_bin.astype(float)) >= 0.5).astype(np.float32)
+    v_grid = (np.interp(grid, visual_t_ms, visual_bin.astype(float)) >= 0.5).astype(np.float32)
+
+    n_s = int(s_grid.sum())
+    n_v = int(v_grid.sum())
+
+    if n_s < CONV_MIN_CLOSED_FRAMES or n_v < CONV_MIN_CLOSED_FRAMES:
+        return 0.0, 0.0, 0.0, n_s, n_v
+
+    # ── 3. Corrélation croisée ────────────────────────────────────────────────
+    # corr = np.correlate(visual, sensor, 'full')
+    # corr[k + center] = Σ_n visual[n+k] · sensor[n]
+    # Pic à k > 0 → capteur en avance (sensor leads video) → offset_ms > 0
+    # center = len(sensor) - 1
+    corr   = np.correlate(v_grid, s_grid, mode="full")
+    center = len(s_grid) - 1
+
+    max_lag_s = int(max_lag_ms / resample_ms)
+    lo = max(0, center - max_lag_s)
+    hi = min(len(corr), center + max_lag_s + 1)
+    window     = corr[lo:hi]
+    lag_idxs   = np.arange(lo, hi) - center   # lag en samples
+
+    if len(window) == 0:
+        return 0.0, 0.0, 0.0, n_s, n_v
+
+    pk_local = int(np.argmax(window))
+    pk_lag_s = int(lag_idxs[pk_local])
+    pk_val   = float(window[pk_local])
+
+    # Normaliser par le max théorique
+    max_possible = float(min(s_grid.sum(), v_grid.sum()))
+    peak_norm = pk_val / (max_possible + 1e-8)
+
+    # SNR : pic / bruit moyen (hors ±5 samples autour du pic)
+    ex_lo = max(0, pk_local - 5)
+    ex_hi = min(len(window), pk_local + 6)
+    rest  = np.concatenate([window[:ex_lo], window[ex_hi:]])
+    noise = float(np.mean(np.abs(rest))) if len(rest) > 0 else 1e-8
+    snr   = pk_val / (noise + 1e-8)
+
+    # ── 4. Interpolation parabolique (sub-sample) ─────────────────────────────
+    if 0 < pk_local < len(window) - 1:
+        y_m = window[pk_local - 1]
+        y_0 = window[pk_local]
+        y_p = window[pk_local + 1]
+        denom = y_m - 2.0 * y_0 + y_p
+        delta = 0.5 * (y_m - y_p) / (denom - 1e-10) if abs(denom) > 1e-10 else 0.0
+        pk_lag_frac = pk_lag_s + float(np.clip(delta, -0.5, 0.5))
+    else:
+        pk_lag_frac = float(pk_lag_s)
+
+    offset_ms = pk_lag_frac * resample_ms
+    return float(offset_ms), float(peak_norm), float(snr), n_s, n_v
+
+
+def _analyse_closed_position_sync(
+    side: str,
+    gripper_df: "pd.DataFrame",
+    cam_times_ms: np.ndarray,
+    session_path: Path,
+    sample_fps: int = CONV_SAMPLE_FPS,
+) -> "ClosedPositionSyncResult":
+    """
+    Analyse la synchronisation gripper-vidéo en ciblant la position fermée.
+
+    Démarche :
+      1. Signal capteur opening_mm → binarisé sur "pince fermée" (seuil adaptatif).
+      2. Signal visuel extrait frame-par-frame depuis la vidéo → binarisé.
+      3. Convolution croisée des deux signaux binaires → offset précis en ms.
+
+    Avantages par rapport à la corrélation sur signal continu :
+      - La transition ouvert→fermé est un front net → peu sensible au bruit.
+      - Aucune calibration amplitude px→mm requise.
+      - Fonctionne même si la qualité vidéo est faible.
+    """
+    result = ClosedPositionSyncResult(side=side)
+
+    if not _CV2:
+        result.status = "no_data"
+        result.issues.append("OpenCV non disponible (pip install opencv-python)")
+        return result
+
+    video_candidates = [
+        session_path / "videos" / f"{side}.mp4",
+        session_path / f"{side}.mp4",
+        session_path / "videos" / f"cam_{side}.mp4",
+    ]
+    video_path = next((p for p in video_candidates if p.exists()), None)
+    if video_path is None:
+        result.status = "no_data"
+        result.issues.append(f"Vidéo introuvable pour le côté '{side}'")
+        return result
+
+    # ── Extraction visuelle ───────────────────────────────────────────────────
+    vis_t_rel, vis_sig = _extract_gripper_brightness_signal(video_path, sample_fps)
+    if len(vis_t_rel) < 20:
+        result.status = "no_data"
+        result.issues.append(f"Extraction vidéo insuffisante ({len(vis_t_rel)} frames)")
+        return result
+
+    # Timestamps relatifs → absolus via premier timestamp JSONL
+    vis_t_abs = vis_t_rel + float(cam_times_ms[0])
+
+    # ── Signal capteur ────────────────────────────────────────────────────────
+    sensor_t_ms = gripper_df["timestamp_ns"].to_numpy() / 1e6
+    sensor_v_mm = gripper_df["opening_mm"].to_numpy().astype(np.float32)
+
+    # ── Convolution ───────────────────────────────────────────────────────────
+    offset_ms, peak_corr, snr, n_s, n_v = _compute_closed_offset(
+        sensor_t_ms, sensor_v_mm, vis_t_abs, vis_sig,
+    )
+
+    result.n_closed_sensor  = n_s
+    result.n_closed_visual  = n_v
+    result.peak_correlation = round(peak_corr, 4)
+    result.offset_ms        = round(offset_ms, 1)
+    result.snr              = round(snr, 2)
+
+    # ── Verdict ───────────────────────────────────────────────────────────────
+    if n_s < CONV_MIN_CLOSED_FRAMES:
+        result.status = "warn"
+        result.issues.append(
+            f"Peu d'événements 'pince fermée' capteur ({n_s} frames, min={CONV_MIN_CLOSED_FRAMES})"
+        )
+        return result
+
+    if n_v < CONV_MIN_CLOSED_FRAMES:
+        result.status = "warn"
+        result.issues.append(
+            f"Peu d'événements 'pince fermée' visuels ({n_v} frames, min={CONV_MIN_CLOSED_FRAMES})"
+        )
+        return result
+
+    if snr < 2.0:
+        result.status = "warn"
+        result.issues.append(f"SNR faible ({snr:.1f}) — pic de corrélation peu fiable (min=2.0)")
+        return result
+
+    if abs(offset_ms) > OFFSET_SIGNIFICANT_MS:
+        direction = "capteur en avance" if offset_ms > 0 else "capteur en retard"
+        result.status = "warn"
+        result.issues.append(
+            f"Décalage significatif : {offset_ms:+.0f}ms ({direction})"
+        )
+    else:
+        result.status = "ok"
+
+    return result
+
+
+# ── Fix : correction du décalage capteur/vidéo ────────────────────────────────
+
+def fix_gripper_closed_offset(
+    session_path: Path,
+    dry_run: bool = False,
+    sample_fps: int = CONV_SAMPLE_FPS,
+    min_snr: float = 2.0,
+    min_offset_ms: float = OFFSET_SIGNIFICANT_MS,
+    force: bool = False,
+) -> dict:
+    """
+    Détecte et corrige le décalage entre le flux capteur gripper et la vidéo
+    en se basant sur la position fermée (convolution binaire).
+
+    Méthode :
+        Convolution des signaux binaires "pince fermée" → offset précis en ms.
+        Correction appliquée sur les timestamps du CSV gripper.
+
+    Convention :
+        offset_ms > 0 (capteur en avance) → on retarde les timestamps capteur
+        timestamp_corrigé_ns = timestamp_ns + offset_ms × 1e6
+
+    Args:
+        session_path: chemin de la session
+        dry_run:      calcule mais n'écrit rien
+        sample_fps:   fps d'extraction vidéo
+        min_snr:      SNR minimum pour appliquer la correction
+        min_offset_ms: décalage minimum pour corriger
+        force:        réappliquer même si le marqueur est déjà présent
+
+    Returns:
+        dict { session, status, corrections_ms, details }
+    """
+    name = session_path.name
+
+    # Vérifier le marqueur (éviter double-application)
+    meta_path = session_path / "metadata.json"
+    meta: dict = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if meta.get(GRIPPER_SYNC_MARKER_KEY) and not force:
+        return {"session": name, "status": "already_applied", "corrections_ms": {}, "details": {}}
+
+    corrections: dict = {}
+    details:     dict = {}
+
+    for side in ("left", "right"):
+        gripper_path = session_path / f"gripper_{side}_data.csv"
+        jsonl_path   = session_path / "videos" / f"{side}.jsonl"
+
+        gripper_df = _load_gripper_df(gripper_path)
+        cam_times  = _load_jsonl_times(jsonl_path)
+
+        if gripper_df is None or cam_times is None:
+            continue
+
+        result = _analyse_closed_position_sync(
+            side, gripper_df, cam_times, session_path, sample_fps
+        )
+
+        details[side] = {
+            "offset_ms":       result.offset_ms,
+            "peak_corr":       result.peak_correlation,
+            "snr":             result.snr,
+            "n_closed_sensor": result.n_closed_sensor,
+            "n_closed_visual": result.n_closed_visual,
+            "status":          result.status,
+            "issues":          result.issues,
+        }
+
+        if result.snr < min_snr:
+            continue
+        if abs(result.offset_ms) < min_offset_ms:
+            continue
+
+        corrections[side] = result.offset_ms
+
+        if not dry_run:
+            df = gripper_df.copy()
+            df["timestamp_ns"] = (
+                df["timestamp_ns"].to_numpy(dtype=np.float64)
+                + result.offset_ms * 1e6
+            ).astype(np.int64)
+            df.to_csv(gripper_path, index=False)
+
+    if corrections and not dry_run:
+        meta[GRIPPER_SYNC_MARKER_KEY]           = True
+        meta["gripper_closed_sync_offsets_ms"]  = {k: round(v, 1) for k, v in corrections.items()}
+        meta_path.write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    overall = ("corrected"  if corrections and not dry_run else
+               "dry-run"    if dry_run and corrections else
+               "ok")
+
+    return {
+        "session":        name,
+        "status":         overall,
+        "corrections_ms": {k: round(v, 1) for k, v in corrections.items()},
+        "details":        details,
+    }
 
 
 # ── Niveau 1 : synchronisation temporelle ────────────────────────────────────
@@ -460,11 +808,13 @@ def analyse_gripper_video_sync(
     Analyse complète gripper ↔ vidéo pour une session.
 
     level=1 : timestamps uniquement (rapide, sans vidéo)
-    level=2 : extraction visuelle + corrélation (lent, nécessite MP4 + OpenCV)
+    level=2 : corrélation visuelle continue + analyse convolution position fermée
+              (nécessite MP4 + OpenCV)
     """
     name = session_path.name
-    results: list[GripperSyncResult] = []
-    issues:  list[str] = []
+    results:     list[GripperSyncResult]         = []
+    closed_sync: list[ClosedPositionSyncResult]  = []
+    issues:      list[str]                       = []
 
     for side in ("left", "right"):
         gripper_df = _load_gripper_df(session_path / f"gripper_{side}_data.csv")
@@ -485,6 +835,16 @@ def analyse_gripper_video_sync(
         else:
             res = _analyse_level2(side, gripper_df, cam_times, session_path, sample_fps)
 
+            # ── Analyse convolution position fermée (niveau 2 uniquement) ─────
+            cl = _analyse_closed_position_sync(
+                side, gripper_df, cam_times, session_path,
+                sample_fps=CONV_SAMPLE_FPS,
+            )
+            closed_sync.append(cl)
+            if cl.status in ("warn", "error"):
+                for iss in cl.issues:
+                    issues.append(f"[{side}/conv] {iss}")
+
         results.append(res)
         issues.extend([f"[{side}] {i}" for i in res.issues])
 
@@ -492,14 +852,15 @@ def analyse_gripper_video_sync(
         return GripperVideoSyncReport(
             session=name, status="no_data", level=level,
             results=[], issues=["Aucune donnée gripper + caméra trouvée"],
-            summary={},
+            summary={}, closed_sync=[],
         )
 
-    # Statut global
-    statuses = [r.status for r in results]
-    if "error" in statuses:
+    # Statut global (tient compte aussi des résultats de convolution)
+    all_statuses = [r.status for r in results] + [c.status for c in closed_sync
+                                                   if c.status != "unknown"]
+    if "error" in all_statuses:
         global_status = "error"
-    elif "warn" in statuses:
+    elif "warn" in all_statuses:
         global_status = "warn"
     else:
         global_status = "ok"
@@ -515,6 +876,9 @@ def analyse_gripper_video_sync(
         if r.pearson_r is not None:
             summary[f"{r.side}_pearson_r"]    = r.pearson_r
             summary[f"{r.side}_lag_ms"]       = r.optimal_lag_ms
+    for c in closed_sync:
+        summary[f"{c.side}_closed_offset_ms"] = c.offset_ms
+        summary[f"{c.side}_closed_snr"]       = c.snr
 
     return GripperVideoSyncReport(
         session=name,
@@ -523,6 +887,7 @@ def analyse_gripper_video_sync(
         results=results,
         issues=issues,
         summary=summary,
+        closed_sync=closed_sync,
     )
 
 
@@ -562,6 +927,21 @@ def print_report(r: GripperVideoSyncReport) -> None:
         for issue in res.issues:
             print(f"           ↳ {_c(issue, 'warn')}")
 
+    # Résultats convolution position fermée
+    for c in r.closed_sync:
+        color = c.status if c.status in ("ok", "warn", "error") else "ok"
+        parts = [
+            f"  conv_{c.side}",
+            f"fermé_capteur={c.n_closed_sensor}",
+            f"fermé_visuel={c.n_closed_visual}",
+            f"offset={c.offset_ms:+.0f}ms",
+            f"SNR={c.snr:.1f}",
+            f"r={c.peak_correlation:.3f}",
+        ]
+        print(f"  {_c(f'[{c.status.upper():5s}]', color)}  {'  '.join(parts)}")
+        for issue in c.issues:
+            print(f"           ↳ {_c(issue, 'warn')}")
+
     if r.issues:
         for issue in r.issues:
             print(f"  ⚠ {issue}")
@@ -578,8 +958,12 @@ def main() -> None:
                         help="Niveau d'analyse : 1=timestamps, 2=visuel+corrélation")
     parser.add_argument("--fps",   type=int, default=DEFAULT_SAMPLE_FPS,
                         help=f"Frames/s pour l'extraction visuelle (défaut={DEFAULT_SAMPLE_FPS})")
-    parser.add_argument("--batch", action="store_true")
-    parser.add_argument("--json",  action="store_true")
+    parser.add_argument("--batch",   action="store_true")
+    parser.add_argument("--json",    action="store_true")
+    parser.add_argument("--fix",     action="store_true",
+                        help="Applique la correction de décalage sur les CSV gripper (convolution)")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="Avec --fix : calcule mais n'écrit pas")
     args = parser.parse_args()
 
     if args.level == 2 and not _CV2:
@@ -599,7 +983,8 @@ def main() -> None:
         else:
             sessions.append(p)
 
-    results = []
+    results  = []
+    fix_rpts = []
     for s in sessions:
         if not s.is_dir():
             continue
@@ -608,9 +993,30 @@ def main() -> None:
         if not args.json:
             print_report(r)
 
+        if args.fix:
+            if not _CV2:
+                if not args.json:
+                    print("  [--fix ignoré : OpenCV non disponible]")
+            else:
+                fix_r = fix_gripper_closed_offset(
+                    s, dry_run=args.dry_run, sample_fps=CONV_SAMPLE_FPS
+                )
+                fix_rpts.append(fix_r)
+                if not args.json:
+                    tag = "(dry-run)" if args.dry_run else ""
+                    if fix_r["corrections_ms"]:
+                        print(f"  [FIX {tag}] {fix_r['status']} — "
+                              f"corrections={fix_r['corrections_ms']}")
+                    else:
+                        print(f"  [FIX {tag}] aucune correction nécessaire")
+
     if args.json:
-        print(json.dumps([asdict(r) for r in results], indent=2, ensure_ascii=False,
-                          default=str))
+        out = [asdict(r) for r in results]
+        if fix_rpts:
+            for i, f in enumerate(fix_rpts):
+                if i < len(out):
+                    out[i]["fix"] = f
+        print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
 
     if not args.json and results:
         n_ok   = sum(1 for r in results if r.status == "ok")

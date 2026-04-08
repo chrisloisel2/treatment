@@ -36,6 +36,12 @@ from fix.problems import (
     ProblemCode,
     make_problem,
 )
+from fix.fix_gripper_video_sync import (
+    _load_gripper_df   as _load_gripper_df_gsync,
+    _load_jsonl_times  as _load_jsonl_times_gsync,
+    _analyse_level1    as _gripper_level1,
+    OFFSET_SIGNIFICANT_MS as GRIPPER_OFFSET_SIGNIFICANT_MS,
+)
 
 try:
     import pandas as pd
@@ -416,6 +422,59 @@ def _diagnose_sync_lag(
     return problems
 
 
+def _diagnose_gripper_sync(session_path: Path) -> List[DiagnosedProblem]:
+    """
+    Détecte un décalage temporel entre le flux capteur gripper et la vidéo.
+
+    Utilise l'analyse niveau 1 (timestamps uniquement, rapide, sans MP4) :
+    - Δt_start = t_camera[0] - t_gripper[0]
+    - Si |Δt_start| > GRIPPER_OFFSET_SIGNIFICANT_MS → GRIPPER_SYNC
+
+    La correction précise (convolution position fermée) est effectuée lors du fix.
+    """
+    if not _PANDAS:
+        return []
+
+    problems: List[DiagnosedProblem] = []
+    max_delta_ms = 0.0
+    details: dict = {}
+
+    for side in ("left", "right"):
+        gripper_path = session_path / f"gripper_{side}_data.csv"
+        jsonl_path   = session_path / "videos" / f"{side}.jsonl"
+
+        gripper_df = _load_gripper_df_gsync(gripper_path)
+        cam_times  = _load_jsonl_times_gsync(jsonl_path)
+
+        if gripper_df is None or cam_times is None:
+            continue
+
+        result = _gripper_level1(side, gripper_df, cam_times)
+        abs_delta = abs(result.temporal_delta_start_ms)
+        max_delta_ms = max(max_delta_ms, abs_delta)
+
+        details[side] = {
+            "delta_start_ms": result.temporal_delta_start_ms,
+            "overlap_ms":     result.temporal_overlap_ms,
+            "status":         result.status,
+        }
+
+    if not details:
+        return []
+
+    if max_delta_ms > GRIPPER_OFFSET_SIGNIFICANT_MS:
+        problems.append(make_problem(
+            ProblemCode.GRIPPER_SYNC,
+            f"Décalage gripper/vidéo : {max_delta_ms:.0f}ms "
+            f"(seuil {GRIPPER_OFFSET_SIGNIFICANT_MS:.0f}ms) — "
+            f"correction par convolution disponible",
+            max_delta_ms=round(max_delta_ms, 1),
+            sides=details,
+        ))
+
+    return problems
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Fonction principale de diagnostic
 # ══════════════════════════════════════════════════════════════════════════════
@@ -518,6 +577,12 @@ def diagnose_session(
         if not failed_gates or failed_gates.issubset({"camera_coverage", "camera_continuity"}):
             lag_problems = _diagnose_sync_lag(session_path, tracker_t_ms or np.array([]), ia_score)
             problems.extend(lag_problems)
+
+        # Synchronisation gripper ↔ vidéo (timestamps, sans MP4)
+        gripper_problems = _diagnose_gripper_sync(session_path)
+        for p in gripper_problems:
+            if p.code not in {pp.code for pp in problems}:
+                problems.append(p)
 
     # ── 3. Score IA global faible (dernier recours) ───────────────────────────
     ia_score = getattr(check_report, "ia_score", 0.0)

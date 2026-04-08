@@ -3661,15 +3661,48 @@ def _worker_fix_camera_offset(job: Job, req: FixCameraOffsetRequest):
     import importlib.util, sys as _sys
     _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
     try:
+        sess_path = Path(req.session)
+
+        # ── Étape 0 : détecter si les vidéos sont à l'envers ─────────────
+        rotate_result = None
+        try:
+            import importlib.util as _ilu, sys as _sys2
+            _sc_spec = _ilu.spec_from_file_location(
+                "session_check", _ROOT / "verification" / "session_check.py"
+            )
+            _sc_mod = _ilu.module_from_spec(_sc_spec)
+            _sys2.modules.setdefault("session_check", _sc_mod)
+            _sc_spec.loader.exec_module(_sc_mod)
+
+            _log_job(job, "Diagnostic orientation vidéo…", "INFO")
+            dim_vo = _sc_mod._dim_video_orientation(sess_path)
+            upside_down = dim_vo.details.get("upside_down", False) if hasattr(dim_vo, "details") else False
+
+            if upside_down:
+                _log_job(job, "Vidéos détectées à l'envers — rotation 180° en cours…", "WARN")
+                from utils.data_prep import rotate_session_videos
+                rotate_result = rotate_session_videos(sess_path, force=req.force, log=lambda m, l="INFO": _log_job(job, m, l))
+                rotated = rotate_result.get("rotated", [])
+                errors  = rotate_result.get("errors", [])
+                if rotated:
+                    _log_job(job, f"✓ Rotation appliquée : {', '.join(rotated)}", "OK")
+                if errors:
+                    _log_job(job, f"Erreurs rotation : {errors}", "WARN")
+            else:
+                _log_job(job, "Orientation vidéo correcte — pas de rotation nécessaire", "INFO")
+        except Exception as e_rot:
+            _log_job(job, f"[WARN] Vérification orientation ignorée : {e_rot}", "WARN")
+
+        _update_job(job, progress=40.0)
+
+        # ── Étape 1 : corriger l'offset caméra ───────────────────────────
         fix_script = _ROOT / "fix_camera_offset.py"
         spec = importlib.util.spec_from_file_location("fix_camera_offset", fix_script)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        sess_path = Path(req.session)
         _log_job(job, f"Correction offset caméra : {sess_path.name}", "INFO")
         report = mod.fix_session(sess_path, dry_run=False, force=req.force)
-        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(), result=report)
 
         status = report.get("status", "?")
         if status == "corrected":
@@ -3680,6 +3713,11 @@ def _worker_fix_camera_offset(job: Job, req: FixCameraOffsetRequest):
         else:
             reason = report.get("reason", "")
             _log_job(job, f"[{status.upper()}] {reason}", "WARN" if status in ("skipped", "ok") else "ERROR")
+
+        if rotate_result is not None:
+            report["rotate_videos"] = rotate_result
+
+        _update_job(job, progress=100.0, status=JobStatus.DONE, ended_at=_now(), result=report)
     except Exception as e:
         _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
         _log_job(job, f"Erreur : {e}", "ERROR")

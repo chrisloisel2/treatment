@@ -80,6 +80,7 @@ FIX_DISPATCH: dict[str, str] = {
     "camera_gaps":          "fix.fix_camera_gaps.fix_camera_gaps",
     "tracker_gaps":         "fix.fix_tracker_gaps.fix_tracker_gaps",
     "sync_lag":             "fix.fix_sync_lag.fix_sync_lag",
+    "gripper_sync":         "fix.fix_gripper_video_sync.fix_gripper_closed_offset",
 }
 
 

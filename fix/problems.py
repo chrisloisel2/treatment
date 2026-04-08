@@ -49,6 +49,9 @@ class ProblemCode(str, Enum):
     CAMERA_GAPS          = "camera_gaps"
     TRACKER_GAPS         = "tracker_gaps"
 
+    # ── Synchronisation gripper ↔ vidéo ──────────────────────────────────────
+    GRIPPER_SYNC         = "gripper_sync"
+
     # ── Score IA faible (après tous les autres fixes) ─────────────────────────
     LOW_IA_SCORE         = "low_ia_score"
 
@@ -133,6 +136,13 @@ PROBLEM_REGISTRY: dict[ProblemCode, ProblemSpec] = {
         recoverable=True,
         fix_module="fix_sync_lag",
         priority=50,
+    ),
+    ProblemCode.GRIPPER_SYNC: ProblemSpec(
+        code=ProblemCode.GRIPPER_SYNC,
+        description="Décalage temporel entre le flux capteur gripper et la vidéo correspondante",
+        recoverable=True,
+        fix_module="fix_gripper_video_sync",
+        priority=55,
     ),
     ProblemCode.LOW_IA_SCORE: ProblemSpec(
         code=ProblemCode.LOW_IA_SCORE,

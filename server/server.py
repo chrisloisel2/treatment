@@ -2124,25 +2124,39 @@ def _get_timestamp_cols(session_path: str) -> dict:
     """
     import pandas as _pd
 
+    # Noms de colonnes reconnus comme temporels (numériques uniquement)
     TIMESTAMP_COLS = {"timestamp_ns", "t_ms_corrected_ns", "time_seconds",
                       "timestamp_abs_ms", "t_ms", "time_ms", "time", "t",
                       "capture_time", "index"}
+
+    def _numeric_time_cols(df) -> list:
+        """Colonnes dont le nom est temporel ET dont les valeurs sont numériques."""
+        cols = []
+        for c in df.columns:
+            if c.lower() not in TIMESTAMP_COLS:
+                continue
+            try:
+                _pd.to_numeric(df[c], errors="raise")
+                cols.append(c)
+            except (ValueError, TypeError):
+                pass  # colonne ISO string ou texte → ignorée
+        return cols
 
     sess = Path(session_path)
     result = {}
 
     trk_path = sess / "tracker_positions.csv"
     if trk_path.exists():
-        df = _pd.read_csv(trk_path, nrows=2)
-        cols = [c for c in df.columns if c.lower() in TIMESTAMP_COLS]
+        df = _pd.read_csv(trk_path, nrows=5)
+        cols = _numeric_time_cols(df)
         if cols:
             result["tracker"] = cols
 
     for side in ("left", "right"):
         grip_path = sess / f"gripper_{side}_data.csv"
         if grip_path.exists():
-            df = _pd.read_csv(grip_path, nrows=2)
-            cols = [c for c in df.columns if c.lower() in TIMESTAMP_COLS]
+            df = _pd.read_csv(grip_path, nrows=5)
+            cols = _numeric_time_cols(df)
             if cols:
                 result[f"gripper_{side}"] = cols
 
@@ -2235,6 +2249,44 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         start_ms = start_ns / 1_000_000
         return (np.asarray(epoch_ms_arr, dtype=np.float64) - start_ms).tolist()
 
+    def _auto_to_ms(arr) -> list:
+        """
+        Détecte automatiquement le format d'une colonne temporelle et la convertit
+        en ms depuis start_ns.  Formats supportés (détection par magnitude) :
+          > 1e15  → nanosecondes epoch     → soustrait start_ns, divise par 1e6
+          > 1e12  → microsecondes epoch    → convertit en ns, puis idem
+          > 1e9   → millisecondes epoch    → soustrait start_ns/1e6
+          > 0.5   → millisecondes relative → ramène à 0 (début = premier point)
+          ≤ 0.5   → secondes relatives     → ×1000, ramène à 0
+        Garantit que le résultat commence à ≥ 0 et ne contient pas de NaN/inf.
+        """
+        a = np.asarray(arr, dtype=np.float64)
+        # Valeur représentative (médiane ignore les outliers)
+        valid = a[np.isfinite(a)]
+        if len(valid) == 0:
+            return [0.0] * len(a)
+        sample = float(np.median(valid))
+
+        if sample > 1e15:                        # nanosecondes epoch
+            out = (a - start_ns) / 1_000_000
+        elif sample > 1e12:                      # microsecondes epoch
+            out = (a * 1_000 - start_ns) / 1_000_000
+        elif sample > 1e9:                       # millisecondes epoch
+            out = a - (start_ns / 1_000_000)
+        elif sample > 0.5:                       # ms relatif (offset inconnu)
+            out = a - a[np.isfinite(a)][0]
+        else:                                    # secondes relatives
+            out = (a - a[np.isfinite(a)][0]) * 1_000
+
+        # Sécurité : remplacer NaN/inf par interpolation linéaire
+        out = np.where(np.isfinite(out), out, np.nan)
+        nans = np.isnan(out)
+        if nans.any() and (~nans).any():
+            idx = np.arange(len(out))
+            out[nans] = np.interp(idx[nans], idx[~nans], out[~nans])
+
+        return out.tolist()
+
     # ── Passe 2 : construire les séries temporelles ──
 
     # ── Trackers ──
@@ -2244,7 +2296,7 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         trk_t_col = time_cols.get("tracker", "timestamp_ns")
         if trk_t_col not in df.columns:
             trk_t_col = "timestamp_ns"
-        t_ms = _ns_to_ms(df[trk_t_col].to_numpy())
+        t_ms = _auto_to_ms(df[trk_t_col].to_numpy())
         trk: dict = {"t_ms": t_ms}
         for role in ("head", "left", "right"):
             for ax in ("x", "y", "z"):
@@ -2267,18 +2319,18 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         if side not in grip_dfs:
             continue
         df = grip_dfs[side]
-        # Colonne temporelle : override UI ou auto-détection
+        # Colonne temporelle : override UI ou auto-détection, toujours via _auto_to_ms
         grip_t_col = time_cols.get(f"gripper_{side}")
+        if not (grip_t_col and grip_t_col in df.columns):
+            # Fallback prioritaire
+            for candidate in ("timestamp_ns", "t_ms_corrected_ns", "t_ms", "time_seconds"):
+                if candidate in df.columns:
+                    grip_t_col = candidate
+                    break
         if grip_t_col and grip_t_col in df.columns:
-            t_ms = _ns_to_ms(df[grip_t_col].to_numpy())
-        elif "timestamp_ns" in df.columns:
-            t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
-        elif "t_ms_corrected_ns" in df.columns:
-            t_ms = _ns_to_ms(df["t_ms_corrected_ns"].to_numpy())
+            t_ms = _auto_to_ms(df[grip_t_col].to_numpy())
         else:
-            # t_ms brut depuis début
-            t_ms = df["time_seconds"].to_numpy(dtype=float) * 1000
-            t_ms = t_ms.tolist()
+            t_ms = [0.0] * len(df)
         grip: dict = {"t_ms": t_ms}
         if "opening_mm" in df.columns:
             grip["opening_mm"] = df["opening_mm"].tolist()

@@ -2117,7 +2117,53 @@ def _compute_session_start_ns(session_path: str) -> int:
     return 0
 
 
-def _load_session_timeseries(session_path: str) -> dict:
+def _get_timestamp_cols(session_path: str) -> dict:
+    """
+    Retourne les colonnes temporelles disponibles dans chaque CSV de la session.
+    Utilisé pour permettre à l'UI de choisir la colonne de référence temporelle.
+    """
+    import pandas as _pd
+
+    TIMESTAMP_COLS = {"timestamp_ns", "t_ms_corrected_ns", "time_seconds",
+                      "timestamp_abs_ms", "t_ms", "time_ms", "time", "t",
+                      "capture_time", "index"}
+
+    sess = Path(session_path)
+    result = {}
+
+    trk_path = sess / "tracker_positions.csv"
+    if trk_path.exists():
+        df = _pd.read_csv(trk_path, nrows=2)
+        cols = [c for c in df.columns if c.lower() in TIMESTAMP_COLS]
+        if cols:
+            result["tracker"] = cols
+
+    for side in ("left", "right"):
+        grip_path = sess / f"gripper_{side}_data.csv"
+        if grip_path.exists():
+            df = _pd.read_csv(grip_path, nrows=2)
+            cols = [c for c in df.columns if c.lower() in TIMESTAMP_COLS]
+            if cols:
+                result[f"gripper_{side}"] = cols
+
+    return result
+
+
+@app.get("/api/session/timestamp_cols")
+async def session_timestamp_cols(session_path: str):
+    """
+    Retourne les colonnes temporelles disponibles dans chaque CSV de la session.
+    """
+    sess = Path(session_path)
+    if not sess.exists():
+        raise HTTPException(404, "Session introuvable")
+    try:
+        return JSONResponse(content=_get_timestamp_cols(session_path))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
     """
     Charge toutes les séries temporelles d'une session et les aligne sur
     une timeline commune en millisecondes depuis le début de session.
@@ -2132,8 +2178,14 @@ def _load_session_timeseries(session_path: str) -> dict:
       - flux           : {head: {t_ms, motion}, left: ..., right: ...}
       - start_ns       : epoch ns du début de session
       - duration_ms    : durée totale en ms
+
+    time_cols : dict optionnel, ex. {"tracker": "timestamp_ns", "gripper_left": "t_ms_corrected_ns"}
+                Permet de forcer la colonne temporelle utilisée pour chaque flux.
     """
     import pandas as pd
+
+    if time_cols is None:
+        time_cols = {}
 
     sess = Path(session_path)
     result: dict = {
@@ -2188,7 +2240,11 @@ def _load_session_timeseries(session_path: str) -> dict:
     # ── Trackers ──
     if trk_df is not None:
         df = trk_df
-        t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
+        # Colonne temporelle : override UI ou fallback "timestamp_ns"
+        trk_t_col = time_cols.get("tracker", "timestamp_ns")
+        if trk_t_col not in df.columns:
+            trk_t_col = "timestamp_ns"
+        t_ms = _ns_to_ms(df[trk_t_col].to_numpy())
         trk: dict = {"t_ms": t_ms}
         for role in ("head", "left", "right"):
             for ax in ("x", "y", "z"):
@@ -2211,7 +2267,11 @@ def _load_session_timeseries(session_path: str) -> dict:
         if side not in grip_dfs:
             continue
         df = grip_dfs[side]
-        if "timestamp_ns" in df.columns:
+        # Colonne temporelle : override UI ou auto-détection
+        grip_t_col = time_cols.get(f"gripper_{side}")
+        if grip_t_col and grip_t_col in df.columns:
+            t_ms = _ns_to_ms(df[grip_t_col].to_numpy())
+        elif "timestamp_ns" in df.columns:
             t_ms = _ns_to_ms(df["timestamp_ns"].to_numpy())
         elif "t_ms_corrected_ns" in df.columns:
             t_ms = _ns_to_ms(df["t_ms_corrected_ns"].to_numpy())
@@ -2333,16 +2393,31 @@ def _extract_video_frame(session_path: str, side: str, t_ms: float) -> Optional[
 
 
 @app.get("/api/session/data")
-async def session_data(session_path: str):
+async def session_data(
+    session_path: str,
+    time_col_tracker: Optional[str] = None,
+    time_col_gripper_left: Optional[str] = None,
+    time_col_gripper_right: Optional[str] = None,
+):
     """
     Retourne toutes les séries temporelles alignées d'une session.
     Utilisé par l'onglet Visualisation.
+
+    time_col_tracker / time_col_gripper_left / time_col_gripper_right :
+        Colonne temporelle à utiliser pour chaque flux (override auto-détection).
     """
     sess = Path(session_path)
     if not sess.exists():
         raise HTTPException(404, "Session introuvable")
     try:
-        data = _load_session_timeseries(session_path)
+        time_cols = {}
+        if time_col_tracker:
+            time_cols["tracker"] = time_col_tracker
+        if time_col_gripper_left:
+            time_cols["gripper_left"] = time_col_gripper_left
+        if time_col_gripper_right:
+            time_cols["gripper_right"] = time_col_gripper_right
+        data = _load_session_timeseries(session_path, time_cols=time_cols)
         return JSONResponse(content=data)
     except Exception as e:
         raise HTTPException(500, str(e))

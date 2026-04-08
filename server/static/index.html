@@ -4487,6 +4487,35 @@
 											</label>
 										</div>
 
+										<!-- Colonne temporelle -->
+										<div class="tv-rp-section">
+											<div class="tv-rp-title">Colonne temporelle</div>
+											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+												<label style="font-size:.7rem;color:var(--text3)">Tracker</label>
+												<select id="rp-tcol-tracker" class="tv-sel"
+													style="font-size:.74rem;width:100%"
+													onchange="tvReloadWithTimeCols()">
+													<option value="">auto</option>
+												</select>
+											</div>
+											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+												<label style="font-size:.7rem;color:var(--text3)">Gripper gauche</label>
+												<select id="rp-tcol-gripper-left" class="tv-sel"
+													style="font-size:.74rem;width:100%"
+													onchange="tvReloadWithTimeCols()">
+													<option value="">auto</option>
+												</select>
+											</div>
+											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+												<label style="font-size:.7rem;color:var(--text3)">Gripper droit</label>
+												<select id="rp-tcol-gripper-right" class="tv-sel"
+													style="font-size:.74rem;width:100%"
+													onchange="tvReloadWithTimeCols()">
+													<option value="">auto</option>
+												</select>
+											</div>
+										</div>
+
 										<!-- Offset gripper -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Offset gripper</div>
@@ -8054,6 +8083,69 @@
 			setTimeout(_tvAfterResize, 210);
 		}
 
+		// ── Colonnes temporelles ────────────────────────────────────────────
+		async function tvLoadTimestampCols(path) {
+			const sel = {
+				tracker:      ge('rp-tcol-tracker'),
+				gripper_left: ge('rp-tcol-gripper-left'),
+				gripper_right: ge('rp-tcol-gripper-right'),
+			};
+			// Reset à "auto"
+			for (const s of Object.values(sel)) {
+				if (!s) continue;
+				s.innerHTML = '<option value="">auto</option>';
+			}
+			try {
+				const r = await fetch(`/api/session/timestamp_cols?session_path=${encodeURIComponent(path)}`);
+				if (!r.ok) return;
+				const cols = await r.json(); // { tracker: [...], gripper_left: [...], ... }
+				for (const [flux, list] of Object.entries(cols)) {
+					const s = sel[flux];
+					if (!s || !Array.isArray(list)) continue;
+					for (const col of list) {
+						const opt = document.createElement('option');
+						opt.value = col;
+						opt.textContent = col;
+						s.appendChild(opt);
+					}
+				}
+			} catch (_) {}
+		}
+
+		function tvBuildDataUrl(path) {
+			let url = `/api/session/data?session_path=${encodeURIComponent(path)}`;
+			const tracker = ge('rp-tcol-tracker')?.value;
+			const gripL   = ge('rp-tcol-gripper-left')?.value;
+			const gripR   = ge('rp-tcol-gripper-right')?.value;
+			if (tracker) url += `&time_col_tracker=${encodeURIComponent(tracker)}`;
+			if (gripL)   url += `&time_col_gripper_left=${encodeURIComponent(gripL)}`;
+			if (gripR)   url += `&time_col_gripper_right=${encodeURIComponent(gripR)}`;
+			return url;
+		}
+
+		async function tvReloadWithTimeCols() {
+			if (!TV.sessPath) return;
+			try {
+				const dataResp = await fetch(tvBuildDataUrl(TV.sessPath));
+				if (!dataResp.ok) return;
+				const data = await dataResp.json();
+				if (!data || typeof data !== 'object') return;
+				TV.data = data;
+				TV.duration_ms = data.duration_ms || 0;
+				ge('tv-t-dur').textContent = TV.duration_ms > 0
+					? (TV.duration_ms / 1000).toFixed(1) + 's' : '—';
+				TV.t_ms = 0;
+				ge('tv-scrub').value = 0;
+				ge('tv-playhead-fill').style.width = '0%';
+				ge('tv-t-cur').textContent = '0.000s';
+				tvBuildCharts();
+				tvUpdateLegend();
+				const has3d = !!(data?.tracker?.t_ms?.length);
+				if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
+				tvSeekVideos(0);
+			} catch (_) {}
+		}
+
 		let _tvRightPanelOpen = true;
 		function tvToggleRightPanel() {
 			_tvRightPanelOpen = !_tvRightPanelOpen;
@@ -8426,9 +8518,12 @@
 			}
 
 			try {
+				// Charger colonnes temporelles disponibles (pour le panneau paramètres)
+				await tvLoadTimestampCols(path);
+
 				// Charger données timeseries + video_info en parallèle
 				const [dataResp, infoResp] = await Promise.all([
-					fetch(`/api/session/data?session_path=${encodeURIComponent(path)}`),
+					fetch(tvBuildDataUrl(path)),
 					fetch(`/api/session/video_info?session_path=${encodeURIComponent(path)}`),
 				]);
 				if (!dataResp.ok) throw new Error(`HTTP ${dataResp.status}`);
@@ -8876,7 +8971,7 @@
 				// Recharger les données pour refléter les nouveaux timestamps
 				tvSetGripOffset(0);
 				ge('tv-grip-offset').value = 0;
-				const dataResp = await fetch(`/api/session/data?session_path=${encodeURIComponent(TV.sessPath)}`);
+				const dataResp = await fetch(tvBuildDataUrl(TV.sessPath));
 				if (dataResp.ok) {
 					TV.data = await dataResp.json();
 					TV.duration_ms = TV.data.duration_ms || 0;

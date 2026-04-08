@@ -2756,6 +2756,202 @@ def _load_session_metadata(session_path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _gripper_vertical_position(frame: "np.ndarray") -> float:
+    """
+    Kernel de détection de position verticale du gripper dans une frame.
+
+    Retourne un score normalisé : 0.0 = haut de l'image, 1.0 = bas.
+
+    Algorithme :
+      1. Convertit en niveaux de gris (moyenne des canaux BGR).
+      2. Garde la bande centrale horizontale (25%–75% en largeur)
+         pour éviter les bords non pertinents.
+      3. Calcule le profil de luminosité vertical (moyenne par ligne).
+      4. Lisse le profil pour réduire le bruit.
+      5. Calcule le gradient vertical |d(profile)/dy|.
+         → Les mâchoires du gripper créent les bords horizontaux les plus forts.
+      6. Retourne le centre de masse (pondéré par intensité de gradient)
+         normalisé à [0, 1].
+    """
+    h, w = frame.shape[:2]
+    # Niveaux de gris via moyenne numpy (pas de dépendance cv2 pour le kernel)
+    gray = (frame.mean(axis=2) if len(frame.shape) == 3 else frame).astype(np.float32)
+
+    # Bande centrale (ignore les 25% latéraux)
+    x0, x1 = w // 4, 3 * w // 4
+    if x1 <= x0:
+        return 0.5
+    strip = gray[:, x0:x1]
+
+    # Profil vertical moyen
+    profile = strip.mean(axis=1)   # shape: (h,)
+
+    # Lissage gaussien approché (fenêtre glissante)
+    win = max(5, h // 25) | 1     # impair, ~4% de la hauteur
+    k   = np.ones(win) / win
+    smoothed = np.convolve(profile, k, mode="same")
+
+    # Gradient vertical → détecte les bords horizontaux (mâchoires du gripper)
+    edges = np.abs(np.gradient(smoothed))
+
+    total = float(edges.sum())
+    if total < 1e-3:
+        return 0.5   # pas de gradient → indéterminé
+
+    # Centre de masse des bords
+    rows = np.arange(h, dtype=np.float32)
+    com  = float(np.dot(rows, edges) / total)
+    return com / h   # normalisé 0=haut 1=bas
+
+
+def _dim_video_orientation(session_path: Path) -> DimensionResult:
+    """
+    Dimension : orientation des vidéos (retournée vs à l'endroit).
+    Poids = 0 — porte bloquante pure.
+
+    Principe physique :
+      Sur les caméras latérales (left, right), le gripper apparaît en BAS
+      du frame quand la vidéo est retournée (camera physiquement inversée).
+      Quand la vidéo est à l'endroit, le gripper est dans la moitié supérieure.
+      Si le centre de masse des bords horizontaux est dans la moitié
+      INFÉRIEURE (position > ORI_BOTTOM_THRESHOLD) pour les deux caméras
+      → les 3 vidéos sont considérées comme retournées.
+
+    Kernel : gradient vertical du profil de luminosité central (numpy pur)
+    """
+    ORI_BOTTOM_THRESHOLD = 0.50  # > 50% de la hauteur = "en bas" = retournée
+    ORI_AGREE_THRESHOLD  = 0.50  # seuil empirique validé sur sessions KO/OK
+    N_SAMPLE             = 40    # frames analysées par vidéo
+    SAMPLE_STEP          = 8     # analyser 1 frame sur N (évite redondance)
+
+    diags:   List[str]      = []
+    details: Dict[str, Any] = {}
+    positions: Dict[str, float] = {}   # side → position moyenne [0,1]
+
+    if not _CV2:
+        return DimensionResult(
+            name="video_orientation", score=50.0, weight=0.0,
+            grade="C", ok=True, blocking=False, confidence=0.0,
+            summary="opencv non disponible — orientation non vérifiée",
+            diagnostics=[], repairs=[], details={}, error="opencv manquant",
+        )
+
+    for side in ("left", "right"):
+        video_path = session_path / "videos" / f"{side}.mp4"
+        if not video_path.exists():
+            details[side] = {"status": "missing"}
+            diags.append(f"  {side} – vidéo absente")
+            continue
+
+        try:
+            cap = _cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                details[side] = {"status": "unreadable"}
+                diags.append(f"  {side} – vidéo illisible")
+                cap.release()
+                continue
+
+            total_frames = int(cap.get(_cv2.CAP_PROP_FRAME_COUNT)) or 1
+            h_vid = int(cap.get(_cv2.CAP_PROP_FRAME_HEIGHT))
+            w_vid = int(cap.get(_cv2.CAP_PROP_FRAME_WIDTH))
+
+            # Espacer les frames sur toute la durée
+            step = max(SAMPLE_STEP, total_frames // N_SAMPLE)
+            frame_scores: List[float] = []
+            fi = 0
+
+            while len(frame_scores) < N_SAMPLE:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                if fi % step == 0:
+                    pos = _gripper_vertical_position(frame)
+                    frame_scores.append(pos)
+                fi += 1
+
+            cap.release()
+
+            if not frame_scores:
+                details[side] = {"status": "no_frames"}
+                diags.append(f"  {side} – aucune frame extraite")
+                continue
+
+            mean_pos   = float(np.mean(frame_scores))
+            std_pos    = float(np.std(frame_scores))
+            at_bottom  = mean_pos > ORI_AGREE_THRESHOLD   # True = retournée (gripper en bas)
+            positions[side] = mean_pos
+
+            icon = "↓ BAS ✗ RETOURNÉE" if at_bottom else "↑ HAUT ✓"
+            diags.append(
+                f"  {side} {icon}  position_moy={mean_pos:.3f}  σ={std_pos:.3f}"
+                f"  ({len(frame_scores)} frames  {h_vid}×{w_vid})"
+            )
+            details[side] = {
+                "mean_position": round(mean_pos, 3),
+                "std_position":  round(std_pos,  3),
+                "n_frames":      len(frame_scores),
+                "at_bottom":     at_bottom,
+            }
+
+        except Exception as e:
+            details[side] = {"status": "error", "error": str(e)}
+            diags.append(f"  {side} ✗ erreur : {e}")
+
+    # ── Verdict ──────────────────────────────────────────────────────────
+    # at_bottom=True  → gripper en bas du frame → vidéo RETOURNÉE → blocking
+    # at_bottom=False → gripper en haut du frame → vidéo à l'endroit → OK
+    n_bottom  = sum(1 for v in details.values()
+                    if isinstance(v, dict) and v.get("at_bottom") is True)
+    n_checked = sum(1 for v in details.values()
+                    if isinstance(v, dict) and "at_bottom" in v)
+
+    if n_checked == 0:
+        return DimensionResult(
+            name="video_orientation", score=50.0, weight=0.0,
+            grade="C", ok=True, blocking=False, confidence=0.0,
+            summary="Aucune vidéo left/right disponible pour vérifier l'orientation",
+            diagnostics=diags, repairs=[], details=details, error=None,
+        )
+
+    if n_bottom == 2:
+        # Les deux caméras ont le gripper en bas → vidéos retournées
+        avg  = float(np.mean(list(positions.values())))
+        conf = float(np.clip((avg - ORI_BOTTOM_THRESHOLD) / 0.25, 0.0, 1.0))
+        return DimensionResult(
+            name="video_orientation", score=0.0, weight=0.0,
+            grade="F", ok=False, blocking=True, confidence=conf,
+            summary=f"Vidéos RETOURNÉES — gripper en bas (left={positions.get('left',0):.2f}  right={positions.get('right',0):.2f})",
+            diagnostics=diags,
+            repairs=["Retourner les 3 caméras (head, left, right) de 180°"],
+            details={**details, "upside_down": True, "n_bottom": n_bottom},
+            error=None,
+        )
+
+    if n_bottom == 1:
+        side_down = next(s for s in ("left", "right")
+                         if isinstance(details.get(s), dict) and details[s].get("at_bottom"))
+        return DimensionResult(
+            name="video_orientation", score=50.0, weight=0.0,
+            grade="D", ok=False, blocking=False, confidence=0.6,
+            summary=f"Orientation ambiguë — gripper en bas sur {side_down} uniquement",
+            diagnostics=diags, repairs=[f"Vérifier caméra {side_down}"],
+            details={**details, "upside_down": False, "n_bottom": n_bottom},
+            error=None,
+        )
+
+    # n_bottom == 0 → gripper en haut sur toutes les caméras → correct
+    avg  = float(np.mean(list(positions.values()))) if positions else 0.5
+    conf = float(np.clip((ORI_BOTTOM_THRESHOLD - avg) / 0.25, 0.0, 1.0)) if positions else 0.5
+    return DimensionResult(
+        name="video_orientation", score=100.0, weight=0.0,
+        grade="A", ok=True, blocking=False, confidence=conf,
+        summary=f"Orientation correcte — gripper en haut (left={positions.get('left',0.5):.2f}  right={positions.get('right',0.5):.2f})",
+        diagnostics=diags, repairs=[],
+        details={**details, "upside_down": False, "n_bottom": 0},
+        error=None,
+    )
+
+
 def _dim_gripper_health(session_path: Path) -> DimensionResult:
     """
     Dimension : santé matérielle des pinces (gripper_health).
@@ -2876,7 +3072,8 @@ def check_session_full(session_path, model=None) -> dict:
     if model is None:
         model = _chk_load_model()
 
-    # ── Exécuter les 6 dimensions ──────────────────────────────────────────
+    # ── Exécuter les 7 dimensions ──────────────────────────────────────────
+    dim_vo  = _dim_video_orientation(session_path)     # bloquant si vidéos retournées
     dim_gh  = _dim_gripper_health(session_path)        # bloquant si pince morte
     dim_gt  = _dim_gripper_ts(session_path)
     dim_vt  = _dim_video_tracker_sync(session_path, model=model)
@@ -2885,6 +3082,7 @@ def check_session_full(session_path, model=None) -> dict:
     dim_gf  = _dim_gripper_frame_sync(session_path)
 
     dims = {
+        "video_orientation":      dim_vo,
         "gripper_health":         dim_gh,
         "gripper_timestamp_sync": dim_gt,
         "video_tracker_sync":     dim_vt,
@@ -3006,6 +3204,7 @@ def check_session_full(session_path, model=None) -> dict:
 
         # Dimensions détaillées
         "components": {
+            "video_orientation":      _dim_to_dict(dim_vo),
             "gripper_health":         _dim_to_dict(dim_gh),
             "gripper_timestamp_sync": _dim_to_dict(dim_gt),
             "video_tracker_sync":     _dim_to_dict(dim_vt),
@@ -3082,9 +3281,10 @@ def _print_report(result: dict, full: bool = False) -> None:
     print(f"  {'Dimension':<30}  {'Score':>6}  {'Grade':>5}  Résumé")
     print(f"{'─'*60}")
 
-    dim_order = ["gripper_health", "gripper_timestamp_sync", "video_tracker_sync",
-                 "tracker_placement", "video_quality", "gripper_frame_sync"]
+    dim_order = ["video_orientation", "gripper_health", "gripper_timestamp_sync",
+                 "video_tracker_sync", "tracker_placement", "video_quality", "gripper_frame_sync"]
     labels = {
+        "video_orientation":      "Orientation vidéos   (gate)",
         "gripper_health":         "Santé pinces         (gate)",
         "gripper_timestamp_sync": "Gripper TS sync      (25%)",
         "video_tracker_sync":     "Vidéo/tracker IA     (25%)",

@@ -42,3 +42,7 @@ verify_results/
 sync/
 desync/
 camera_calibration.json
+
+# Sessions de test locales
+ok/
+ko/

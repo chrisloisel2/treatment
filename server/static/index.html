@@ -6165,11 +6165,13 @@
 					// Détail par dimension
 					const comp = r.components || {};
 					const DIM_LABELS = {
-						gripper_timestamp_sync: 'TS gripper',
-						video_tracker_sync: 'Vidéo/tracker IA',
-						tracker_placement: 'Placement trackers',
-						video_quality: 'Qualité vidéo',
-						gripper_frame_sync: 'Sync frame/capteur',
+						video_orientation:      'Orientation vidéos  (gate)',
+						gripper_health:         'Santé pinces        (gate)',
+						gripper_timestamp_sync: 'TS gripper          (25%)',
+						video_tracker_sync:     'Vidéo/tracker IA    (25%)',
+						tracker_placement:      'Placement trackers  (15%)',
+						video_quality:          'Qualité vidéo       (20%)',
+						gripper_frame_sync:     'Sync frame/capteur  (15%)',
 					};
 					for (const [key, label] of Object.entries(DIM_LABELS)) {
 						const d = comp[key];
@@ -6177,7 +6179,31 @@
 						const dg = d.grade || '?';
 						const blk = d.blocking ? ' [BLOQUANT]' : '';
 						const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
-						log(`  [${dg}] ${label}: ${Math.round(d.score ?? 0)}%  — ${d.summary || ''}${blk}`, lv);
+						log(`  [${dg}] ${label}: ${d.score != null && (key !== 'video_orientation' && key !== 'gripper_health') ? Math.round(d.score) + '%' : ''}  — ${d.summary || ''}${blk}`, lv);
+
+						// video_orientation : détail par caméra
+						if (key === 'video_orientation' && d.details) {
+							for (const side of ['left', 'right']) {
+								const sd = d.details[side];
+								if (!sd || sd.status) continue;
+								const pos = (sd.mean_position ?? 0.5).toFixed(3);
+											const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
+											const lc = sd.at_bottom ? 'ERROR' : 'INFO';
+								log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
+							}
+						}
+
+						// gripper_health : détail par côté
+						if (key === 'gripper_health' && d.details) {
+							for (const side of ['left', 'right']) {
+								const sd = d.details[side];
+								if (!sd || sd.status) continue;
+								const lc = sd.defective ? 'ERROR' : 'INFO';
+								const tag = sd.defective ? '✗ DEFECTUEUSE' : '✓ OK';
+								log(`    ${side}: ${tag}  mean=${(sd.mean_mm || 0).toFixed(3)}mm  range=[${(sd.min_mm || 0).toFixed(1)}, ${(sd.max_mm || 0).toFixed(1)}]  n=${sd.n_samples || 0}`, lc);
+							}
+						}
+
 						// Détail gripper_frame_sync : lag, r, anomalies
 						if (key === 'gripper_frame_sync' && d.details) {
 							const gdet = d.details.sides || {};
@@ -7093,11 +7119,13 @@
 				// — Détail par dimension —
 				const comp = r.components || {};
 				const DIM_LABELS = {
-					gripper_timestamp_sync: 'TS gripper      (25%)',
-					video_tracker_sync: 'Vidéo/tracker   (25%)',
-					tracker_placement: 'Trackers        (15%)',
-					video_quality: 'Qualité vidéo   (15%)',
-					gripper_frame_sync: 'Sync frame/cap  (20%)',
+					video_orientation:      'Orientation vidéos  (gate)',
+					gripper_health:         'Santé pinces        (gate)',
+					gripper_timestamp_sync: 'TS gripper          (25%)',
+					video_tracker_sync:     'Vidéo/tracker IA    (25%)',
+					tracker_placement:      'Trackers            (15%)',
+					video_quality:          'Qualité vidéo       (20%)',
+					gripper_frame_sync:     'Sync frame/cap      (15%)',
 				};
 				for (const [key, label] of Object.entries(DIM_LABELS)) {
 					const d = comp[key];
@@ -7105,13 +7133,32 @@
 					const dg = d.grade || '?';
 					const blk = d.blocking ? ' [BLOQUANT]' : '';
 					const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
-					log(`  [${dg}] ${label}: ${Math.round(d.score ?? 0)}% — ${d.summary || ''}${blk}`, lv);
-					// diagnostics détaillés si erreur
-					if (d.blocking || d.ok === false) {
-						(d.diagnostics || []).forEach(line => {
-							if (line.trim().startsWith('✗')) log(`  ${line}`, 'ERROR');
-						});
+					const isGate = key === 'video_orientation' || key === 'gripper_health';
+					log(`  [${dg}] ${label}${isGate ? '' : ': ' + Math.round(d.score ?? 0) + '%'} — ${d.summary || ''}${blk}`, lv);
+
+					// video_orientation : position par caméra
+					if (key === 'video_orientation' && d.details) {
+						for (const side of ['left', 'right']) {
+							const sd = d.details[side];
+							if (!sd || sd.status) continue;
+							const pos  = (sd.mean_position ?? 0.5).toFixed(3);
+										const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
+										const lc   = sd.at_bottom ? 'ERROR' : 'INFO';
+							log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
+						}
 					}
+
+					// gripper_health : état par côté
+					if (key === 'gripper_health' && d.details) {
+						for (const side of ['left', 'right']) {
+							const sd = d.details[side];
+							if (!sd || sd.status) continue;
+							const lc  = sd.defective ? 'ERROR' : 'INFO';
+							const tag = sd.defective ? '✗ DEFECTUEUSE' : '✓ OK';
+							log(`    ${side}: ${tag}  mean=${(sd.mean_mm || 0).toFixed(3)}mm  range=[${(sd.min_mm || 0).toFixed(1)}, ${(sd.max_mm || 0).toFixed(1)}]  n=${sd.n_samples || 0}`, lc);
+						}
+					}
+
 					// Gripper frame sync : détail par côté
 					if (key === 'gripper_frame_sync' && d.details) {
 						const gdet = d.details.sides || {};
@@ -7126,6 +7173,13 @@
 							if (sd.residual_std_mm != null)
 								log(`    ${side}: résidu std=${sd.residual_std_mm.toFixed(2)}mm  fit_r²=${(sd.fit_r2 || 0).toFixed(3)}`, 'INFO');
 						}
+					}
+
+					// Diagnostics texte si bloquant (autres dimensions)
+					if ((d.blocking || d.ok === false) && !isGate) {
+						(d.diagnostics || []).forEach(line => {
+							if (line.trim().match(/^[✗⚠]/)) log(`    ${line.trim()}`, d.blocking ? 'ERROR' : 'WARN');
+						});
 					}
 				}
 

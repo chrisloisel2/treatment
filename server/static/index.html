@@ -5978,9 +5978,11 @@
 			ge('cfg-root').value = root;
 			ge('cfg-root-display').textContent = root;
 			// Réinitialiser la pagination
+			const dateFilter = _dateFilterStr(); // "YYYYMMDD" ou null
 			S.scan = { totalFound: 0, offset: 0, limit: SCAN_LIMIT,
-				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath };
+				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath, dateFilter };
 			const scanBody = { root, input_format: fmt, limit: SCAN_LIMIT, offset: 0 };
+			if (dateFilter) scanBody.date_filter = dateFilter;
 			if (fmt === 'lerobot') {
 				if (!lrPath) { _scanInProgress = false; log('Scan LeRobot : chemin dataset non configuré', 'ERROR'); return; }
 				scanBody.lerobot_path = lrPath;
@@ -6030,8 +6032,9 @@
 			_scanInProgress = true;
 			const btn = ge('btn-load-more');
 			if (btn) { btn.disabled = true; btn.textContent = '⏳ Chargement…'; }
-			const { inputFmt: fmt, root, lerobot_path: lrPath, offset, limit } = S.scan;
+			const { inputFmt: fmt, root, lerobot_path: lrPath, offset, limit, dateFilter } = S.scan;
 			const scanBody = { root, input_format: fmt, limit, offset };
+			if (dateFilter) scanBody.date_filter = dateFilter;
 			if (fmt === 'lerobot') scanBody.lerobot_path = lrPath;
 			try {
 				const { job_id } = await api('POST', '/api/scan', scanBody);
@@ -7654,18 +7657,16 @@
 		}
 
 		function _visibleSessions() {
-			const df = _dateFilterStr();
-			return S.sessions.filter(s =>
-				(!S.scenarioFilter || s.meta?.scenario === S.scenarioFilter) &&
-				(!df || (s.name || '').includes(df))
-			);
+			return S.scenarioFilter
+				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
+				: S.sessions;
 		}
 
 		function onDateFilterChange() {
 			const df = _dateFilterStr();
 			const clearBtn = ge('btn-date-clear');
 			if (clearBtn) clearBtn.style.display = df ? 'inline-flex' : 'none';
-			renderAll();
+			scanAndShow();
 		}
 
 		function setDateToday() {

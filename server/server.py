@@ -301,12 +301,13 @@ async def _broadcast(payload: dict):
 # Workers (thread)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
+def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", date_filter: str = ""):
     try:
         scan_dir = Path(root) if root else INGEST_DIR
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
         _cap = f" (limite {limit}, offset {offset})" if limit or offset else ""
-        _log_job(job, f"Scan de {scan_dir}…{_cap}")
+        _date_info = f", date={date_filter}" if date_filter else ""
+        _log_job(job, f"Scan de {scan_dir}…{_cap}{_date_info}")
 
         import utils.sync as ia
 
@@ -341,6 +342,8 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = ""):
 
         def _process_candidate(p: Path):
             if stop_flag.is_set():
+                return
+            if date_filter and date_filter not in p.name:
                 return
             if _is_session(p):
                 with found_lock:
@@ -1040,15 +1043,16 @@ async def scan(req: dict = None):
     if req is None:
         req = {}
     input_format = req.get("input_format", "custom")
-    limit  = int(req.get("limit",  500))
-    offset = int(req.get("offset", 0))
-    root   = req.get("root", "") or str(INGEST_DIR)
+    limit       = int(req.get("limit",  500))
+    offset      = int(req.get("offset", 0))
+    root        = req.get("root", "") or str(INGEST_DIR)
+    date_filter = req.get("date_filter", "").strip()  # "YYYYMMDD" ou ""
     job = _new_job("scan")
     if input_format == "lerobot":
         lerobot_path = req.get("lerobot_path", "") or root
         threading.Thread(target=_worker_scan_lerobot, args=(job, lerobot_path, limit, offset), daemon=True).start()
     else:
-        threading.Thread(target=_worker_scan, args=(job, limit, offset, root), daemon=True).start()
+        threading.Thread(target=_worker_scan, args=(job, limit, offset, root, date_filter), daemon=True).start()
     return {"job_id": job.id}
 
 

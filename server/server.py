@@ -394,7 +394,7 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
         model_exists = (MODEL_DIR / "model.pt").exists()
         total_found = len(sessions)
         # Trier, paginer
-        all_sorted = sorted(sessions, key=lambda p: p.name)
+        all_sorted = sorted(sessions, key=lambda p: p.name, reverse=True)
         if offset:
             all_sorted = all_sorted[offset:]
         if limit:
@@ -496,8 +496,8 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
                     pass
                 done_count += 1
                 _update_job(job, progress=50 + int(48 * done_count / max(len(all_sorted), 1)))
-        # Rétablir l'ordre alphabétique (as_completed ne le garantit pas)
-        result.sort(key=lambda r: r["name"])
+        # Rétablir l'ordre (as_completed ne le garantit pas) — plus récent en premier
+        result.sort(key=lambda r: r["name"], reverse=True)
 
         has_more = bool(limit and (offset + len(result)) < total_found)
         _log_job(job, f"{len(result)} sessions retournées (total trouvé: {total_found}).", "OK")

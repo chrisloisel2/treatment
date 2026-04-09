@@ -3818,8 +3818,14 @@
 									style="font-size:.82rem;color:var(--text3);font-family:monospace;flex:1">—</span>
 								<input type="hidden" id="cfg-nas" value="" />
 							</div>
+							<div style="display:flex;gap:4px;align-items:center">
+								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Date</label>
+								<input type="date" id="s-date-filter" onchange="onDateFilterChange()"
+									style="font-size:.8rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text1);height:32px;cursor:pointer" />
+								<button class="btn sm" onclick="setDateToday()" title="Aujourd'hui" style="white-space:nowrap">Aujourd'hui</button>
+								<button class="btn sm" onclick="clearDateFilter()" title="Effacer le filtre date" id="btn-date-clear" style="display:none;color:var(--red);border-color:var(--red)44">✕</button>
+							</div>
 							<button class="btn p" onclick="scanAndShow()">⟳ Scanner</button>
-							<button class="btn c" id="btn-watch" onclick="toggleWatcher()">▶ Watcher</button>
 						</div>
 					</div>
 
@@ -6485,7 +6491,7 @@
 
 			let nDone = 0, nRunning = 0, nFailed = 0, nNas = 0;
 
-			S.sessions.forEach(sess => {
+			_visibleSessions().forEach(sess => {
 				const { currentStep, overallStatus } = _classifySession(sess);
 				const ps = sess.pipeline_state;
 
@@ -6502,7 +6508,7 @@
 				columns[currentStep].push({ sess, overallStatus, ps, moved });
 			});
 
-			ge('ps-total').textContent = S.sessions.length;
+			ge('ps-total').textContent = _visibleSessions().length;
 			ge('ps-done').textContent = nDone;
 			ge('ps-running').textContent = nRunning;
 			ge('ps-failed').textContent = nFailed;
@@ -7373,14 +7379,13 @@
 		function renderSessionsList() {
 			_renderScenarioBar();
 
-			const visible = S.scenarioFilter
-				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
-				: S.sessions;
+			const visible = _visibleSessions();
+			const filtered = visible.length < S.sessions.length;
 
 			const totalStr = S.scan.hasMore
 				? `${S.sessions.length} / ${S.scan.totalFound}`
 				: S.sessions.length;
-			ge('sess-count').textContent = S.scenarioFilter
+			ge('sess-count').textContent = filtered
 				? `${visible.length} / ${totalStr}`
 				: totalStr;
 
@@ -7642,10 +7647,42 @@
 			_updateSessActions();
 			tvRefreshSessions();
 		}
+		function _dateFilterStr() {
+			const val = ge('s-date-filter')?.value; // "YYYY-MM-DD"
+			if (!val) return null;
+			return val.replace(/-/g, ''); // → "YYYYMMDD"
+		}
+
 		function _visibleSessions() {
-			return S.scenarioFilter
-				? S.sessions.filter(s => s.meta?.scenario === S.scenarioFilter)
-				: S.sessions;
+			const df = _dateFilterStr();
+			return S.sessions.filter(s =>
+				(!S.scenarioFilter || s.meta?.scenario === S.scenarioFilter) &&
+				(!df || (s.name || '').includes(df))
+			);
+		}
+
+		function onDateFilterChange() {
+			const df = _dateFilterStr();
+			const clearBtn = ge('btn-date-clear');
+			if (clearBtn) clearBtn.style.display = df ? 'inline-flex' : 'none';
+			renderAll();
+		}
+
+		function setDateToday() {
+			const el = ge('s-date-filter');
+			if (!el) return;
+			const now = new Date();
+			const y = now.getFullYear();
+			const m = String(now.getMonth() + 1).padStart(2, '0');
+			const d = String(now.getDate()).padStart(2, '0');
+			el.value = `${y}-${m}-${d}`;
+			onDateFilterChange();
+		}
+
+		function clearDateFilter() {
+			const el = ge('s-date-filter');
+			if (el) el.value = '';
+			onDateFilterChange();
 		}
 
 		function _applySelAndRefresh(fn) {

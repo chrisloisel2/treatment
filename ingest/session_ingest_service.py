@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# DÉSACTIVÉ — pipeline automatique suspendue jusqu'à nouvel ordre.
+# Pour relancer, retirer le raise ci-dessous.
+raise SystemExit("session_ingest_service désactivé — pipeline automatique suspendue.")
+
 from __future__ import annotations
 
 import contextlib

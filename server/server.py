@@ -115,7 +115,6 @@ except ImportError:
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
-DEFAULT_WATCH_DIR = "/mnt/storage/silver/"
 
 # Répertoire de persistance des jobs sur disque
 JOBS_DIR = INGEST_DIR.parent / "_server_jobs"
@@ -721,9 +720,6 @@ app = FastAPI(
 )
 
 
-# ── Watcher singleton ──
-_watcher: Optional["IngestionWatcher"] = None  # type: ignore[name-defined]
-
 # Servir le frontend statique
 _static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
@@ -736,8 +732,6 @@ async def _startup():
     global _loop
     _loop = asyncio.get_running_loop()
     _load_jobs_from_disk()
-    # Le watcher NE démarre PAS automatiquement.
-    # Il doit être activé explicitement depuis l'interface (POST /api/watcher/start).
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -853,9 +847,7 @@ def _get_process_pool() -> concurrent.futures.ProcessPoolExecutor:
 def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore[name-defined]
                      write_mode: bool, force_flux: bool,
                      delete_after_store: bool = False,
-                     steps_whitelist: Optional[List[str]] = None,
-                     auto_reject_missing: bool = False,
-                     reject_path: Optional[str] = None):
+                     steps_whitelist: Optional[List[str]] = None):
     try:
         _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=2)
         if not _session_writable(source_path):
@@ -863,16 +855,6 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
                 f"Le dossier session n'est pas accessible en écriture : {source_path}\n"
                 "Vérifiez les permissions (chmod 777) ou le montage NFS."
             )
-
-        # Rotation automatique : si la session n'est pas encore rotée et que la
-        # whitelist ne contient pas déjà "rotate", l'injecter en premier.
-        rotate_marker = Path(source_path) / "videos" / ".rotate_done"
-        if not rotate_marker.exists():
-            if steps_whitelist is None:
-                pass  # pipeline complète → step_rotate sera exécuté normalement
-            elif "rotate" not in steps_whitelist:
-                steps_whitelist = ["rotate"] + list(steps_whitelist)
-                _log_job(job, "Rotation manquante — étape 'rotate' injectée automatiquement", "INFO")
 
         # Démarrer le polling WebSocket pendant que le process tourne
         stop_poll = threading.Event()
@@ -911,66 +893,6 @@ def _worker_pipeline(job: "Job", source_path: str, params: dict,  # type: ignore
             error    = result.get("error"),
         )
 
-        # Rejet automatique si fichiers requis manquants et option activée
-        if not result["success"] and auto_reject_missing and reject_path:
-            from pipeline.pipeline import REQUIRED_FILES
-            sess_path = Path(source_path)
-            missing_required = any(
-                not (sess_path / f).exists() for f in REQUIRED_FILES
-            )
-            error_msg = result.get("error", "")
-            missing_signals = (
-                "No such file or directory" in error_msg
-                or "Fichier manquant" in error_msg
-                or "Détection échouée" in error_msg
-            )
-            if missing_required or missing_signals:
-                import shutil
-                sess = Path(source_path)
-                dest_root = Path(reject_path)
-                _log_job(job, f"Fichiers requis manquants — rejet automatique vers {dest_root}", "WARN")
-                try:
-                    dest_root.mkdir(parents=True, exist_ok=True)
-                    dest = dest_root / sess.name
-                    if dest.exists():
-                        dest = dest_root / f"{sess.name}_{int(time.time())}"
-                    shutil.move(str(sess), str(dest))
-                    _log_job(job, f"Session rejetée automatiquement → {dest}", "WARN")
-                except Exception as re:
-                    _log_job(job, f"Rejet automatique échoué : {re}", "ERROR")
-
-    except Exception:
-        err = traceback.format_exc()
-        _log_job(job, err, "ERROR")
-        _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
-
-
-def _worker_watcher_scan(job: "Job", params: dict, write_mode: bool,  # type: ignore[name-defined]
-                          delete_after_store: bool, auto_start: bool,
-                          watch_dir: str = DEFAULT_WATCH_DIR):
-    """Worker qui démarre le watcher sur le répertoire configuré."""
-    global _watcher
-    try:
-        from pipeline.pipeline import IngestionWatcher
-        _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=10)
-
-        def _log(msg, level="INFO"):
-            _log_job(job, msg, level)
-
-        _watcher = IngestionWatcher(
-            params             = params,
-            write_mode         = write_mode,
-            delete_after_store = delete_after_store,
-            log_callback       = _log,
-            poll_interval      = 8.0,
-            auto_start         = auto_start,
-            watch_dir          = watch_dir,
-        )
-        _watcher.start()
-        _log(f"Watcher démarré sur {watch_dir}", "OK")
-        _update_job(job, status=JobStatus.DONE, ended_at=_now(), progress=100,
-                    result={"watch_dir": watch_dir, "auto_start": auto_start,
-                            "write_mode": write_mode, "delete_after_store": delete_after_store})
     except Exception:
         err = traceback.format_exc()
         _log_job(job, err, "ERROR")
@@ -1009,17 +931,6 @@ class PipelineRunRequest(BaseModel):
     max_lag_ms:           float = 400.0
     window_ms:            float = 2200.0
     steps:                Optional[List[str]] = None  # None = toutes les étapes
-    auto_reject_missing:  bool  = False
-    reject_path:          Optional[str] = None
-
-class WatcherStartRequest(BaseModel):
-    watch_dir:          str   = DEFAULT_WATCH_DIR
-    write_mode:         bool  = False
-    delete_after_store: bool  = False
-    auto_start:         bool  = False
-    resample_ms:        float = 5.0
-    max_lag_ms:         float = 400.0
-    window_ms:          float = 2200.0
 
 class PipelineStateRequest(BaseModel):
     session_path: str
@@ -1402,8 +1313,7 @@ async def pipeline_run(req: PipelineRunRequest):
     threading.Thread(
         target = _worker_pipeline,
         args   = (job, source_path, params, req.write_mode, req.force_flux,
-                  req.delete_after_store, req.steps,
-                  req.auto_reject_missing, req.reject_path),
+                  req.delete_after_store, req.steps),
         daemon = True,
     ).start()
     return {"job_id": job.id}
@@ -1809,50 +1719,6 @@ def _worker_align_pro(job: "Job", sess: Path, force: bool = False):
         err = traceback.format_exc()
         _log_job(job, err, "ERROR")
         _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=err)
-
-
-@app.post("/api/watcher/start")
-async def watcher_start(req: WatcherStartRequest):
-    """Démarre le watcher d'ingestion automatique sur le répertoire configuré."""
-    global _watcher
-    if _watcher and _watcher._running:
-        _watcher.stop()
-        _watcher = None
-    params = {
-        "resample_ms": req.resample_ms,
-        "max_lag_ms":  req.max_lag_ms,
-        "window_ms":   req.window_ms,
-    }
-    job = _new_job("watcher")
-    threading.Thread(
-        target = _worker_watcher_scan,
-        args   = (job, params, req.write_mode, req.delete_after_store, req.auto_start,
-                  req.watch_dir),
-        daemon = True,
-    ).start()
-    return {"job_id": job.id}
-
-
-@app.post("/api/watcher/stop")
-async def watcher_stop():
-    global _watcher
-    if _watcher:
-        _watcher.stop()
-        _watcher = None
-        return {"stopped": True}
-    return {"stopped": False}
-
-
-@app.get("/api/watcher/status")
-async def watcher_status():
-    if _watcher is None:
-        return {"running": False}
-    return {
-        "running":   _watcher._running,
-        "watch_dir": str(_watcher.watch_dir),
-        "queue":     _watcher.get_queue(),
-        "seen":      len(_watcher.get_seen()),
-    }
 
 
 @app.delete("/api/jobs")

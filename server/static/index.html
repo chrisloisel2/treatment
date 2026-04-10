@@ -3078,6 +3078,26 @@
 			background: var(--bg4)
 		}
 
+		/* Barre de buffer (style YouTube) */
+		.tv-vid-buffer-bar {
+			position: absolute;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: rgba(0,0,0,.25);
+			z-index: 6;
+			pointer-events: none;
+			transition: opacity .5s ease;
+		}
+		.tv-vid-buffer-bar.done { opacity: 0; }
+		.tv-vid-buffer-fill {
+			height: 100%;
+			width: 0%;
+			background: rgba(91,125,245,.75);
+			transition: width .25s ease;
+		}
+
 		/* Overlay loading sur la vidéo */
 		.tv-vid-overlay {
 			position: absolute;
@@ -4411,6 +4431,7 @@
 												</div>
 											</div>
 											<video id="tv-vid-left" preload="auto" muted playsinline></video>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-left"><div class="tv-vid-buffer-fill" id="tv-vbufl-left"></div></div>
 											<div class="tv-vid-overlay" id="tv-ovl-left">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
@@ -4439,6 +4460,7 @@
 												</div>
 											</div>
 											<video id="tv-vid-head" preload="auto" muted playsinline></video>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-head"><div class="tv-vid-buffer-fill" id="tv-vbufl-head"></div></div>
 											<div class="tv-vid-overlay" id="tv-ovl-head">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
@@ -4467,6 +4489,7 @@
 												</div>
 											</div>
 											<video id="tv-vid-right" preload="auto" muted playsinline></video>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-right"><div class="tv-vid-buffer-fill" id="tv-vbufl-right"></div></div>
 											<div class="tv-vid-overlay" id="tv-ovl-right">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
@@ -8725,6 +8748,10 @@
 				const v = ge(`tv-vid-${side}`);
 				if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
 				ge(`tv-ovl-${side}`)?.classList.remove('hidden');
+				const barEl = ge(`tv-vbuf-${side}`);
+				if (barEl) { barEl.classList.remove('done'); barEl.style.opacity = '1'; }
+				const fillEl = ge(`tv-vbufl-${side}`);
+				if (fillEl) fillEl.style.width = '0%';
 			}
 
 			try {
@@ -9532,70 +9559,69 @@
 			TV.streaming = false;
 		}
 
-		// Polling faststart : vérifie toutes les 4s si ffmpeg a terminé,
-		// puis recharge silencieusement la vidéo (sans interruption de l'UX)
-		// ── Chargement vidéo avec barre de progression ────────────────────
-		// Attend que la totalité du buffer couvre la durée avant de montrer la vidéo.
-		// onDone() est appelé une fois la vidéo complètement bufférisée.
+		// ── Chargement vidéo : affichage immédiat + barre de buffer bleue ─
+		// Affiche la vidéo dès que canplay fire.
+		// La barre bleue au bas du player monte jusqu'à 100% puis disparaît.
+		// onDone() optionnel : appelé dès que la vidéo est lisible (canplay).
 		function tvBindVideo(side, v, ovl, url, onDone) {
 			TV.vidReady[side] = false;
 
-			// Passer l'overlay en mode "chargement"
+			// Reset overlay → mode chargement (spinner de la barre interne)
 			if (ovl) {
 				ovl.querySelector('.ovl-no-vid').style.display = 'none';
 				ovl.querySelector('.ovl-loading').style.display = '';
 				ovl.classList.remove('hidden');
 			}
-			const fillEl = ge(`tv-vprog-${side}`);
-			const pctEl  = ge(`tv-vpct-${side}`);
 
-			function setProgress(pct) {
-				const p = Math.min(100, Math.round(pct));
-				if (fillEl) fillEl.style.width = p + '%';
-				if (pctEl)  pctEl.textContent  = p + '%';
+			const barEl  = ge(`tv-vbuf-${side}`);
+			const fillEl = ge(`tv-vbufl-${side}`);
+			const pctOvl = ge(`tv-vpct-${side}`);
+			const prOvl  = ge(`tv-vprog-${side}`);
+
+			// Réinitialiser la barre de buffer
+			if (barEl)  { barEl.classList.remove('done'); barEl.style.opacity = '1'; }
+			if (fillEl) fillEl.style.width = '0%';
+
+			let _ready = false;
+
+			function bufferedPct() {
+				if (!v.duration || !isFinite(v.duration) || !v.buffered.length) return 0;
+				return Math.min(100, (v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
 			}
 
-			function isFullyBuffered() {
-				if (!v.duration || !isFinite(v.duration)) return false;
-				if (!v.buffered.length) return false;
-				// On accepte si le buffer couvre jusqu'à 500ms avant la fin
-				return v.buffered.end(v.buffered.length - 1) >= v.duration - 0.5;
+			function updateBar() {
+				const pct = bufferedPct();
+				if (fillEl) fillEl.style.width = pct + '%';
+				if (prOvl)  prOvl.style.width  = pct + '%';
+				if (pctOvl) pctOvl.textContent  = Math.round(pct) + '%';
+				if (pct >= 99.5) {
+					// Fully buffered → fade out the bar
+					if (barEl) barEl.classList.add('done');
+					cleanup();
+				}
 			}
 
-			function onProgress() {
-				if (!v.duration || !isFinite(v.duration) || !v.buffered.length) return;
-				const loaded = v.buffered.end(v.buffered.length - 1);
-				setProgress((loaded / v.duration) * 100);
-				if (isFullyBuffered()) onReady();
-			}
-
-			function onReady() {
-				// Ne déclencer qu'une fois
-				v.removeEventListener('progress',    onProgress);
-				v.removeEventListener('canplay',     onCanPlay);
-				v.removeEventListener('loadeddata',  onProgress);
-				v.removeEventListener('error',       onError);
-				TV.vidReady[side] = true;
-				if (ovl) ovl.classList.add('hidden');
-				setProgress(100);
-				if (onDone) onDone();
+			function cleanup() {
+				v.removeEventListener('progress',   updateBar);
+				v.removeEventListener('loadeddata', updateBar);
+				v.removeEventListener('canplay',    onCanPlay);
+				v.removeEventListener('error',      onError);
 			}
 
 			function onCanPlay() {
-				// Si déjà complètement bufférisé (ex. cache navigateur), on termine
-				if (isFullyBuffered()) { onReady(); return; }
-				// Sinon continuer à attendre la progression
-				setProgress(v.buffered.length
-					? (v.buffered.end(v.buffered.length - 1) / (v.duration || 1)) * 100
-					: 5);
+				if (_ready) return;
+				_ready = true;
+				TV.vidReady[side] = true;
+				// Cacher l'overlay immédiatement — vidéo lisible
+				if (ovl) ovl.classList.add('hidden');
+				updateBar();
+				if (onDone) onDone();
 			}
 
 			function onError() {
-				v.removeEventListener('progress',   onProgress);
-				v.removeEventListener('canplay',    onCanPlay);
-				v.removeEventListener('loadeddata', onProgress);
-				v.removeEventListener('error',      onError);
+				cleanup();
 				TV.vidReady[side] = false;
+				if (barEl) barEl.classList.add('done');
 				if (ovl) {
 					ovl.querySelector('.ovl-no-vid').style.display = '';
 					ovl.querySelector('.ovl-loading').style.display = 'none';
@@ -9603,23 +9629,24 @@
 				}
 			}
 
-			// Nettoyage des anciens listeners
-			v.oncanplay  = null;
-			v.onerror    = null;
-			v.onseeked   = null;
-			v.removeEventListener('progress',   onProgress);
+			// Nettoyer les anciens listeners avant de rebrancher
+			v.oncanplay = null; v.onerror = null; v.onseeked = null;
+			v.removeEventListener('progress',   updateBar);
+			v.removeEventListener('loadeddata', updateBar);
 			v.removeEventListener('canplay',    onCanPlay);
-			v.removeEventListener('loadeddata', onProgress);
 			v.removeEventListener('error',      onError);
 
-			v.addEventListener('progress',   onProgress);
-			v.addEventListener('loadeddata', onProgress);
+			v.addEventListener('progress',   updateBar);
+			v.addEventListener('loadeddata', updateBar);
 			v.addEventListener('canplay',    onCanPlay);
 			v.addEventListener('error',      onError);
 
-			setProgress(0);
 			v.src = url;
 			v.load();
+
+			// Fetch parallèle pour pré-remplir le cache HTTP dès que possible
+			// Le navigateur servira ensuite les Range requests depuis le cache disque
+			fetch(url, { priority: 'high' }).catch(() => {});
 		}
 
 		function tvPollFaststart(sessPath) {
@@ -9659,13 +9686,22 @@
 				const t0 = TV.vidInfo[side].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				const drift = Math.abs(v.currentTime - targetSec);
-				// En lecture : tolère 300ms de drift (la vidéo joue nativement, pas besoin de re-seek)
-				// En pause : seulement si dérive > 80ms (évite les seeks en cascade du SSE)
 				const threshold = v.paused ? 0.08 : 0.3;
-				if (drift > threshold) {
-					v.currentTime = targetSec;
-				}
+				if (drift > threshold) v.currentTime = targetSec;
 				ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
+				// Mise à jour barre buffer pendant la lecture
+				tvUpdateBufferBar(side, v);
+			}
+		}
+
+		function tvUpdateBufferBar(side, v) {
+			const barEl  = ge(`tv-vbuf-${side}`);
+			const fillEl = ge(`tv-vbufl-${side}`);
+			if (!fillEl || !v.duration || !isFinite(v.duration) || !v.buffered.length) return;
+			const pct = Math.min(100, (v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
+			fillEl.style.width = pct + '%';
+			if (pct >= 99.5 && barEl && !barEl.classList.contains('done')) {
+				barEl.classList.add('done');
 			}
 		}
 

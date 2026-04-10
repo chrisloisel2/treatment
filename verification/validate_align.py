@@ -310,17 +310,17 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
     op_rng = max(hi98 - lo98, 1e-6)
     level50_sen = float(np.clip((ev_dict["op_before"] - 0.5 * ev_dict["amplitude"] - lo98) / op_rng, 0, 1))
 
-    t50_sen = _find_t50(t, sen, t_start - 0.1, t_end + 0.1, level50_sen)
+    t50_sen = _find_t50(t, sen, t_start - 100.0, t_end + 100.0, level50_sen)
 
     # Valeurs de vis_norm AUX points de début et fin de la transition
     # (pas min/max dans une fenêtre élargie — le drift post-fermeture fausse le min)
-    def _nearest_vis(t_target, t_arr, v_arr, dt=0.15):
+    def _nearest_vis(t_target, t_arr, v_arr, dt=150.0):
         m = (t_arr >= t_target - dt) & (t_arr <= t_target + dt)
         vals = v_arr[m]
         return float(np.nanmean(vals)) if np.isfinite(vals).sum() > 0 else float("nan")
 
-    vis_at_start = _nearest_vis(t_start, t, vis, dt=0.08)   # avant la fermeture
-    vis_at_end   = _nearest_vis(t_end,   t, vis, dt=0.08)   # après la fermeture
+    vis_at_start = _nearest_vis(t_start, t, vis, dt=80.0)   # avant la fermeture
+    vis_at_end   = _nearest_vis(t_end,   t, vis, dt=80.0)   # après la fermeture
 
     visual_range = abs(vis_at_start - vis_at_end) if (
         np.isfinite(vis_at_start) and np.isfinite(vis_at_end)) else 0.0
@@ -338,8 +338,8 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
         # Détecter si la feature est inversée : vis monte quand le gripper ferme
         # (vis_at_start < vis_at_end → ascending transition durant la fermeture)
         ascending_vis = bool(vis_at_start < vis_at_end)
-        # Cherche le crossing dans [t_start-0.1, t_end+0.5]
-        t50_vis = _find_t50(t, vis, t_start - 0.1, t_end + 0.5, level50_vis,
+        # Cherche le crossing dans [t_start-100ms, t_end+500ms]
+        t50_vis = _find_t50(t, vis, t_start - 100.0, t_end + 500.0, level50_vis,
                             ascending=ascending_vis)
         timing_err_ms = (t50_vis - t50_sen) if (
             np.isfinite(t50_vis) and np.isfinite(t50_sen)) else float("nan")
@@ -728,7 +728,7 @@ def plot_validation(
                     pw // 2, pw - pw // 2,
                     cv2.BORDER_CONSTANT, value=(20, 20, 20))
             # Étiquette offset
-            is_center = abs(off) < (half_s / (n_frames_strip - 1) * 0.6)
+            is_center = abs(off) < (half_ms / (n_frames_strip - 1) * 0.6)
             cv2.putText(cell, f"{'NOW' if is_center else f'{off:+.0f}ms'}",
                         (4, target_h - 6), cv2.FONT_HERSHEY_SIMPLEX,
                         0.35, (200, 200, 200), 1)

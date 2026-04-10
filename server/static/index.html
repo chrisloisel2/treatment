@@ -4504,6 +4504,22 @@
 													<option value="">auto</option>
 												</select>
 											</div>
+											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+												<label style="font-size:.7rem;color:var(--text3)">Gripper gauche</label>
+												<select id="rp-tcol-gripper-left" class="tv-sel"
+													style="font-size:.74rem;width:100%"
+													onchange="tvReloadWithTimeCols()">
+													<option value="t_ms">t_ms</option>
+												</select>
+											</div>
+											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+												<label style="font-size:.7rem;color:var(--text3)">Gripper droit</label>
+												<select id="rp-tcol-gripper-right" class="tv-sel"
+													style="font-size:.74rem;width:100%"
+													onchange="tvReloadWithTimeCols()">
+													<option value="t_ms">t_ms</option>
+												</select>
+											</div>
 										</div>
 
 										<!-- Offset gripper -->
@@ -8107,19 +8123,27 @@
 
 		// ── Colonnes temporelles ────────────────────────────────────────────
 		async function tvLoadTimestampCols(path) {
-			const trackerSel = ge('rp-tcol-tracker');
-			if (trackerSel) trackerSel.innerHTML = '<option value="">auto</option>';
+			const sel = {
+				tracker:       ge('rp-tcol-tracker'),
+				gripper_left:  ge('rp-tcol-gripper-left'),
+				gripper_right: ge('rp-tcol-gripper-right'),
+			};
+			if (sel.tracker)       sel.tracker.innerHTML       = '<option value="">auto</option>';
+			if (sel.gripper_left)  sel.gripper_left.innerHTML  = '<option value="t_ms">t_ms</option>';
+			if (sel.gripper_right) sel.gripper_right.innerHTML = '<option value="t_ms">t_ms</option>';
 			try {
 				const r = await fetch(`/api/session/timestamp_cols?session_path=${encodeURIComponent(path)}`);
 				if (!r.ok) return;
-				const cols = await r.json();
-				const list = cols.tracker;
-				if (trackerSel && Array.isArray(list)) {
+				const cols = await r.json(); // { tracker: [...], gripper_left: [...], ... }
+				for (const [flux, list] of Object.entries(cols)) {
+					const s = sel[flux];
+					if (!s || !Array.isArray(list)) continue;
 					for (const col of list) {
+						if (flux !== 'tracker' && col === 't_ms') continue; // déjà en option par défaut
 						const opt = document.createElement('option');
 						opt.value = col;
 						opt.textContent = col;
-						trackerSel.appendChild(opt);
+						s.appendChild(opt);
 					}
 				}
 			} catch (_) {}
@@ -8128,7 +8152,11 @@
 		function tvBuildDataUrl(path) {
 			let url = `/api/session/data?session_path=${encodeURIComponent(path)}`;
 			const tracker = ge('rp-tcol-tracker')?.value;
+			const gripL   = ge('rp-tcol-gripper-left')?.value;
+			const gripR   = ge('rp-tcol-gripper-right')?.value;
 			if (tracker) url += `&time_col_tracker=${encodeURIComponent(tracker)}`;
+			if (gripL)   url += `&time_col_gripper_left=${encodeURIComponent(gripL)}`;
+			if (gripR)   url += `&time_col_gripper_right=${encodeURIComponent(gripR)}`;
 			return url;
 		}
 

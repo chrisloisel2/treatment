@@ -2345,62 +2345,105 @@ async def session_data(
         raise HTTPException(500, str(e))
 
 
+# Verrous pour éviter les conversions faststart parallèles sur le même fichier
+_faststart_locks: Dict[str, threading.Lock] = {}
+_faststart_locks_mu = threading.Lock()
+
+def _get_faststart_lock(key: str) -> threading.Lock:
+    with _faststart_locks_mu:
+        if key not in _faststart_locks:
+            _faststart_locks[key] = threading.Lock()
+        return _faststart_locks[key]
+
+
+def _run_faststart(src: Path, dst: Path) -> bool:
+    """
+    Remuxe src → dst avec -movflags +faststart (déplace le moov atom en tête).
+    Opération rapide (pas de re-encodage). Retourne True si succès.
+    """
+    lock = _get_faststart_lock(str(src))
+    if not lock.acquire(blocking=False):
+        return False  # conversion déjà en cours
+    try:
+        if dst.exists():
+            return True
+        tmp = dst.with_suffix(".tmp.mp4")
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(src),
+                 "-c", "copy", "-movflags", "+faststart", str(tmp)],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                tmp.rename(dst)
+                return True
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+        return False
+    finally:
+        lock.release()
+
+
 @app.get("/api/session/video/{side}")
 async def session_video(side: str, session_path: str, request: Request):
     """
-    Sert le fichier mp4 brut avec support HTTP Range pour lecture native <video>.
+    Sert le fichier mp4 avec support HTTP Range natif (Starlette FileResponse).
+    Cache fort (1h) + ETag pour 304 Not Modified.
+    Utilise automatiquement la version faststart (moov atom en tête) si disponible,
+    sinon sert l'original et lance la conversion en arrière-plan.
     side : head | left | right
     """
     if side not in ("head", "left", "right"):
         raise HTTPException(400, "side doit être head, left ou right")
     sess = Path(session_path)
-    mp4 = sess / "videos" / f"{side}.mp4"
-    if not mp4.exists():
+    vid_dir = sess / "videos"
+
+    faststart = vid_dir / f"{side}_faststart.mp4"
+    original  = vid_dir / f"{side}.mp4"
+
+    if faststart.exists():
+        mp4 = faststart
+    elif original.exists():
+        mp4 = original
+        # Lancer la conversion faststart en arrière-plan si pas déjà en cours
+        threading.Thread(
+            target=_run_faststart, args=(original, faststart), daemon=True
+        ).start()
+    else:
         raise HTTPException(404, f"Vidéo {side} introuvable")
 
-    file_size = mp4.stat().st_size
-    range_header = request.headers.get("range")
+    stat = mp4.stat()
+    etag = f'"{stat.st_size}-{int(stat.st_mtime)}"'
 
-    if range_header:
-        # Parse "bytes=start-end"
-        try:
-            ranges = range_header.replace("bytes=", "").split("-")
-            start = int(ranges[0])
-            end   = int(ranges[1]) if ranges[1] else file_size - 1
-        except Exception:
-            raise HTTPException(416, "Range invalide")
-        end = min(end, file_size - 1)
-        chunk_size = end - start + 1
+    # 304 Not Modified — évite tout re-transfert
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={
+            "ETag": etag,
+            "Cache-Control": "public, max-age=3600",
+        })
 
-        def _iter_file(path, s, length):
-            with open(path, "rb") as f:
-                f.seek(s)
-                remaining = length
-                while remaining > 0:
-                    data = f.read(min(65536, remaining))
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
+    # FileResponse gère Range nativement (Starlette 0.36+) via sendfile
+    return FileResponse(
+        str(mp4),
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges":  "bytes",
+            "Cache-Control":  "public, max-age=3600",
+            "ETag":           etag,
+        },
+    )
 
-        return StreamingResponse(
-            _iter_file(mp4, start, chunk_size),
-            status_code=206,
-            media_type="video/mp4",
-            headers={
-                "Content-Range":  f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges":  "bytes",
-                "Content-Length": str(chunk_size),
-                "Cache-Control":  "no-cache",
-            },
-        )
 
-    # Pas de Range → envoyer tout
-    return FileResponse(str(mp4), media_type="video/mp4", headers={
-        "Accept-Ranges":  "bytes",
-        "Content-Length": str(file_size),
-        "Cache-Control":  "no-cache",
-    })
+@app.get("/api/session/video_faststart_status")
+async def session_video_faststart_status(session_path: str):
+    """Retourne si les versions faststart (moov en tête) sont disponibles pour chaque caméra."""
+    sess = Path(session_path)
+    return {
+        side: (sess / "videos" / f"{side}_faststart.mp4").exists()
+        for side in ("head", "left", "right")
+    }
 
 
 @app.get("/api/session/video_info")

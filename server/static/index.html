@@ -2798,6 +2798,67 @@
 			display: flex
 		}
 
+		/* ── Onglet Métadonnées ────────────────────────────────────────── */
+		#tv-tc-meta {
+			gap: 12px;
+		}
+		.meta-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+			gap: 8px;
+		}
+		.meta-card {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 10px 12px;
+			display: flex;
+			flex-direction: column;
+			gap: 3px;
+		}
+		.meta-card-label {
+			font-size: .7rem;
+			text-transform: uppercase;
+			letter-spacing: .05em;
+			color: var(--text3);
+		}
+		.meta-card-value {
+			font-size: .88rem;
+			font-weight: 600;
+			color: var(--text1);
+			word-break: break-word;
+		}
+		.meta-card-value.mono {
+			font-family: monospace;
+			font-size: .82rem;
+			font-weight: 400;
+		}
+		.meta-raw-wrap {
+			flex-shrink: 0;
+		}
+		.meta-raw-wrap summary {
+			cursor: pointer;
+			font-size: .78rem;
+			color: var(--text3);
+			user-select: none;
+			padding: 4px 0;
+		}
+		.meta-raw-wrap summary:hover { color: var(--text2); }
+		.meta-raw {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 10px 12px;
+			font-family: monospace;
+			font-size: .78rem;
+			color: var(--text2);
+			white-space: pre-wrap;
+			word-break: break-all;
+			max-height: 400px;
+			overflow-y: auto;
+			margin-top: 6px;
+		}
+
 		/* live-tab gère son propre scroll via tv-live-main */
 		#tv-tc-live {
 			overflow: hidden;
@@ -4287,6 +4348,7 @@
 						<div id="tv-tabs" class="tabs">
 							<div class="tab active" onclick="tvNavTab('live',this)">▣ Live</div>
 							<div class="tab" onclick="tvNavTab('diff',this)">⊕ Avant / Après</div>
+							<div class="tab" onclick="tvNavTab('meta',this)">☰ Métadonnées</div>
 							<div class="tab" id="tv-tc-tab-actions" onclick="tvNavTab('actions',this)">⚙ Actions</div>
 						</div>
 
@@ -4715,6 +4777,20 @@
 								<button class="btn p" onclick="tvLoadDiff()">⊕ Charger Avant / Après</button>
 							</div>
 						</div><!-- /tv-tc-diff -->
+
+						<!-- ── Onglet MÉTADONNÉES ────────────────────────────── -->
+						<div class="tv-tc" id="tv-tc-meta">
+							<div id="meta-empty" style="padding:40px;text-align:center;color:var(--text3)">
+								Sélectionnez une session pour voir ses métadonnées.
+							</div>
+							<div id="meta-content" style="display:none">
+								<div class="meta-grid" id="meta-cards"></div>
+								<details class="meta-raw-wrap">
+									<summary>JSON brut (metadata.json)</summary>
+									<pre class="meta-raw" id="meta-raw-json"></pre>
+								</details>
+							</div>
+						</div><!-- /tv-tc-meta -->
 
 						<!-- ── Onglet ACTIONS ─────────────────────────────────── -->
 						<div class="tv-tc" id="tv-tc-actions">
@@ -8138,6 +8214,8 @@
 			vidReady: {},      // { head: bool, left: bool, right: bool }
 			gripOffset: 0,    // décalage en ms appliqué aux données gripper (visuel uniquement)
 			_gradeFilter: null, // filtre d'affichage par note (null = tout afficher)
+			_seekRaf: null,        // RAF throttle pour seeks pendant scrubbing
+			_faststartTimer: null, // setInterval polling faststart ffmpeg
 		};
 
 		const TV_COLORS = {
@@ -8552,6 +8630,7 @@
 			if (!path) return;
 			tvStopStream();
 			tvStopPlay();
+			if (TV._faststartTimer) { clearInterval(TV._faststartTimer); TV._faststartTimer = null; }
 			TV.data = null;
 			TV.sessPath = path;
 			TV.t_ms = 0;
@@ -8626,6 +8705,7 @@
 				ge('tv-t-cur').textContent = '0.000s';
 
 				// Brancher les vidéos natives
+				const _sessPathForVid = path;
 				for (const side of ['head', 'left', 'right']) {
 					const v = ge(`tv-vid-${side}`);
 					const ovl = ge(`tv-ovl-${side}`);
@@ -8644,6 +8724,8 @@
 						TV.vidReady[side] = false;
 					}
 				}
+				// Polling faststart : recharge la vidéo quand ffmpeg a terminé le remuxage
+				tvPollFaststart(_sessPathForVid);
 
 				loadEl.style.display = 'none';
 				innerEl.style.display = 'flex';
@@ -8663,6 +8745,7 @@
 				});
 
 				if (ge('tv-pane-files')?.classList.contains('active')) tvLoadFiles(path);
+				if (ge('tv-tc-meta')?.classList.contains('active')) tvMetaRender();
 			} catch (e) {
 				loadEl.innerHTML = `⚠ Erreur : ${esc(e.message)}`;
 				loadEl.style.display = 'flex';
@@ -9015,16 +9098,22 @@
 
 		// Seek toutes les vidéos à t_ms (relatif à start de session)
 		function tvSeekVideos(t_ms) {
-			for (const side of ['head', 'left', 'right']) {
-				const v = ge(`tv-vid-${side}`);
-				if (!v || !TV.vidInfo[side]?.available) continue;
-				const t0 = TV.vidInfo[side].t0_s || 0;
-				const targetSec = t0 + t_ms / 1000;
-				if (Math.abs(v.currentTime - targetSec) > 0.04) {
-					v.currentTime = targetSec;
+			// Throttle via RAF : annule le seek précédent si un nouveau arrive
+			// dans la même frame (scrubbing rapide → une seule requête Range par frame)
+			if (TV._seekRaf) cancelAnimationFrame(TV._seekRaf);
+			TV._seekRaf = requestAnimationFrame(() => {
+				TV._seekRaf = null;
+				for (const side of ['head', 'left', 'right']) {
+					const v = ge(`tv-vid-${side}`);
+					if (!v || !TV.vidInfo[side]?.available) continue;
+					const t0 = TV.vidInfo[side].t0_s || 0;
+					const targetSec = t0 + t_ms / 1000;
+					if (Math.abs(v.currentTime - targetSec) > 0.04) {
+						v.currentTime = targetSec;
+					}
+					ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
 				}
-				ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
-			}
+			});
 		}
 
 		function tvSetGripOffset(ms) {
@@ -9292,9 +9381,29 @@
 
 
 		// ── Scrubber ───────────────────────────────────────────────────────
+		// Throttle : ne seek les vidéos que 20×/s max pendant le drag scrubber
+		let _scrubRafId = null;
+		let _scrubPendingT = null;
 		function tvScrub(v) {
 			const t = (v / 1000) * TV.duration_ms;
-			tvRenderAt(t);
+			// Mise à jour UI immédiate (curseur + charts)
+			TV.t_ms = t;
+			const pct = TV.duration_ms > 0 ? t / TV.duration_ms : 0;
+			ge('tv-playhead-fill').style.width = (pct * 100).toFixed(2) + '%';
+			ge('tv-t-cur').textContent = (t / 1000).toFixed(3) + 's';
+			tvDrawCursorLine(t);
+			tv3dUpdateCursor(t);
+			// Seek vidéo throttlé via rAF
+			_scrubPendingT = t;
+			if (!_scrubRafId) {
+				_scrubRafId = requestAnimationFrame(() => {
+					_scrubRafId = null;
+					if (_scrubPendingT !== null) {
+						tvSeekVideos(_scrubPendingT);
+						_scrubPendingT = null;
+					}
+				});
+			}
 		}
 
 		function tvScrubClick(ev) {
@@ -9380,6 +9489,40 @@
 			TV.streaming = false;
 		}
 
+		// Polling faststart : vérifie toutes les 4s si ffmpeg a terminé,
+		// puis recharge silencieusement la vidéo (sans interruption de l'UX)
+		function tvPollFaststart(sessPath) {
+			if (TV._faststartTimer) clearInterval(TV._faststartTimer);
+			const pending = new Set(['head', 'left', 'right'].filter(s => TV.vidInfo[s]?.available));
+			if (!pending.size) return;
+			TV._faststartTimer = setInterval(async () => {
+				if (TV.sessPath !== sessPath) { clearInterval(TV._faststartTimer); return; }
+				try {
+					const r = await fetch(`/api/session/video_faststart_status?session_path=${encodeURIComponent(sessPath)}`);
+					if (!r.ok) return;
+					const status = await r.json();
+					for (const side of [...pending]) {
+						if (!status[side]) continue;
+						pending.delete(side);
+						const v = ge(`tv-vid-${side}`);
+						if (!v || !TV.vidInfo[side]?.available) continue;
+						// Sauvegarder la position courante
+						const savedTime = v.currentTime;
+						const wasPlaying = !v.paused;
+						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(sessPath)}`;
+						v.src = url;
+						v.load();
+						v.oncanplay = () => {
+							TV.vidReady[side] = true;
+							v.currentTime = savedTime;
+							if (wasPlaying) v.play().catch(() => {});
+						};
+					}
+					if (!pending.size) clearInterval(TV._faststartTimer);
+				} catch (_) {}
+			}, 4000);
+		}
+
 		// Sync douce des vidéos : ne seek que si dérive significative
 		function tvSyncVideos(t_ms) {
 			for (const side of ['head', 'left', 'right']) {
@@ -9388,9 +9531,10 @@
 				const t0 = TV.vidInfo[side].t0_s || 0;
 				const targetSec = t0 + t_ms / 1000;
 				const drift = Math.abs(v.currentTime - targetSec);
-				// Seek seulement si dérive > 200ms (évite les micro-sauts pendant lecture normale)
-				// ou si la vidéo est en pause et trop loin
-				if (drift > 0.2 || (v.paused && drift > 0.01)) {
+				// En lecture : tolère 300ms de drift (la vidéo joue nativement, pas besoin de re-seek)
+				// En pause : seulement si dérive > 80ms (évite les seeks en cascade du SSE)
+				const threshold = v.paused ? 0.08 : 0.3;
+				if (drift > threshold) {
 					v.currentTime = targetSec;
 				}
 				ge(`tv-vt-${side}`).textContent = (t_ms / 1000).toFixed(3) + 's';
@@ -9474,6 +9618,89 @@
 			if (name === 'actions') {
 				tvActionsRender();
 			}
+			if (name === 'meta') {
+				tvMetaRender();
+			}
+		}
+
+		// ── Onglet Métadonnées ─────────────────────────────────────────────
+		function tvMetaRender() {
+			const sess = S.sessions?.find(s => s.path === TV.sessPath);
+			const meta = sess?.meta || null;
+
+			ge('meta-empty').style.display  = meta ? 'none' : '';
+			ge('meta-content').style.display = meta ? '' : 'none';
+			if (!meta) return;
+
+			// ── Cartes synthèse ──────────────────────────────────────────
+			const fmt = (v, fallback = '—') => (v != null && v !== '') ? v : fallback;
+
+			// Date lisible depuis start_time_ns (nanosecondes epoch)
+			let dateStr = '—';
+			if (meta.start_time_ns) {
+				try {
+					const ms = Number(BigInt(meta.start_time_ns) / 1000000n);
+					dateStr = new Date(ms).toLocaleString('fr-FR', {
+						dateStyle: 'medium', timeStyle: 'medium'
+					});
+				} catch (_) {
+					dateStr = String(meta.start_time_ns);
+				}
+			}
+
+			// Durée
+			let durStr = '—';
+			if (meta.duration_seconds != null) {
+				const s = Math.round(meta.duration_seconds);
+				durStr = s >= 60 ? `${Math.floor(s/60)}min ${s%60}s` : `${s}s`;
+			}
+
+			// Caméras
+			let camStr = '—';
+			if (meta.cameras && typeof meta.cameras === 'object') {
+				const cams = Object.entries(meta.cameras).map(([id, c]) =>
+					c?.role ? `${c.role} (${id.slice(0,8)}…)` : id.slice(0, 8)
+				);
+				camStr = cams.join(', ') || '—';
+			}
+
+			// Trackers
+			let trkStr = '—';
+			if (meta.trackers && typeof meta.trackers === 'object') {
+				const trks = Object.entries(meta.trackers).map(([id, t]) =>
+					t?.role ? `${t.role} (${id.slice(0,8)}…)` : id.slice(0, 8)
+				);
+				trkStr = trks.join(', ') || '—';
+			}
+
+			// Score
+			let scoreStr = '—';
+			if (meta.check_score != null) {
+				scoreStr = `${Math.round(meta.check_score)}%`;
+				if (meta.check_grade) scoreStr += ` (${meta.check_grade})`;
+			}
+
+			const cards = [
+				{ label: 'Scénario',  value: fmt(meta.scenario) },
+				{ label: 'Date',      value: dateStr },
+				{ label: 'Durée',     value: durStr },
+				{ label: 'Opérateur', value: fmt(meta.operator || meta.user) },
+				{ label: 'Type de tâche', value: fmt(meta.task_type) },
+				{ label: 'Caméras',   value: camStr },
+				{ label: 'Trackers',  value: trkStr },
+				{ label: 'Score vérif.', value: scoreStr },
+				{ label: 'Verdict',   value: fmt(meta.check_verdict) },
+				{ label: 'Dossier',   value: fmt(meta.session_folder || TV.sessPath), mono: true },
+			].filter(c => c.value && c.value !== '—');
+
+			ge('meta-cards').innerHTML = cards.map(c => `
+				<div class="meta-card">
+					<div class="meta-card-label">${esc(c.label)}</div>
+					<div class="meta-card-value${c.mono ? ' mono' : ''}">${esc(c.value)}</div>
+				</div>`).join('');
+
+			// ── JSON brut ────────────────────────────────────────────────
+			ge('meta-raw-json').textContent = JSON.stringify(meta, null, 2);
 		}
 
 		function diffNavTab(name, el) {

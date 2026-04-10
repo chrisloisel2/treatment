@@ -4509,7 +4509,7 @@
 												<select id="rp-tcol-gripper-left" class="tv-sel"
 													style="font-size:.74rem;width:100%"
 													onchange="tvReloadWithTimeCols()">
-													<option value="t_ms">t_ms</option>
+													<option value="">auto</option>
 												</select>
 											</div>
 											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
@@ -4517,7 +4517,7 @@
 												<select id="rp-tcol-gripper-right" class="tv-sel"
 													style="font-size:.74rem;width:100%"
 													onchange="tvReloadWithTimeCols()">
-													<option value="t_ms">t_ms</option>
+													<option value="">auto</option>
 												</select>
 											</div>
 										</div>
@@ -8124,13 +8124,15 @@
 		// ── Colonnes temporelles ────────────────────────────────────────────
 		async function tvLoadTimestampCols(path) {
 			const sel = {
-				tracker:       ge('rp-tcol-tracker'),
-				gripper_left:  ge('rp-tcol-gripper-left'),
+				tracker:      ge('rp-tcol-tracker'),
+				gripper_left: ge('rp-tcol-gripper-left'),
 				gripper_right: ge('rp-tcol-gripper-right'),
 			};
-			if (sel.tracker)       sel.tracker.innerHTML       = '<option value="">auto</option>';
-			if (sel.gripper_left)  sel.gripper_left.innerHTML  = '<option value="t_ms">t_ms</option>';
-			if (sel.gripper_right) sel.gripper_right.innerHTML = '<option value="t_ms">t_ms</option>';
+			// Reset à "auto"
+			for (const s of Object.values(sel)) {
+				if (!s) continue;
+				s.innerHTML = '<option value="">auto</option>';
+			}
 			try {
 				const r = await fetch(`/api/session/timestamp_cols?session_path=${encodeURIComponent(path)}`);
 				if (!r.ok) return;
@@ -8139,7 +8141,6 @@
 					const s = sel[flux];
 					if (!s || !Array.isArray(list)) continue;
 					for (const col of list) {
-						if (flux !== 'tracker' && col === 't_ms') continue; // déjà en option par défaut
 						const opt = document.createElement('option');
 						opt.value = col;
 						opt.textContent = col;

@@ -2189,11 +2189,16 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         if side not in grip_dfs:
             continue
         df = grip_dfs[side]
-        grip_t_col = time_cols.get(f"gripper_{side}", "t_ms")
-        if grip_t_col not in df.columns:
-            grip_t_col = "t_ms"
-        if grip_t_col in df.columns:
-            t_ms = df[grip_t_col].tolist()
+        # Colonne temporelle : override UI ou auto-détection, toujours via _auto_to_ms
+        grip_t_col = time_cols.get(f"gripper_{side}")
+        if not (grip_t_col and grip_t_col in df.columns):
+            # Fallback prioritaire
+            for candidate in ("timestamp_ns", "t_ms_corrected_ns", "t_ms", "time_seconds"):
+                if candidate in df.columns:
+                    grip_t_col = candidate
+                    break
+        if grip_t_col and grip_t_col in df.columns:
+            t_ms = _auto_to_ms(df[grip_t_col].to_numpy())
         else:
             t_ms = [0.0] * len(df)
         grip: dict = {"t_ms": t_ms}
@@ -2321,7 +2326,7 @@ async def session_data(
     Utilisé par l'onglet Visualisation.
 
     time_col_tracker / time_col_gripper_left / time_col_gripper_right :
-        Colonne temporelle à utiliser pour chaque flux. Les grippers valent "t_ms" par défaut.
+        Colonne temporelle à utiliser pour chaque flux (override auto-détection).
     """
     sess = Path(session_path)
     if not sess.exists():

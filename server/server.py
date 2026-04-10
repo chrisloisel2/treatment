@@ -5168,38 +5168,57 @@ class DownloadSessionsRequest(BaseModel):
 async def download_sessions(req: DownloadSessionsRequest):
     """
     Crée un ZIP de toutes les sessions sélectionnées et le retourne en streaming.
+    - MP4  → ZIP_STORED  (déjà compressés, DEFLATE serait lent et inutile)
+    - Reste → ZIP_DEFLATED
     Les fichiers MP4 peuvent être exclus via include_mp4=false.
     """
-    import io
+    import tempfile
     import zipfile
 
     sessions = [Path(p) for p in req.sessions if Path(p).exists()]
     if not sessions:
         raise HTTPException(404, "Aucune session trouvée")
 
-    def _iter_zip():
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED,
-                             allowZip64=True) as zf:
+    # Nom du fichier ZIP
+    zip_name = f"{sessions[0].name}.zip" if len(sessions) == 1 \
+               else f"sessions_{len(sessions)}.zip"
+
+    # Écriture dans un fichier temporaire (évite de tout charger en RAM)
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        with zipfile.ZipFile(tmp_path, mode="w", allowZip64=True) as zf:
             for sess in sessions:
                 for f in sorted(sess.rglob("*")):
                     if not f.is_file():
                         continue
                     if not req.include_mp4 and f.suffix.lower() == ".mp4":
                         continue
+                    compression = (zipfile.ZIP_STORED
+                                   if f.suffix.lower() in (".mp4", ".mkv", ".avi")
+                                   else zipfile.ZIP_DEFLATED)
                     arcname = f.relative_to(sess.parent)
-                    zf.write(f, arcname)
-        buf.seek(0)
-        yield buf.read()
+                    zf.write(str(f), str(arcname), compress_type=compression)
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Erreur ZIP : {e}")
 
-    # Nom du fichier ZIP
-    if len(sessions) == 1:
-        zip_name = f"{sessions[0].name}.zip"
-    else:
-        zip_name = f"sessions_{len(sessions)}.zip"
+    # Streaming par chunks de 4 Mo + suppression du temp après envoi
+    def _stream_and_cleanup():
+        try:
+            with open(tmp_path, "rb") as fh:
+                while True:
+                    chunk = fh.read(4 * 1024 * 1024)  # 4 Mo
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     return StreamingResponse(
-        _iter_zip(),
+        _stream_and_cleanup(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
     )

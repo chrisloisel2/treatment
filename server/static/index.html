@@ -4049,6 +4049,11 @@
 							<button class="btn d" id="btn-sess-rollback" onclick="rollbackSelected()" disabled>
 								↩ Rollback
 							</button>
+							<button class="btn" id="btn-sess-download" onclick="downloadSelected()" disabled
+								style="background:var(--accent)1a;border-color:var(--accent)44;color:var(--accent)"
+								title="Télécharger les sessions sélectionnées en ZIP">
+								⬇ Download
+							</button>
 							<div style="flex:1"></div>
 							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0
 								sélectionnée(s)</span>
@@ -6442,6 +6447,43 @@
 			renderPipelineBoard();
 		}
 
+		async function downloadSelected() {
+			const sel = [...S.selected];
+			if (!sel.length) { alert('Sélectionnez des sessions.'); return; }
+			const includeMp4 = confirm(
+				`Télécharger ${sel.length} session(s) en ZIP.\n\nInclure les fichiers vidéo MP4 ? (OK = oui, Annuler = sans MP4)`
+			);
+			const btn = ge('btn-sess-download');
+			if (btn) { btn.disabled = true; btn.textContent = '⏳ Préparation…'; }
+			try {
+				const resp = await fetch('/api/session/download', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ sessions: sel, include_mp4: includeMp4 }),
+				});
+				if (!resp.ok) {
+					const err = await resp.text();
+					throw new Error(err);
+				}
+				const blob = await resp.blob();
+				const cd = resp.headers.get('Content-Disposition') || '';
+				const match = cd.match(/filename="?([^"]+)"?/);
+				const fname = match ? match[1] : `sessions_${sel.length}.zip`;
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url; a.download = fname;
+				document.body.appendChild(a); a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+				log(`Download ZIP : ${fname}`, 'OK');
+			} catch (e) {
+				log(`Download échoué : ${e.message}`, 'ERROR');
+				alert(`Erreur lors du téléchargement : ${e.message}`);
+			} finally {
+				if (btn) { btn.disabled = sel.length === 0; btn.textContent = '⬇ Download'; }
+			}
+		}
+
 		// ══════════════════════════════════════════════════════════════════
 		// Pipeline Board (Kanban)
 		// ══════════════════════════════════════════════════════════════════
@@ -7732,11 +7774,13 @@
 			const btnRb = ge('btn-sess-rollback');
 			const btnFix = ge('btn-sess-fix');
 			const btnTrim = ge('btn-sess-trim');
+			const btnDl = ge('btn-sess-download');
 			const cnt = ge('sess-sel-count');
 			if (btnRun) btnRun.disabled = n === 0;
 			if (btnRb) btnRb.disabled = n === 0;
 			if (btnFix) btnFix.disabled = n === 0;
 			if (btnTrim) btnTrim.disabled = n === 0;
+			if (btnDl) btnDl.disabled = n === 0;
 			if (cnt) cnt.textContent = `${n} sélectionnée(s)`;
 			refreshExportBtn();
 		}

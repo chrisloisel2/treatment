@@ -5156,6 +5156,56 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Download sessions (ZIP)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class DownloadSessionsRequest(BaseModel):
+    sessions:    List[str]   # chemins absolus des sessions
+    include_mp4: bool = True # inclure les fichiers MP4
+
+
+@app.post("/api/session/download")
+async def download_sessions(req: DownloadSessionsRequest):
+    """
+    Crée un ZIP de toutes les sessions sélectionnées et le retourne en streaming.
+    Les fichiers MP4 peuvent être exclus via include_mp4=false.
+    """
+    import io
+    import zipfile
+
+    sessions = [Path(p) for p in req.sessions if Path(p).exists()]
+    if not sessions:
+        raise HTTPException(404, "Aucune session trouvée")
+
+    def _iter_zip():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED,
+                             allowZip64=True) as zf:
+            for sess in sessions:
+                for f in sorted(sess.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    if not req.include_mp4 and f.suffix.lower() == ".mp4":
+                        continue
+                    arcname = f.relative_to(sess.parent)
+                    zf.write(f, arcname)
+        buf.seek(0)
+        yield buf.read()
+
+    # Nom du fichier ZIP
+    if len(sessions) == 1:
+        zip_name = f"{sessions[0].name}.zip"
+    else:
+        zip_name = f"sessions_{len(sessions)}.zip"
+
+    return StreamingResponse(
+        _iter_zip(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
 

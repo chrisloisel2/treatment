@@ -5184,7 +5184,9 @@ async def download_sessions(req: DownloadSessionsRequest):
                else f"sessions_{len(sessions)}.zip"
 
     # Écriture dans un fichier temporaire (évite de tout charger en RAM)
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp_dir = Path("/mnt/tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=tmp_dir)
     tmp_path = Path(tmp.name)
     tmp.close()
 

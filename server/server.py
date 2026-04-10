@@ -2189,16 +2189,8 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         if side not in grip_dfs:
             continue
         df = grip_dfs[side]
-        # Colonne temporelle : override UI ou auto-détection, toujours via _auto_to_ms
-        grip_t_col = time_cols.get(f"gripper_{side}")
-        if not (grip_t_col and grip_t_col in df.columns):
-            # Fallback prioritaire
-            for candidate in ("timestamp_ns", "t_ms_corrected_ns", "t_ms", "time_seconds"):
-                if candidate in df.columns:
-                    grip_t_col = candidate
-                    break
-        if grip_t_col and grip_t_col in df.columns:
-            t_ms = _auto_to_ms(df[grip_t_col].to_numpy())
+        if "t_ms" in df.columns:
+            t_ms = df["t_ms"].tolist()
         else:
             t_ms = [0.0] * len(df)
         grip: dict = {"t_ms": t_ms}
@@ -2318,15 +2310,13 @@ def _extract_video_frame(session_path: str, side: str, t_ms: float) -> Optional[
 async def session_data(
     session_path: str,
     time_col_tracker: Optional[str] = None,
-    time_col_gripper_left: Optional[str] = None,
-    time_col_gripper_right: Optional[str] = None,
 ):
     """
     Retourne toutes les séries temporelles alignées d'une session.
     Utilisé par l'onglet Visualisation.
 
-    time_col_tracker / time_col_gripper_left / time_col_gripper_right :
-        Colonne temporelle à utiliser pour chaque flux (override auto-détection).
+    time_col_tracker : colonne temporelle à utiliser pour le tracker (override auto-détection).
+    Les grippers utilisent toujours la colonne t_ms directement.
     """
     sess = Path(session_path)
     if not sess.exists():
@@ -2335,10 +2325,6 @@ async def session_data(
         time_cols = {}
         if time_col_tracker:
             time_cols["tracker"] = time_col_tracker
-        if time_col_gripper_left:
-            time_cols["gripper_left"] = time_col_gripper_left
-        if time_col_gripper_right:
-            time_cols["gripper_right"] = time_col_gripper_right
         data = _load_session_timeseries(session_path, time_cols=time_cols)
         return JSONResponse(content=data)
     except Exception as e:

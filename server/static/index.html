@@ -3093,7 +3093,34 @@
 		}
 
 		.tv-vid-overlay.hidden {
-			opacity: 0
+			opacity: 0;
+			pointer-events: none;
+		}
+		.ovl-loading {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 8px;
+			width: 80%;
+		}
+		.ovl-progress-bar {
+			width: 100%;
+			height: 4px;
+			background: var(--border);
+			border-radius: 2px;
+			overflow: hidden;
+		}
+		.ovl-progress-fill {
+			height: 100%;
+			width: 0%;
+			background: var(--accent, #5b7df5);
+			border-radius: 2px;
+			transition: width .2s ease;
+		}
+		.ovl-pct {
+			font-size: .72rem;
+			color: var(--text2);
+			font-variant-numeric: tabular-nums;
 		}
 
 		/* ── Camera remap button ──────────────────────────────────────── */
@@ -4384,7 +4411,13 @@
 												</div>
 											</div>
 											<video id="tv-vid-left" preload="auto" muted playsinline></video>
-											<div class="tv-vid-overlay" id="tv-ovl-left">Pas de vidéo</div>
+											<div class="tv-vid-overlay" id="tv-ovl-left">
+												<span class="ovl-no-vid">Pas de vidéo</span>
+												<div class="ovl-loading" style="display:none">
+													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-left"></div></div>
+													<span class="ovl-pct" id="tv-vpct-left">0%</span>
+												</div>
+											</div>
 										</div>
 										<div class="tv-vid-wrap" id="tv-wrap-head">
 											<div class="tv-vid-label" style="background:#5b7df5bb">HEAD</div>
@@ -4406,7 +4439,13 @@
 												</div>
 											</div>
 											<video id="tv-vid-head" preload="auto" muted playsinline></video>
-											<div class="tv-vid-overlay" id="tv-ovl-head">Pas de vidéo</div>
+											<div class="tv-vid-overlay" id="tv-ovl-head">
+												<span class="ovl-no-vid">Pas de vidéo</span>
+												<div class="ovl-loading" style="display:none">
+													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-head"></div></div>
+													<span class="ovl-pct" id="tv-vpct-head">0%</span>
+												</div>
+											</div>
 										</div>
 										<div class="tv-vid-wrap" id="tv-wrap-right">
 											<div class="tv-vid-label" style="background:#f59e0bbb">RIGHT</div>
@@ -4428,7 +4467,13 @@
 												</div>
 											</div>
 											<video id="tv-vid-right" preload="auto" muted playsinline></video>
-											<div class="tv-vid-overlay" id="tv-ovl-right">Pas de vidéo</div>
+											<div class="tv-vid-overlay" id="tv-ovl-right">
+												<span class="ovl-no-vid">Pas de vidéo</span>
+												<div class="ovl-loading" style="display:none">
+													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-right"></div></div>
+													<span class="ovl-pct" id="tv-vpct-right">0%</span>
+												</div>
+											</div>
 										</div>
 									</div>
 
@@ -8712,16 +8757,14 @@
 					if (!v) continue;
 					if (TV.vidInfo[side]?.available) {
 						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(path)}`;
-						v.src = url;
-						v.load();
-						v.oncanplay = () => {
-							TV.vidReady[side] = true;
-							ovl?.classList.add('hidden');
-						};
-						v.onerror = () => { TV.vidReady[side] = false; };
-						v.onseeked = null;
+						tvBindVideo(side, v, ovl, url);
 					} else {
 						TV.vidReady[side] = false;
+						if (ovl) {
+							ovl.querySelector('.ovl-no-vid').style.display = '';
+							ovl.querySelector('.ovl-loading').style.display = 'none';
+							ovl.classList.remove('hidden');
+						}
 					}
 				}
 				// Polling faststart : recharge la vidéo quand ffmpeg a terminé le remuxage
@@ -9491,6 +9534,94 @@
 
 		// Polling faststart : vérifie toutes les 4s si ffmpeg a terminé,
 		// puis recharge silencieusement la vidéo (sans interruption de l'UX)
+		// ── Chargement vidéo avec barre de progression ────────────────────
+		// Attend que la totalité du buffer couvre la durée avant de montrer la vidéo.
+		// onDone() est appelé une fois la vidéo complètement bufférisée.
+		function tvBindVideo(side, v, ovl, url, onDone) {
+			TV.vidReady[side] = false;
+
+			// Passer l'overlay en mode "chargement"
+			if (ovl) {
+				ovl.querySelector('.ovl-no-vid').style.display = 'none';
+				ovl.querySelector('.ovl-loading').style.display = '';
+				ovl.classList.remove('hidden');
+			}
+			const fillEl = ge(`tv-vprog-${side}`);
+			const pctEl  = ge(`tv-vpct-${side}`);
+
+			function setProgress(pct) {
+				const p = Math.min(100, Math.round(pct));
+				if (fillEl) fillEl.style.width = p + '%';
+				if (pctEl)  pctEl.textContent  = p + '%';
+			}
+
+			function isFullyBuffered() {
+				if (!v.duration || !isFinite(v.duration)) return false;
+				if (!v.buffered.length) return false;
+				// On accepte si le buffer couvre jusqu'à 500ms avant la fin
+				return v.buffered.end(v.buffered.length - 1) >= v.duration - 0.5;
+			}
+
+			function onProgress() {
+				if (!v.duration || !isFinite(v.duration) || !v.buffered.length) return;
+				const loaded = v.buffered.end(v.buffered.length - 1);
+				setProgress((loaded / v.duration) * 100);
+				if (isFullyBuffered()) onReady();
+			}
+
+			function onReady() {
+				// Ne déclencer qu'une fois
+				v.removeEventListener('progress',    onProgress);
+				v.removeEventListener('canplay',     onCanPlay);
+				v.removeEventListener('loadeddata',  onProgress);
+				v.removeEventListener('error',       onError);
+				TV.vidReady[side] = true;
+				if (ovl) ovl.classList.add('hidden');
+				setProgress(100);
+				if (onDone) onDone();
+			}
+
+			function onCanPlay() {
+				// Si déjà complètement bufférisé (ex. cache navigateur), on termine
+				if (isFullyBuffered()) { onReady(); return; }
+				// Sinon continuer à attendre la progression
+				setProgress(v.buffered.length
+					? (v.buffered.end(v.buffered.length - 1) / (v.duration || 1)) * 100
+					: 5);
+			}
+
+			function onError() {
+				v.removeEventListener('progress',   onProgress);
+				v.removeEventListener('canplay',    onCanPlay);
+				v.removeEventListener('loadeddata', onProgress);
+				v.removeEventListener('error',      onError);
+				TV.vidReady[side] = false;
+				if (ovl) {
+					ovl.querySelector('.ovl-no-vid').style.display = '';
+					ovl.querySelector('.ovl-loading').style.display = 'none';
+					ovl.classList.remove('hidden');
+				}
+			}
+
+			// Nettoyage des anciens listeners
+			v.oncanplay  = null;
+			v.onerror    = null;
+			v.onseeked   = null;
+			v.removeEventListener('progress',   onProgress);
+			v.removeEventListener('canplay',    onCanPlay);
+			v.removeEventListener('loadeddata', onProgress);
+			v.removeEventListener('error',      onError);
+
+			v.addEventListener('progress',   onProgress);
+			v.addEventListener('loadeddata', onProgress);
+			v.addEventListener('canplay',    onCanPlay);
+			v.addEventListener('error',      onError);
+
+			setProgress(0);
+			v.src = url;
+			v.load();
+		}
+
 		function tvPollFaststart(sessPath) {
 			if (TV._faststartTimer) clearInterval(TV._faststartTimer);
 			const pending = new Set(['head', 'left', 'right'].filter(s => TV.vidInfo[s]?.available));
@@ -9505,18 +9636,15 @@
 						if (!status[side]) continue;
 						pending.delete(side);
 						const v = ge(`tv-vid-${side}`);
+						const ovl = ge(`tv-ovl-${side}`);
 						if (!v || !TV.vidInfo[side]?.available) continue;
-						// Sauvegarder la position courante
-						const savedTime = v.currentTime;
+						const savedTime  = v.currentTime;
 						const wasPlaying = !v.paused;
 						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(sessPath)}`;
-						v.src = url;
-						v.load();
-						v.oncanplay = () => {
-							TV.vidReady[side] = true;
+						tvBindVideo(side, v, ovl, url, () => {
 							v.currentTime = savedTime;
 							if (wasPlaying) v.play().catch(() => {});
-						};
+						});
 					}
 					if (!pending.size) clearInterval(TV._faststartTimer);
 				} catch (_) {}

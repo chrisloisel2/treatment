@@ -754,11 +754,11 @@ def align_side(session_path: str, side: str, cfg: AlignConfig, output_dir: Path
     result.vis_polarity = round(float(ncc_val), 4)  # <0 = feature inversée
 
     # DataFrame par frame
-    t_rel_s = (ts_video_ns - ts_video_ns[0]) / 1e9
+    t_ms = (ts_video_ns - ts_video_ns[0]) / 1e6
     result.frame_data = pd.DataFrame({
         "frame_idx":          frame_pos.astype(int),
         "timestamp_ns":       ts_video_ns,
-        "t_rel_s":            t_rel_s,
+        "t_ms":               t_ms,
         "opening_mm_aligned": opening_aligned,
         "vis_norm":           vis_at_frames,
         "sen_norm_aligned":   sen_norm_at_frames,
@@ -789,7 +789,7 @@ def make_diagnostic_plot(result: AlignResult, output_path: Path,
         for spine in ax.spines.values():
             spine.set_edgecolor("#30363d")
 
-    t = df["t_rel_s"].values
+    t = df["t_ms"].values
 
     # ── Panneau 1 : signaux ──────────────────────────────────────────────────
     ax = axes[0]
@@ -802,6 +802,7 @@ def make_diagnostic_plot(result: AlignResult, output_path: Path,
         ax.vlines(suspect_t, 0, 1, color="#f0e68c", alpha=0.3, lw=0.7,
                   label=f"{result.n_suspect} frames SUSPECT")
     ax.set_xlim(t[0], t[-1]); ax.set_ylim(-0.05, 1.08)
+    ax.set_xlabel("Temps (ms)", color="#c9d1d9", fontsize=9)
     ax.set_ylabel("Signal normalisé", color="#c9d1d9", fontsize=9)
     status = "OK" if result.consensus_ok else "⚠ NO CONSENSUS"
     ax.set_title(
@@ -825,6 +826,7 @@ def make_diagnostic_plot(result: AlignResult, output_path: Path,
                  f"{result.n_suspect} SUSPECT ({pct:.1f}%)",
                  color="#c9d1d9", fontsize=9)
     ax.set_xlim(t[0], t[-1])
+    ax.set_xlabel("Temps (ms)", color="#c9d1d9", fontsize=9)
     ax.set_ylabel("Résidu norm.", color="#c9d1d9", fontsize=9)
     ax.legend(fontsize=7, facecolor="#161b22", labelcolor="#c9d1d9", framealpha=0.8)
     ax.grid(True, alpha=0.12, color="#c9d1d9")

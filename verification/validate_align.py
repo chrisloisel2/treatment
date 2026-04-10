@@ -59,23 +59,23 @@ class ValConfig:
     sg_poly:            int   = 2
 
     # Détection fermeture
-    close_vel_thresh:   float = -30.0   # mm/s : dérivée < seuil → fermeture
-    close_from_mm:      float = 15.0    # ouverture avant fermeture
-    close_to_mm:        float = 8.0     # ouverture après fermeture
-    close_min_amp:      float = 10.0    # amplitude mini de la fermeture (mm)
+    close_vel_thresh:    float = -30.0   # mm/s : dérivée < seuil → fermeture
+    close_from_mm:       float = 15.0    # ouverture avant fermeture
+    close_to_mm:         float = 8.0     # ouverture après fermeture
+    close_min_amp:       float = 10.0    # amplitude mini de la fermeture (mm)
 
     # Détection plateau
-    plateau_vel_thresh: float = 10.0    # mm/s : |vel| < seuil → immobile
-    plateau_min_dur_s:  float = 0.3     # durée minimum (s)
+    plateau_vel_thresh:  float = 10.0    # mm/s : |vel| < seuil → immobile
+    plateau_min_dur_ms:  float = 300.0   # durée minimum (ms)
 
     # Tolérance timing fermeture
-    timing_tol_ms:      float = 100.0   # erreur acceptable (ms)
+    timing_tol_ms:       float = 100.0   # erreur acceptable (ms)
 
     # Tolérance biais plateau
-    bias_tol:           float = 0.15    # [0-1] en normalisé
+    bias_tol:            float = 0.15    # [0-1] en normalisé
 
     # Strip de frames autour de l'événement
-    strip_half_s:       float = 1.0     # ± secondes
+    strip_half_ms:       float = 1000.0  # ± millisecondes
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -85,10 +85,10 @@ class ValConfig:
 @dataclass
 class ClosureEvent:
     event_id:       int
-    t_start_s:      float    # début de la transition
-    t_end_s:        float    # fin de la transition
-    t50_sensor_s:   float    # t50 capteur
-    t50_vision_s:   float    # t50 vision
+    t_start_ms:     float    # début de la transition (ms)
+    t_end_ms:       float    # fin de la transition (ms)
+    t50_sensor_ms:  float    # t50 capteur (ms)
+    t50_vision_ms:  float    # t50 vision (ms)
     timing_err_ms:  float    # t50_vision - t50_sensor (ms)
     op_before_mm:   float    # ouverture moyenne avant
     op_after_mm:    float    # ouverture moyenne après
@@ -106,9 +106,9 @@ class ClosureEvent:
 @dataclass
 class PlateauEvent:
     event_id:       int
-    t_start_s:      float
-    t_end_s:        float
-    duration_s:     float
+    t_start_ms:     float
+    t_end_ms:       float
+    duration_ms:    float
     sensor_mean_mm: float    # ouverture capteur moyenne (mm)
     sensor_std_mm:  float    # stabilité capteur (mm)
     vis_mean_norm:  float    # signal vision normalisé moyen
@@ -202,8 +202,8 @@ def smooth(x: np.ndarray, cfg: ValConfig) -> np.ndarray:
 
 
 def velocity(op_smooth: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Dérivée temporelle en mm/s. Même longueur que op_smooth."""
-    return np.gradient(op_smooth, t)
+    """Dérivée temporelle en mm/s. t en ms, résultat en mm/s."""
+    return np.gradient(op_smooth, t) * 1000.0  # mm/ms → mm/s
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -247,7 +247,7 @@ def detect_closures(df: pd.DataFrame, cfg: ValConfig) -> List[Dict]:
     Détecte les événements de fermeture dans le signal capteur aligné.
     Retourne une liste de segments avec indices start/end dans le DataFrame.
     """
-    t   = df["t_rel_s"].values
+    t   = df["t_ms"].values
     op  = df["opening_mm_aligned"].values
     ops = smooth(op, cfg)
     vel = velocity(ops, t)
@@ -294,7 +294,7 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
                      event_id: int) -> ClosureEvent:
     i_s = ev_dict["i_start"]
     i_e = ev_dict["i_end"]
-    t   = df["t_rel_s"].values
+    t   = df["t_ms"].values
     op  = df["opening_mm_aligned"].values
     vis = df["vis_norm"].values
     sen = df["sen_norm_aligned"].values
@@ -341,7 +341,7 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
         # Cherche le crossing dans [t_start-0.1, t_end+0.5]
         t50_vis = _find_t50(t, vis, t_start - 0.1, t_end + 0.5, level50_vis,
                             ascending=ascending_vis)
-        timing_err_ms = (t50_vis - t50_sen) * 1000.0 if (
+        timing_err_ms = (t50_vis - t50_sen) if (
             np.isfinite(t50_vis) and np.isfinite(t50_sen)) else float("nan")
 
     # Monotonie capteur dans la fenêtre
@@ -377,10 +377,10 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
 
     return ClosureEvent(
         event_id          = event_id,
-        t_start_s         = t_start,
-        t_end_s           = t_end,
-        t50_sensor_s      = t50_sen,
-        t50_vision_s      = t50_vis,
+        t_start_ms        = t_start,
+        t_end_ms          = t_end,
+        t50_sensor_ms     = t50_sen,
+        t50_vision_ms     = t50_vis,
         timing_err_ms     = round(timing_err_ms, 3) if np.isfinite(timing_err_ms) else float("nan"),
         op_before_mm      = round(ev_dict["op_before"], 2),
         op_after_mm       = round(ev_dict["op_after"],  2),
@@ -401,7 +401,7 @@ def validate_closure(ev_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
 # ═════════════════════════════════════════════════════════════════════════════
 
 def detect_plateaus(df: pd.DataFrame, cfg: ValConfig) -> List[Dict]:
-    t   = df["t_rel_s"].values
+    t   = df["t_ms"].values
     op  = df["opening_mm_aligned"].values
     ops = smooth(op, cfg)
     vel = velocity(ops, t)
@@ -425,7 +425,7 @@ def detect_plateaus(df: pd.DataFrame, cfg: ValConfig) -> List[Dict]:
     result = []
     for s, e in segments:
         dur = t[e] - t[s]
-        if dur >= cfg.plateau_min_dur_s:
+        if dur >= cfg.plateau_min_dur_ms:
             result.append({"i_start": s, "i_end": e, "ops": ops})
 
     return result
@@ -435,7 +435,7 @@ def validate_plateau(pl_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
                      event_id: int) -> PlateauEvent:
     s   = pl_dict["i_start"]
     e   = pl_dict["i_end"]
-    t   = df["t_rel_s"].values
+    t   = df["t_ms"].values
     op  = df["opening_mm_aligned"].values
     vis = df["vis_norm"].values
     sen = df["sen_norm_aligned"].values
@@ -453,8 +453,8 @@ def validate_plateau(pl_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
     valid = np.isfinite(vis_win) & np.isfinite(sen_win)
     if valid.sum() < 2:
         return PlateauEvent(
-            event_id=event_id, t_start_s=t_start, t_end_s=t_end,
-            duration_s=duration,
+            event_id=event_id, t_start_ms=t_start, t_end_ms=t_end,
+            duration_ms=duration,
             sensor_mean_mm=float("nan"), sensor_std_mm=float("nan"),
             vis_mean_norm=float("nan"), sen_mean_norm=float("nan"),
             bias_norm=float("nan"), jitter_norm=float("nan"),
@@ -499,9 +499,9 @@ def validate_plateau(pl_dict: Dict, df: pd.DataFrame, cfg: ValConfig,
 
     return PlateauEvent(
         event_id      = event_id,
-        t_start_s     = round(t_start, 3),
-        t_end_s       = round(t_end,   3),
-        duration_s    = round(duration, 3),
+        t_start_ms    = round(t_start, 1),
+        t_end_ms      = round(t_end,   1),
+        duration_ms   = round(duration, 1),
         sensor_mean_mm= round(sensor_mean, 2),
         sensor_std_mm = round(sensor_std,  3),
         vis_mean_norm = round(vis_mean, 4),
@@ -536,7 +536,7 @@ def plot_validation(
     """
     Graphe 3 panneaux + strips de frames pour les événements clés.
     """
-    t   = df["t_rel_s"].values
+    t   = df["t_ms"].values
     op  = df["opening_mm_aligned"].values
     vis = df["vis_norm"].values
     sen = df["sen_norm_aligned"].values
@@ -577,18 +577,18 @@ def plot_validation(
     # Marquer les événements
     for ev in vres.closure_events:
         col = "#3fb950" if ev.logic_ok else "#f0e68c"
-        ax_sig.axvspan(ev.t_start_s, ev.t_end_s, alpha=0.12, color=col)
-        if np.isfinite(ev.t50_sensor_s):
-            ax_sig.axvline(ev.t50_sensor_s, color="#ff7b72", lw=1.0, linestyle=":",
+        ax_sig.axvspan(ev.t_start_ms, ev.t_end_ms, alpha=0.12, color=col)
+        if np.isfinite(ev.t50_sensor_ms):
+            ax_sig.axvline(ev.t50_sensor_ms, color="#ff7b72", lw=1.0, linestyle=":",
                            alpha=0.7)
-        if np.isfinite(ev.t50_vision_s):
-            ax_sig.axvline(ev.t50_vision_s, color="#58a6ff", lw=1.0, linestyle=":",
+        if np.isfinite(ev.t50_vision_ms):
+            ax_sig.axvline(ev.t50_vision_ms, color="#58a6ff", lw=1.0, linestyle=":",
                            alpha=0.7)
 
     for ev in vres.plateau_events:
         col = "#3fb950" if ev.logic_ok else "#f85149"
-        ax_sig.axvspan(ev.t_start_s, ev.t_end_s, alpha=0.15, color=col)
-        mid = (ev.t_start_s + ev.t_end_s) / 2.0
+        ax_sig.axvspan(ev.t_start_ms, ev.t_end_ms, alpha=0.15, color=col)
+        mid = (ev.t_start_ms + ev.t_end_ms) / 2.0
         ax_sig.text(mid, 1.05,
                     f"P{ev.event_id}\n{ev.sensor_mean_mm:.0f}mm",
                     ha="center", va="bottom", fontsize=6, color=col,
@@ -616,7 +616,7 @@ def plot_validation(
     ax_res.fill_between(t, res, alpha=0.7, color="#3fb950")
     ax_res.set_xlim(t[0], t[-1])
     ax_res.set_ylabel("Résidu norm.", color="#c9d1d9", fontsize=9)
-    ax_res.set_xlabel("Temps (s)", color="#c9d1d9", fontsize=9)
+    ax_res.set_xlabel("Temps (ms)", color="#c9d1d9", fontsize=9)
     ax_res.grid(True, alpha=0.12, color="#c9d1d9")
 
     # ── Panneau 3a : zoom meilleure fermeture ─────────────────────────────────
@@ -625,19 +625,19 @@ def plot_validation(
         None
     )
     if best_close:
-        margin = 0.5
-        t0c = max(t[0], best_close.t_start_s - margin)
-        t1c = min(t[-1], best_close.t_end_s + margin)
+        margin = 500.0
+        t0c = max(t[0], best_close.t_start_ms - margin)
+        t1c = min(t[-1], best_close.t_end_ms + margin)
         mask = (t >= t0c) & (t <= t1c)
         ax_close.plot(t[mask], vis[mask], color="#58a6ff", lw=1.5, label="vision")
         ax_close.plot(t[mask], sen[mask], color="#ff7b72", lw=1.5, label="capteur")
-        if np.isfinite(best_close.t50_sensor_s):
-            ax_close.axvline(best_close.t50_sensor_s, color="#ff7b72", lw=1.5,
+        if np.isfinite(best_close.t50_sensor_ms):
+            ax_close.axvline(best_close.t50_sensor_ms, color="#ff7b72", lw=1.5,
                              linestyle="--", label=f"t50 capteur")
-        if np.isfinite(best_close.t50_vision_s):
-            ax_close.axvline(best_close.t50_vision_s, color="#58a6ff", lw=1.5,
+        if np.isfinite(best_close.t50_vision_ms):
+            ax_close.axvline(best_close.t50_vision_ms, color="#58a6ff", lw=1.5,
                              linestyle="--", label=f"t50 vision")
-        ax_close.axvspan(best_close.t_start_s, best_close.t_end_s, alpha=0.1,
+        ax_close.axvspan(best_close.t_start_ms, best_close.t_end_ms, alpha=0.1,
                          color="#3fb950" if best_close.logic_ok else "#f0e68c")
         err_str = (f"{best_close.timing_err_ms:.1f}ms"
                    if np.isfinite(best_close.timing_err_ms) else "n/a")
@@ -649,7 +649,7 @@ def plot_validation(
         )
         ax_close.legend(fontsize=7, facecolor="#161b22", labelcolor="#c9d1d9")
         ax_close.set_ylabel("Signal norm.", color="#c9d1d9", fontsize=9)
-        ax_close.set_xlabel("Temps (s)", color="#c9d1d9", fontsize=9)
+        ax_close.set_xlabel("Temps (ms)", color="#c9d1d9", fontsize=9)
         ax_close.grid(True, alpha=0.12, color="#c9d1d9")
 
     # ── Panneau 3b : zoom meilleur plateau ────────────────────────────────────
@@ -658,13 +658,13 @@ def plot_validation(
         None
     )
     if best_plat:
-        margin = 0.4
-        t0p = max(t[0], best_plat.t_start_s - margin)
-        t1p = min(t[-1], best_plat.t_end_s + margin)
+        margin = 400.0
+        t0p = max(t[0], best_plat.t_start_ms - margin)
+        t1p = min(t[-1], best_plat.t_end_ms + margin)
         mask = (t >= t0p) & (t <= t1p)
         ax_plat.plot(t[mask], vis[mask], color="#58a6ff", lw=1.5, label="vision")
         ax_plat.plot(t[mask], sen[mask], color="#ff7b72", lw=1.5, label="capteur")
-        ax_plat.axvspan(best_plat.t_start_s, best_plat.t_end_s, alpha=0.15,
+        ax_plat.axvspan(best_plat.t_start_ms, best_plat.t_end_ms, alpha=0.15,
                         color="#3fb950" if best_plat.logic_ok else "#f85149")
         ax_plat.axhline(best_plat.vis_mean_norm, color="#58a6ff", lw=1.0,
                         linestyle=":", label=f"vis_mean={best_plat.vis_mean_norm:.3f}")
@@ -675,11 +675,11 @@ def plot_validation(
         if abs(best_plat.bias_norm) > 0.01:
             ax_plat.annotate(
                 "",
-                xy=(best_plat.t_end_s - 0.05, best_plat.vis_mean_norm),
-                xytext=(best_plat.t_end_s - 0.05, best_plat.sen_mean_norm),
+                xy=(best_plat.t_end_ms - 50.0, best_plat.vis_mean_norm),
+                xytext=(best_plat.t_end_ms - 50.0, best_plat.sen_mean_norm),
                 arrowprops=dict(arrowstyle="<->", color="#f0e68c", lw=1.5),
             )
-            ax_plat.text(best_plat.t_end_s - 0.08, mid_y,
+            ax_plat.text(best_plat.t_end_ms - 80.0, mid_y,
                          f"biais\n{best_plat.bias_norm:+.3f}",
                          ha="right", va="center", fontsize=7, color="#f0e68c")
         ax_plat.set_title(
@@ -691,20 +691,20 @@ def plot_validation(
         )
         ax_plat.legend(fontsize=7, facecolor="#161b22", labelcolor="#c9d1d9")
         ax_plat.set_ylabel("Signal norm.", color="#c9d1d9", fontsize=9)
-        ax_plat.set_xlabel("Temps (s)", color="#c9d1d9", fontsize=9)
+        ax_plat.set_xlabel("Temps (ms)", color="#c9d1d9", fontsize=9)
         ax_plat.grid(True, alpha=0.12, color="#c9d1d9")
 
     # ── Frames fermeture ──────────────────────────────────────────────────────
     def draw_frames_strip(ax, t_center: float, label: str,
                           val_norm: float, is_ok: bool, extra: str):
         n_frames_strip = 5
-        half_s = cfg.strip_half_s
-        offsets = np.linspace(-half_s, half_s, n_frames_strip)
+        half_ms = cfg.strip_half_ms
+        offsets = np.linspace(-half_ms, half_ms, n_frames_strip)
         frames_imgs = []
         for off in offsets:
             t_target = t_center + off
             # Trouver la frame la plus proche
-            ts_target_ns = ts_video_ns[0] + int(t_target * 1e9)
+            ts_target_ns = ts_video_ns[0] + int(t_target * 1e6)
             fi_idx = int(np.argmin(np.abs(ts_video_ns - ts_target_ns)))
             fi = int(frame_pos[fi_idx])
             img = extract_frame(video_path, fi)
@@ -729,7 +729,7 @@ def plot_validation(
                     cv2.BORDER_CONSTANT, value=(20, 20, 20))
             # Étiquette offset
             is_center = abs(off) < (half_s / (n_frames_strip - 1) * 0.6)
-            cv2.putText(cell, f"{'NOW' if is_center else f'{off:+.1f}s'}",
+            cv2.putText(cell, f"{'NOW' if is_center else f'{off:+.0f}ms'}",
                         (4, target_h - 6), cv2.FONT_HERSHEY_SIMPLEX,
                         0.35, (200, 200, 200), 1)
             if is_center:
@@ -747,7 +747,7 @@ def plot_validation(
                      color=status_col, fontsize=8, pad=3)
 
     if best_close:
-        t_center = best_close.t50_sensor_s if np.isfinite(best_close.t50_sensor_s) else best_close.t_start_s
+        t_center = best_close.t50_sensor_ms if np.isfinite(best_close.t50_sensor_ms) else best_close.t_start_ms
         err_str  = f"timing err={best_close.timing_err_ms:.1f}ms" if np.isfinite(best_close.timing_err_ms) else "timing n/a"
         draw_frames_strip(
             ax_frames_close, t_center,
@@ -756,7 +756,7 @@ def plot_validation(
         )
 
     if best_plat:
-        t_center = (best_plat.t_start_s + best_plat.t_end_s) / 2.0
+        t_center = (best_plat.t_start_ms + best_plat.t_end_ms) / 2.0
         draw_frames_strip(
             ax_frames_plat, t_center,
             f"Plateau #{best_plat.event_id} ({best_plat.sensor_mean_mm:.0f}mm)",
@@ -796,7 +796,7 @@ def validate_side(session_path: str, side: str,
         return vres
 
     vres.n_frames = len(df)
-    required = ["t_rel_s", "opening_mm_aligned", "vis_norm", "sen_norm_aligned", "residual"]
+    required = ["t_ms", "opening_mm_aligned", "vis_norm", "sen_norm_aligned", "residual"]
     for col in required:
         if col not in df.columns:
             vres.error = f"Colonne manquante : {col}"
@@ -1021,7 +1021,7 @@ def run_session(session_path: str, cfg: ValConfig, sides: List[str],
                 tick = "~" if ev.visual_insensitive else ("✓" if ev.logic_ok else "✗")
                 err  = f"{ev.timing_err_ms:.1f}ms" if np.isfinite(ev.timing_err_ms) else "n/a"
                 insens_tag = "  [INSENSIBLE]" if ev.visual_insensitive else ""
-                print(f"     [{tick}] Fermeture #{ev.event_id} t={ev.t_start_s:.2f}s "
+                print(f"     [{tick}] Fermeture #{ev.event_id} t={ev.t_start_ms:.0f}ms "
                       f"{ev.op_before_mm:.0f}→{ev.op_after_mm:.0f}mm  "
                       f"timing_err={err}  résidu={ev.residual_mean:.3f}"
                       f"{insens_tag}"
@@ -1029,7 +1029,7 @@ def run_session(session_path: str, cfg: ValConfig, sides: List[str],
             # Détails plateaux
             for ev in vres.plateau_events:
                 tick = "✓" if ev.logic_ok else "✗"
-                print(f"     [{tick}] Plateau   #{ev.event_id} t=[{ev.t_start_s:.2f}–{ev.t_end_s:.2f}]s "
+                print(f"     [{tick}] Plateau   #{ev.event_id} t=[{ev.t_start_ms:.0f}–{ev.t_end_ms:.0f}]ms "
                       f"{ev.sensor_mean_mm:.1f}mm  "
                       f"biais={ev.bias_norm:+.4f}  jitter={ev.jitter_norm:.4f}"
                       + (f"  ⚠ {ev.logic_reason}" if not ev.logic_ok else ""))
@@ -1048,13 +1048,13 @@ def main():
     p.add_argument("--output_dir",    default=None)
     p.add_argument("--timing_tol_ms", type=float, default=100.0)
     p.add_argument("--bias_tol",      type=float, default=0.15)
-    p.add_argument("--plateau_min_s", type=float, default=0.3)
+    p.add_argument("--plateau_min_ms", type=float, default=300.0)
     args = p.parse_args()
 
     cfg = ValConfig(
-        timing_tol_ms   = args.timing_tol_ms,
-        bias_tol        = args.bias_tol,
-        plateau_min_dur_s = args.plateau_min_s,
+        timing_tol_ms    = args.timing_tol_ms,
+        bias_tol         = args.bias_tol,
+        plateau_min_dur_ms = args.plateau_min_ms,
     )
     sides = ["left", "right"] if args.side == "both" else [args.side]
     base_out = Path(args.output_dir) if args.output_dir else None

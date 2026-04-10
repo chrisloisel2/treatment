@@ -8190,6 +8190,10 @@
 						opt.textContent = col;
 						s.appendChild(opt);
 					}
+					// Sélectionner t_ms par défaut pour les grippers si disponible
+					if ((flux === 'gripper_left' || flux === 'gripper_right') && list.includes('t_ms')) {
+						s.value = 't_ms';
+					}
 				}
 			} catch (_) {}
 		}

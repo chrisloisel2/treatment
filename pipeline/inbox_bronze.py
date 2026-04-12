@@ -3,17 +3,16 @@
 """
 Pipeline Inbox → Bronze
 
-Scanne /mnt/storage/silver/, applique 6 vérifications, puis déplace les sessions valides
+Scanne /mnt/storage/silver/, applique 5 vérifications, puis déplace les sessions valides
 vers /mnt/storage/silver//{scenario}.
 
 Étapes :
   1. STRUCTURE        — intégrité des fichiers/dossiers requis
-  2. TRACKERS         — placement des trackers (head/left/right détectables dans le CSV)
-  3. CSV              — validité des CSV + assurance que la pince n'est jamais bloquée à 0
-  4. COMPLETUDE       — pas de tracker manquant, pas de JSONL manquant
-  5. CONTINUITÉ       — timestamps capteurs triés, gaps détectés et classifiés (fixable/non)
-  6. TRAKEUR          — vérification géométrique via trakeur.py (head/left/right)
-  7. MOVE             — déplacement vers /mnt/storage/silver//{scenario}
+  2. CSV              — validité des CSV + assurance que la pince n'est jamais bloquée à 0
+  3. COMPLETUDE       — pas de tracker manquant, pas de JSONL manquant
+  4. CONTINUITÉ       — timestamps capteurs triés, gaps détectés et classifiés (fixable/non)
+  5. TRAKEUR          — vérification géométrique via trakeur.py (head/left/right)
+  6. MOVE             — déplacement vers /mnt/storage/silver//{scenario}
 """
 
 from __future__ import annotations
@@ -564,7 +563,7 @@ def promote_to_bronze(session_path: Path, bronze_dir: Path = BRONZE_DIR) -> str:
 def run_checks(session_path: Path,
                config: Optional[InboxConfig] = None) -> SessionReport:
     """
-    Exécute les 6 checks de vérification (sans le move).
+    Exécute les 5 checks de vérification (sans le move).
     Le check trakeur est délégué en sous-processus si config.n_processes > 1.
     """
     cfg = config or _INBOX_CONFIG
@@ -576,10 +575,9 @@ def run_checks(session_path: Path,
     # Checks séquentiels (les 5 premiers sont I/O-bound et rapides)
     for label, fn in [
         ("1 · Structure",           check_structure),
-        ("2 · Placement trackers",  check_tracker_placement),
-        ("3 · Validité CSV",        check_csv_validity),
-        ("4 · Complétude",          check_completude),
-        ("5 · Continuité capteur",  check_sensor_continuity),
+        ("2 · Validité CSV",        check_csv_validity),
+        ("3 · Complétude",          check_completude),
+        ("4 · Continuité capteur",  check_sensor_continuity),
     ]:
         result = fn(session_path)
         result.name = label

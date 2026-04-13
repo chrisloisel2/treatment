@@ -5393,6 +5393,13 @@
 							</div>
 							<div class="fr"><label>Fenêtre (ms)</label><input type="number" id="s-wn" value="2200" />
 							</div>
+							<div class="fr">
+								<label>Limite scan</label>
+								<div style="display:flex;align-items:center;gap:8px">
+									<input type="number" id="s-scan-limit" value="500" min="0" step="100" style="width:100px" />
+									<span style="font-size:.75rem;color:var(--text3)">0 = illimité</span>
+								</div>
+							</div>
 							<div class="div"></div>
 							<button class="btn p" onclick="saveSettings()">Sauvegarder</button>
 						</div>
@@ -5886,6 +5893,7 @@
 				root: '', model: '_sync_ml_model', nas: '',
 				resample_ms: 5, max_lag_ms: 400, window_ms: 2200,
 				input_format: 'custom', lerobot_input_path: '',
+				scan_limit: 500,
 			}
 		};
 
@@ -6112,12 +6120,12 @@
 		// Scan
 		// ══════════════════════════════════════════════════════════════════
 		let _scanInProgress = false;
-		const SCAN_LIMIT = 500; // sessions par page
 
 		async function scanAndShow() {
 			if (_scanInProgress) return;
 			_scanInProgress = true;
 			const fmt = S.cfg.input_format || 'custom';
+			const SCAN_LIMIT = S.cfg.scan_limit !== undefined ? S.cfg.scan_limit : 500;
 			// Toujours lire depuis le champ UI — c'est la source de vérité
 			const root = ge('s-root').value.trim() || S.cfg.root || '/mnt/storage/silver/';
 			const lrPath = ge('s-lerobot-input-path')?.value.trim() || S.cfg.lerobot_input_path || '';
@@ -6165,7 +6173,7 @@
 							renderAll();
 							const label = fmt === 'lerobot' ? 'épisodes LeRobot' : 'sessions';
 							const totalInfo = S.scan.hasMore
-								? ` (${S.scan.totalFound} au total — affichage limité à ${SCAN_LIMIT})`
+								? ` (${S.scan.totalFound} au total — affichage limité à ${S.scan.limit || SCAN_LIMIT})`
 								: '';
 							log(`${sessions.length} ${label} chargé(e)s${totalInfo}`, 'OK');
 						});
@@ -8304,7 +8312,7 @@
 			gripOffset: 0,    // décalage en ms appliqué aux données gripper (visuel uniquement)
 			_gradeFilter: null, // filtre d'affichage par note (null = tout afficher)
 			_seekRaf: null,        // RAF throttle pour seeks pendant scrubbing
-			_faststartTimer: null, // setInterval polling faststart ffmpeg
+	
 		};
 
 		const TV_COLORS = {
@@ -8719,7 +8727,7 @@
 			if (!path) return;
 			tvStopStream();
 			tvStopPlay();
-			if (TV._faststartTimer) { clearInterval(TV._faststartTimer); TV._faststartTimer = null; }
+
 			TV.data = null;
 			TV.sessPath = path;
 			TV.t_ms = 0;
@@ -8815,8 +8823,6 @@
 						}
 					}
 				}
-				// Polling faststart : recharge la vidéo quand ffmpeg a terminé le remuxage
-				tvPollFaststart(_sessPathForVid);
 
 				loadEl.style.display = 'none';
 				innerEl.style.display = 'flex';
@@ -9670,34 +9676,6 @@
 			fetch(url, { priority: 'high' }).catch(() => {});
 		}
 
-		function tvPollFaststart(sessPath) {
-			if (TV._faststartTimer) clearInterval(TV._faststartTimer);
-			const pending = new Set(['head', 'left', 'right'].filter(s => TV.vidInfo[s]?.available));
-			if (!pending.size) return;
-			TV._faststartTimer = setInterval(async () => {
-				if (TV.sessPath !== sessPath) { clearInterval(TV._faststartTimer); return; }
-				try {
-					const r = await fetch(`/api/session/video_faststart_status?session_path=${encodeURIComponent(sessPath)}`);
-					if (!r.ok) return;
-					const status = await r.json();
-					for (const side of [...pending]) {
-						if (!status[side]) continue;
-						pending.delete(side);
-						const v = ge(`tv-vid-${side}`);
-						const ovl = ge(`tv-ovl-${side}`);
-						if (!v || !TV.vidInfo[side]?.available) continue;
-						const savedTime  = v.currentTime;
-						const wasPlaying = !v.paused;
-						const url = `/api/session/video/${side}?session_path=${encodeURIComponent(sessPath)}`;
-						tvBindVideo(side, v, ovl, url, () => {
-							v.currentTime = savedTime;
-							if (wasPlaying) v.play().catch(() => {});
-						});
-					}
-					if (!pending.size) clearInterval(TV._faststartTimer);
-				} catch (_) {}
-			}, 4000);
-		}
 
 		// Sync douce des vidéos : ne seek que si dérive significative
 		function tvSyncVideos(t_ms) {
@@ -10625,6 +10603,7 @@
 			S.cfg.max_lag_ms = +ge('s-ml').value;
 			S.cfg.window_ms = +ge('s-wn').value;
 			S.cfg.lerobot_input_path = ge('s-lerobot-input-path')?.value || '';
+			S.cfg.scan_limit = parseInt(ge('s-scan-limit').value, 10) || 0;
 			ge('cfg-root').value = S.cfg.root;
 			ge('cfg-nas').value = S.cfg.nas;
 			ge('cfg-root-display').textContent = S.cfg.root;
@@ -10647,6 +10626,7 @@
 				if (c.max_lag_ms) { S.cfg.max_lag_ms = c.max_lag_ms; ge('s-ml').value = c.max_lag_ms; }
 				if (c.window_ms) { S.cfg.window_ms = c.window_ms; ge('s-wn').value = c.window_ms; }
 				if (c.lerobot_input_path) { S.cfg.lerobot_input_path = c.lerobot_input_path; ge('s-lerobot-input-path').value = c.lerobot_input_path; }
+				if (c.scan_limit !== undefined) { S.cfg.scan_limit = c.scan_limit; ge('s-scan-limit').value = c.scan_limit; }
 				_applyInputFormat(c.input_format || 'custom');
 			} catch (e) { }
 		}

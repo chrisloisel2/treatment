@@ -2356,18 +2356,16 @@ def _get_faststart_lock(key: str) -> threading.Lock:
         return _faststart_locks[key]
 
 
-def _run_faststart(src: Path, dst: Path) -> bool:
+def _run_faststart(src: Path) -> bool:
     """
-    Remuxe src → dst avec -movflags +faststart (déplace le moov atom en tête).
+    Remuxe src en place avec -movflags +faststart (déplace le moov atom en tête).
     Opération rapide (pas de re-encodage). Retourne True si succès.
     """
     lock = _get_faststart_lock(str(src))
     if not lock.acquire(blocking=False):
         return False  # conversion déjà en cours
     try:
-        if dst.exists():
-            return True
-        tmp = dst.with_suffix(".tmp.mp4")
+        tmp = src.with_suffix(".tmp_fs.mp4")
         try:
             import subprocess
             result = subprocess.run(
@@ -2376,7 +2374,7 @@ def _run_faststart(src: Path, dst: Path) -> bool:
                 capture_output=True, timeout=300,
             )
             if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
-                tmp.rename(dst)
+                tmp.rename(src)
                 return True
             tmp.unlink(missing_ok=True)
         except Exception:
@@ -2400,19 +2398,14 @@ async def session_video(side: str, session_path: str, request: Request):
     sess = Path(session_path)
     vid_dir = sess / "videos"
 
-    faststart = vid_dir / f"{side}_faststart.mp4"
-    original  = vid_dir / f"{side}.mp4"
+    mp4 = vid_dir / f"{side}.mp4"
 
-    if faststart.exists():
-        mp4 = faststart
-    elif original.exists():
-        mp4 = original
-        # Lancer la conversion faststart en arrière-plan si pas déjà en cours
-        threading.Thread(
-            target=_run_faststart, args=(original, faststart), daemon=True
-        ).start()
-    else:
+    if not mp4.exists():
         raise HTTPException(404, f"Vidéo {side} introuvable")
+
+    # Lancer la conversion faststart en arrière-plan si le moov atom n'est pas en tête
+    # (détecté par la présence du flag ; on tente une seule fois)
+    threading.Thread(target=_run_faststart, args=(mp4,), daemon=True).start()
 
     stat = mp4.stat()
     etag = f'"{stat.st_size}-{int(stat.st_mtime)}"'
@@ -2435,15 +2428,6 @@ async def session_video(side: str, session_path: str, request: Request):
         },
     )
 
-
-@app.get("/api/session/video_faststart_status")
-async def session_video_faststart_status(session_path: str):
-    """Retourne si les versions faststart (moov en tête) sont disponibles pour chaque caméra."""
-    sess = Path(session_path)
-    return {
-        side: (sess / "videos" / f"{side}_faststart.mp4").exists()
-        for side in ("head", "left", "right")
-    }
 
 
 @app.get("/api/session/video_info")

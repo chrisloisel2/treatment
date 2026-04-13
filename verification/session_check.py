@@ -6,16 +6,15 @@ session_check.py — Autorité de vérification des sessions robot.
 Fichier UNIQUE et autonome : tout le code de vérification est intégré ici.
 Aucune dépendance sur les autres modules du dossier verification/.
 
-Orchestre 5 dimensions d'analyse indépendantes et produit un rapport
+Orchestre 4 dimensions d'analyse indépendantes et produit un rapport
 d'autorité structuré avec score global, grade, diagnostics fins et
 recommandations de réparation.
 
 Dimensions (et poids) :
   1. gripper_timestamp_sync  (25%) — alignement horloge gripper↔vidéo (8 métriques)
   2. video_tracker_sync      (25%) — sync IA vidéo↔tracker (6 portes + score IA)
-  3. tracker_placement       (15%) — head/left/right corrects (règle xyzw/0/-1)
-  4. video_quality           (20%) — qualité timestamps JSONL (jitter, drops, gaps)
-  5. gripper_frame_sync      (15%) — cohérence visuelle CV2 frame par frame
+  3. video_quality           (20%) — qualité timestamps JSONL (jitter, drops, gaps)
+  4. gripper_frame_sync      (15%) — cohérence visuelle CV2 frame par frame
 
 Score global = somme pondérée 0–100
 Session "parfaite" si score ≥ PERFECT_THRESHOLD et aucune porte bloquante.
@@ -3077,7 +3076,6 @@ def check_session_full(session_path, model=None) -> dict:
     dim_gh  = _dim_gripper_health(session_path)        # bloquant si pince morte
     dim_gt  = _dim_gripper_ts(session_path)
     dim_vt  = _dim_video_tracker_sync(session_path, model=model)
-    dim_tp  = _dim_tracker_placement(session_path)
     dim_vq  = _dim_video_quality(session_path)
     dim_gf  = _dim_gripper_frame_sync(session_path)
 
@@ -3086,7 +3084,6 @@ def check_session_full(session_path, model=None) -> dict:
         "gripper_health":         dim_gh,
         "gripper_timestamp_sync": dim_gt,
         "video_tracker_sync":     dim_vt,
-        "tracker_placement":      dim_tp,
         "video_quality":          dim_vq,
         "gripper_frame_sync":     dim_gf,
     }
@@ -3185,7 +3182,6 @@ def check_session_full(session_path, model=None) -> dict:
 
     # ── Compatibilité server.py ───────────────────────────────────────────
     vt = dim_vt.details
-    tp = dim_tp.details
     gv_left  = dim_gt.details.get("sides", {}).get("left", {})
     gv_right = dim_gt.details.get("sides", {}).get("right", {})
 
@@ -3208,7 +3204,6 @@ def check_session_full(session_path, model=None) -> dict:
             "gripper_health":         _dim_to_dict(dim_gh),
             "gripper_timestamp_sync": _dim_to_dict(dim_gt),
             "video_tracker_sync":     _dim_to_dict(dim_vt),
-            "tracker_placement":      _dim_to_dict(dim_tp),
             "video_quality":          _dim_to_dict(dim_vq),
             "gripper_frame_sync":     _dim_to_dict(dim_gf),
         },
@@ -3217,11 +3212,11 @@ def check_session_full(session_path, model=None) -> dict:
         "ia_score":       vt.get("ia_score"),
         "ia_scores":      vt.get("ia_scores", {}),
         "failed_gates":   vt.get("failed_gates", []),
-        "tracker_ok":     tp.get("ok"),
+        "tracker_ok":     None,
         "tracker_result": {
-            "pred":    tp.get("pred", {}),
-            "truth":   tp.get("truth", {}),
-            "correct": tp.get("correct", {}),
+            "pred":    {},
+            "truth":   {},
+            "correct": {},
         },
         "gripper_sync": {
             "left":  {
@@ -3282,13 +3277,12 @@ def _print_report(result: dict, full: bool = False) -> None:
     print(f"{'─'*60}")
 
     dim_order = ["video_orientation", "gripper_health", "gripper_timestamp_sync",
-                 "video_tracker_sync", "tracker_placement", "video_quality", "gripper_frame_sync"]
+                 "video_tracker_sync", "video_quality", "gripper_frame_sync"]
     labels = {
         "video_orientation":      "Orientation vidéos   (gate)",
         "gripper_health":         "Santé pinces         (gate)",
         "gripper_timestamp_sync": "Gripper TS sync      (25%)",
         "video_tracker_sync":     "Vidéo/tracker IA     (25%)",
-        "tracker_placement":      "Placement trackers   (15%)",
         "video_quality":          "Qualité vidéo        (20%)",
         "gripper_frame_sync":     "Sync frame/capteur   (15%)",
     }

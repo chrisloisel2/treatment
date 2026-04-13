@@ -6333,113 +6333,127 @@
 		}
 
 		async function runTest(sessions) {
-			log(`Test sur ${sessions.length} session(s)…`, 'INFO');
+			log(`Test sur ${sessions.length} session(s) en parallèle…`, 'INFO');
 			let nPerfect = 0, nError = 0;
-			for (const sess of sessions) {
-				try {
-					const r = await api('POST', '/api/pipeline/check_score', { session_path: sess.path });
-					const score = r.score ?? -1;
-					const grade = r.grade || '?';
-					const verdict = r.verdict || '';
-					const blocking = r.blocking_reason || '';
-					const conf = r.confidence != null ? ` conf=${Math.round(r.confidence * 100)}%` : '';
-					const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
-					const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
 
-					// En-tête session
-					log(`${sess.name}  ${scoreStr} grade=${grade}  ${verdict}${conf}${blocking ? '  ⚠ ' + blocking : ''}`, logLvl);
+			function _logSessionResult(sess, r) {
+				const score = r.score ?? -1;
+				const grade = r.grade || '?';
+				const verdict = r.verdict || '';
+				const blocking = r.blocking_reason || '';
+				const conf = r.confidence != null ? ` conf=${Math.round(r.confidence * 100)}%` : '';
+				const scoreStr = score >= 0 ? `${Math.round(score)}%` : '?';
+				const logLvl = score >= 70 ? 'OK' : score >= 40 ? 'WARN' : 'ERROR';
 
-					// Détail par dimension
-					const comp = r.components || {};
-					const DIM_LABELS = {
-						video_orientation:      'Orientation vidéos  (gate)',
-						gripper_health:         'Santé pinces        (gate)',
-						gripper_timestamp_sync: 'TS gripper          (25%)',
-						video_tracker_sync:     'Vidéo/tracker IA    (25%)',
-						tracker_placement:      'Placement trackers  (15%)',
-						video_quality:          'Qualité vidéo       (20%)',
-						gripper_frame_sync:     'Sync frame/capteur  (15%)',
-					};
-					for (const [key, label] of Object.entries(DIM_LABELS)) {
-						const d = comp[key];
-						if (!d) continue;
-						const dg = d.grade || '?';
-						const blk = d.blocking ? ' [BLOQUANT]' : '';
-						const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
-						log(`  [${dg}] ${label}: ${d.score != null && (key !== 'video_orientation' && key !== 'gripper_health') ? Math.round(d.score) + '%' : ''}  — ${d.summary || ''}${blk}`, lv);
+				// En-tête session
+				log(`${sess.name}  ${scoreStr} grade=${grade}  ${verdict}${conf}${blocking ? '  ⚠ ' + blocking : ''}`, logLvl);
 
-						// video_orientation : détail par caméra
-						if (key === 'video_orientation' && d.details) {
-							for (const side of ['left', 'right']) {
-								const sd = d.details[side];
-								if (!sd || sd.status) continue;
-								const pos = (sd.mean_position ?? 0.5).toFixed(3);
-											const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
-											const lc = sd.at_bottom ? 'ERROR' : 'INFO';
-								log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
-							}
-						}
+				// Détail par dimension
+				const comp = r.components || {};
+				const DIM_LABELS = {
+					video_orientation:      'Orientation vidéos  (gate)',
+					gripper_health:         'Santé pinces        (gate)',
+					gripper_timestamp_sync: 'TS gripper          (25%)',
+					video_tracker_sync:     'Vidéo/tracker IA    (25%)',
+					tracker_placement:      'Placement trackers  (15%)',
+					video_quality:          'Qualité vidéo       (20%)',
+					gripper_frame_sync:     'Sync frame/capteur  (15%)',
+				};
+				for (const [key, label] of Object.entries(DIM_LABELS)) {
+					const d = comp[key];
+					if (!d) continue;
+					const dg = d.grade || '?';
+					const blk = d.blocking ? ' [BLOQUANT]' : '';
+					const lv = d.blocking ? 'ERROR' : d.ok === false ? 'WARN' : 'INFO';
+					log(`  [${dg}] ${label}: ${d.score != null && (key !== 'video_orientation' && key !== 'gripper_health') ? Math.round(d.score) + '%' : ''}  — ${d.summary || ''}${blk}`, lv);
 
-						// gripper_health : détail par côté
-						if (key === 'gripper_health' && d.details) {
-							for (const side of ['left', 'right']) {
-								const sd = d.details[side];
-								if (!sd || sd.status) continue;
-								const lc = sd.defective ? 'ERROR' : 'INFO';
-								const tag = sd.defective ? '✗ DEFECTUEUSE' : '✓ OK';
-								log(`    ${side}: ${tag}  mean=${(sd.mean_mm || 0).toFixed(3)}mm  range=[${(sd.min_mm || 0).toFixed(1)}, ${(sd.max_mm || 0).toFixed(1)}]  n=${sd.n_samples || 0}`, lc);
-							}
-						}
-
-						// Détail gripper_frame_sync : lag, r, anomalies
-						if (key === 'gripper_frame_sync' && d.details) {
-							const gdet = d.details.sides || {};
-							for (const [side, sd] of Object.entries(gdet)) {
-								if (!sd || !sd.success) continue;
-								const lagC = Math.abs(sd.lag_ms || 0) <= 50 ? 'OK' : Math.abs(sd.lag_ms || 0) <= 100 ? 'WARN' : 'ERROR';
-								log(`    ${side}: r=${(sd.global_r || 0).toFixed(3)}  lag=${(sd.lag_ms || 0).toFixed(0)}ms  frames_sync=${((sd.frames_in_sync || 0) * 100).toFixed(1)}%  anomalies=${(sd.anomaly_frames || []).length}`, lagC);
-							}
+					// video_orientation : détail par caméra
+					if (key === 'video_orientation' && d.details) {
+						for (const side of ['left', 'right']) {
+							const sd = d.details[side];
+							if (!sd || sd.status) continue;
+							const pos = (sd.mean_position ?? 0.5).toFixed(3);
+										const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
+										const lc = sd.at_bottom ? 'ERROR' : 'INFO';
+							log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
 						}
 					}
 
-					// Réparations recommandées
-					const repairs = r.repairs || [];
-					if (repairs.length) {
-						log(`  ⚙ Réparations (${repairs.length}):`, 'WARN');
-						repairs.forEach(rep => log(`    • ${rep}`, 'WARN'));
+					// gripper_health : détail par côté
+					if (key === 'gripper_health' && d.details) {
+						for (const side of ['left', 'right']) {
+							const sd = d.details[side];
+							if (!sd || sd.status) continue;
+							const lc = sd.defective ? 'ERROR' : 'INFO';
+							const tag = sd.defective ? '✗ DEFECTUEUSE' : '✓ OK';
+							log(`    ${side}: ${tag}  mean=${(sd.mean_mm || 0).toFixed(3)}mm  range=[${(sd.min_mm || 0).toFixed(1)}, ${(sd.max_mm || 0).toFixed(1)}]  n=${sd.n_samples || 0}`, lc);
+						}
 					}
 
-					// Données manquantes
-					const missing = r.missing_data || [];
-					if (missing.length) log(`  ⚠ Manquant: ${missing.join(', ')}`, 'WARN');
-
-					// Propager dans S.sessions et mettre à jour uniquement cette ligne
-					const s = S.sessions.find(s => s.path === sess.path);
-					if (s) {
-						if (!s.meta) s.meta = {};
-						s.meta.check_score = r.score;
-						s.meta.check_grade = r.grade;
-						s.meta.check_verdict = r.verdict;
-						s.meta.check_ia_score = r.ia_score ?? null;
-						s.meta.check_blocking = r.blocking_reason || '';
-						s.meta.repair_perfect = r.repair_perfect ?? false;
-						s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
-						s.meta.repair_score = r.repair_score ?? score;
-						_patchSessRow(sess.path);
+					// Détail gripper_frame_sync : lag, r, anomalies
+					if (key === 'gripper_frame_sync' && d.details) {
+						const gdet = d.details.sides || {};
+						for (const [side, sd] of Object.entries(gdet)) {
+							if (!sd || !sd.success) continue;
+							const lagC = Math.abs(sd.lag_ms || 0) <= 50 ? 'OK' : Math.abs(sd.lag_ms || 0) <= 100 ? 'WARN' : 'ERROR';
+							log(`    ${side}: r=${(sd.global_r || 0).toFixed(3)}  lag=${(sd.lag_ms || 0).toFixed(0)}ms  frames_sync=${((sd.frames_in_sync || 0) * 100).toFixed(1)}%  anomalies=${(sd.anomaly_frames || []).length}`, lagC);
+						}
 					}
+				}
 
-					if (r.tracker_auto_fixed) {
-						const fm = r.tracker_fix_mapping || {};
-						const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
-						log(`  🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
-					}
-					if (r.repair_perfect) { log(`★ ${sess.name} PARFAITE`, 'OK'); nPerfect++; }
-					else { log(`✗ ${sess.name} — ${verdict || 'ERREUR'}`, 'ERROR'); nError++; }
-				} catch (e) {
-					log(`Test ${sess.name}: ${e.message}`, 'ERROR');
+				// Réparations recommandées
+				const repairs = r.repairs || [];
+				if (repairs.length) {
+					log(`  ⚙ Réparations (${repairs.length}):`, 'WARN');
+					repairs.forEach(rep => log(`    • ${rep}`, 'WARN'));
+				}
+
+				// Données manquantes
+				const missing = r.missing_data || [];
+				if (missing.length) log(`  ⚠ Manquant: ${missing.join(', ')}`, 'WARN');
+
+				// Propager dans S.sessions et mettre à jour uniquement cette ligne
+				const s = S.sessions.find(s => s.path === sess.path);
+				if (s) {
+					if (!s.meta) s.meta = {};
+					s.meta.check_score = r.score;
+					s.meta.check_grade = r.grade;
+					s.meta.check_verdict = r.verdict;
+					s.meta.check_ia_score = r.ia_score ?? null;
+					s.meta.check_blocking = r.blocking_reason || '';
+					s.meta.repair_perfect = r.repair_perfect ?? false;
+					s.meta.repair_unrecoverable = r.repair_unrecoverable ?? false;
+					s.meta.repair_score = r.repair_score ?? score;
+					_patchSessRow(sess.path);
+				}
+
+				if (r.tracker_auto_fixed) {
+					const fm = r.tracker_fix_mapping || {};
+					const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
+					log(`  🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
+				}
+				return r.repair_perfect;
+			}
+
+			const results = await Promise.allSettled(
+				sessions.map(sess =>
+					api('POST', '/api/pipeline/check_score', { session_path: sess.path })
+						.then(r => ({ sess, r }))
+				)
+			);
+
+			for (const outcome of results) {
+				if (outcome.status === 'fulfilled') {
+					const { sess, r } = outcome.value;
+					const perfect = _logSessionResult(sess, r);
+					if (perfect) nPerfect++; else nError++;
+				} else {
+					const sess = sessions[results.indexOf(outcome)];
+					log(`Test ${sess?.name ?? '?'}: ${outcome.reason?.message ?? outcome.reason}`, 'ERROR');
 					nError++;
 				}
 			}
+
 			log(`Test terminé — ★ ${nPerfect} parfaite(s)  ✗ ${nError} non-parfaite(s)`, nError && !nPerfect ? 'ERROR' : nError ? 'WARN' : 'OK');
 			renderSessionsList();
 		}

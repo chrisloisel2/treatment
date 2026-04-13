@@ -5214,13 +5214,36 @@ async def download_sessions(req: DownloadSessionsRequest):
     - MP4  → ZIP_STORED  (déjà compressés, DEFLATE serait lent et inutile)
     - Reste → ZIP_DEFLATED
     Les fichiers MP4 peuvent être exclus via include_mp4=false.
+    Un fichier _video_report.json est ajouté au ZIP indiquant l'état des vidéos
+    par session (présentes / manquantes).
     """
     import tempfile
     import zipfile
 
+    VIDEO_POSITIONS = {"left", "right", "head"}
+
     sessions = [Path(p) for p in req.sessions if Path(p).exists()]
     if not sessions:
         raise HTTPException(404, "Aucune session trouvée")
+
+    # ── Vérification des vidéos par session ──────────────────────────────────
+    video_report: list = []
+    for sess in sessions:
+        vid_dir = sess / "videos"
+        present: list = []
+        missing: list = []
+        for pos in sorted(VIDEO_POSITIONS):
+            mp4 = vid_dir / f"{pos}.mp4"
+            if mp4.exists():
+                present.append(pos)
+            else:
+                missing.append(pos)
+        video_report.append({
+            "session":  sess.name,
+            "present":  present,
+            "missing":  missing,
+            "ok":       len(missing) == 0,
+        })
 
     # Nom du fichier ZIP
     zip_name = f"{sessions[0].name}.zip" if len(sessions) == 1 \
@@ -5235,6 +5258,10 @@ async def download_sessions(req: DownloadSessionsRequest):
 
     try:
         with zipfile.ZipFile(tmp_path, mode="w", allowZip64=True) as zf:
+            # Rapport vidéo en tête de ZIP
+            report_json = json.dumps(video_report, ensure_ascii=False, indent=2)
+            zf.writestr("_video_report.json", report_json, compress_type=zipfile.ZIP_DEFLATED)
+
             for sess in sessions:
                 for f in sorted(sess.rglob("*")):
                     if not f.is_file():
@@ -5250,6 +5277,10 @@ async def download_sessions(req: DownloadSessionsRequest):
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(500, f"Erreur ZIP : {e}")
 
+    # Résumé dans l'en-tête HTTP (sessions sans vidéos)
+    sessions_missing = [r["session"] for r in video_report if r["missing"]]
+    missing_header = ",".join(sessions_missing) if sessions_missing else ""
+
     # Streaming par chunks de 4 Mo + suppression du temp après envoi
     def _stream_and_cleanup():
         try:
@@ -5262,10 +5293,14 @@ async def download_sessions(req: DownloadSessionsRequest):
         finally:
             tmp_path.unlink(missing_ok=True)
 
+    headers = {"Content-Disposition": f'attachment; filename="{zip_name}"'}
+    if missing_header:
+        headers["X-Missing-Videos"] = missing_header
+
     return StreamingResponse(
         _stream_and_cleanup(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+        headers=headers,
     )
 
 

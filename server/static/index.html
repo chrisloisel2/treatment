@@ -6623,6 +6623,7 @@
 					const err = await resp.text();
 					throw new Error(err);
 				}
+				const missingVideos = resp.headers.get('X-Missing-Videos') || '';
 				const blob = await resp.blob();
 				const cd = resp.headers.get('Content-Disposition') || '';
 				const match = cd.match(/filename="?([^"]+)"?/);
@@ -6633,7 +6634,13 @@
 				document.body.appendChild(a); a.click();
 				document.body.removeChild(a);
 				URL.revokeObjectURL(url);
-				log(`Download ZIP : ${fname}`, 'OK');
+				if (missingVideos) {
+					const names = missingVideos.split(',').join('\n  - ');
+					log(`⚠ Sessions sans vidéos MP4 : ${missingVideos}`, 'WARN');
+					alert(`⚠ Attention : les sessions suivantes n'ont pas toutes leurs vidéos :\n  - ${names}\n\nLe ZIP a quand même été téléchargé (voir _video_report.json).`);
+				} else {
+					log(`Download ZIP : ${fname} — toutes les vidéos présentes ✓`, 'OK');
+				}
 			} catch (e) {
 				log(`Download échoué : ${e.message}`, 'ERROR');
 				alert(`Erreur lors du téléchargement : ${e.message}`);

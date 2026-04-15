@@ -104,6 +104,7 @@ STEP_NAMES = [
     "ia_sync",
     "validate",
     "store",
+    "test",
 ]
 
 # Étapes destructives qui nécessitent un backup + rollback automatique en cas d'échec
@@ -1401,6 +1402,95 @@ def step_store(state: SessionPipelineState, log: PipelineLogger) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Étape TEST — vérification géométrique des trackers (check_trackers.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def step_test(state: SessionPipelineState, log: PipelineLogger, params: dict) -> dict:
+    """
+    Vérification géométrique des trackers via check_trackers.py.
+
+    Charge tracker_reference.json (à la racine du projet), puis détecte
+    les frames suspectes dans tracker_positions.csv selon le modèle de référence.
+
+    Paramètres (via params) :
+      - tracker_mad_multiplier  : tolérance écart relatif  (défaut 8.0)
+      - tracker_speed_multiplier: tolérance vitesse        (défaut 3.0)
+      - tracker_max_bad_pct     : % max de frames suspectes avant échec (défaut 25.0)
+
+    Résultat stocké dans step.detail :
+      {
+        "total_frames": int,
+        "bad_frames":   int,
+        "bad_pct":      float,
+        "n_intervals":  int,
+        "intervals":    [...],   # liste des intervalles suspects
+        "reference":    str,     # chemin du JSON de référence utilisé
+      }
+    """
+    import sys as _sys
+    import importlib.util as _ilu
+
+    sess = Path(state.session_path)
+    csv_path = sess / "tracker_positions.csv"
+
+    if not csv_path.exists():
+        log("step_test: tracker_positions.csv introuvable — étape ignorée", "WARN")
+        return {"skipped": True, "reason": "tracker_positions.csv introuvable"}
+
+    # Chercher tracker_reference.json à la racine du projet
+    ref_path = _ROOT / "tracker_reference.json"
+    if not ref_path.exists():
+        log(f"step_test: tracker_reference.json introuvable ({ref_path}) — étape ignorée", "WARN")
+        return {"skipped": True, "reason": "tracker_reference.json introuvable"}
+
+    # Charger check_trackers depuis la racine du projet
+    spec = _ilu.spec_from_file_location("check_trackers", _ROOT / "check_trackers.py")
+    mod = _ilu.module_from_spec(spec)
+    _sys.modules["check_trackers"] = mod
+    spec.loader.exec_module(mod)
+
+    # Paramètres
+    mad_mult   = float(params.get("tracker_mad_multiplier",   8.0))
+    speed_mult = float(params.get("tracker_speed_multiplier", 3.0))
+    max_bad_pct = float(params.get("tracker_max_bad_pct",    25.0))
+
+    # Charger référence + CSV
+    ref    = mod.load_reference(ref_path)
+    df     = mod.load_csv(csv_path)
+    flag_df = mod.detect_bad_frames(df, ref, mad_multiplier=mad_mult, speed_multiplier=speed_mult)
+    intervals = mod.bad_intervals(flag_df)
+
+    total   = len(flag_df)
+    n_bad   = int(flag_df["bad_any"].sum())
+    bad_pct = round(100.0 * n_bad / total, 2) if total else 0.0
+
+    result = {
+        "total_frames": total,
+        "bad_frames":   n_bad,
+        "bad_pct":      bad_pct,
+        "n_intervals":  len(intervals),
+        "intervals":    intervals[:50],   # cap à 50 pour la sérialisation
+        "reference":    str(ref_path),
+        "mad_multiplier":   mad_mult,
+        "speed_multiplier": speed_mult,
+    }
+
+    log(f"Tracker check: {total} frames — {n_bad} suspectes ({bad_pct:.2f}%) — "
+        f"{len(intervals)} intervalles", "INFO")
+
+    if bad_pct > max_bad_pct:
+        raise ValueError(
+            f"Trop de frames tracker suspectes: {bad_pct:.2f}% > seuil {max_bad_pct:.0f}% "
+            f"({n_bad}/{total} frames, {len(intervals)} intervalles)"
+        )
+
+    if bad_pct > 5.0:
+        log(f"Attention: {bad_pct:.2f}% de frames suspectes (seuil alerte 5%)", "WARN")
+
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Orchestrateur principal
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1560,6 +1650,11 @@ class PipelineRunner:
                     state.steps["store"].status  = StepStatus.SKIPPED
                     state.steps["store"].message = "write_mode désactivé — aucune écriture vers/home/ia/silver"
                     self.log("Store ignoré (write_mode=False) — données disponibles dans /mnt/storage/silver//", "INFO")
+
+            # ── Étape TEST : Vérification géométrique trackers (check_trackers.py) ──
+            if self._should_run(state, "test"):
+                with self._step_ctx(state, "test") as ctx:
+                    ctx.result = step_test(state, self.log, self.params)
 
             state.finished = True
             state.success  = True

@@ -746,7 +746,7 @@ def _poll_pipeline_state(job: "Job", session_path: str,  # type: ignore[name-def
     """Thread de polling : lit pipeline_state.json toutes les 2s et broadcaste les mises à jour."""
     from pipeline.pipeline import StepStatus, SessionPipelineState
     STEP_NAMES = ["detect", "check_sync", "verify", "rotate", "tracker", "video",
-                  "verify_labels", "flux_csv", "ia_sync", "validate", "store"]
+                  "verify_labels", "flux_csv", "ia_sync", "validate", "store", "test"]
     sess = Path(session_path)
     last_current = None
     while not stop_event.is_set():

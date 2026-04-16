@@ -5289,6 +5289,156 @@ async def download_sessions(req: DownloadSessionsRequest):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Upload sessions vers Mistral (ZIP asynchrone)
+# ──────────────────────────────────────────────────────────────────────────────
+
+MISTRAL_BASE_URL = os.getenv("MISTRAL_BASE_URL", "http://13.62.206.125:5001")
+MISTRAL_USERNAME = os.getenv("MISTRAL_USERNAME", os.getenv("USERNAME", ""))
+MISTRAL_PASSWORD = os.getenv("MISTRAL_PASSWORD", os.getenv("PASSWORD", ""))
+
+
+class MistralUploadRequest(BaseModel):
+    sessions:    List[str]      # chemins absolus des sessions
+    include_mp4: bool = True    # inclure les fichiers MP4
+    zip_name:    Optional[str] = None  # nom du ZIP (sans .zip), auto si absent
+    username:    Optional[str] = None  # surcharge la var d'env
+    password:    Optional[str] = None  # surcharge la var d'env
+
+
+def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
+    import tempfile
+    import zipfile
+    import requests as req_lib
+
+    sessions = [Path(p) for p in req.sessions if Path(p).exists()]
+    if not sessions:
+        _log_job(job, "Aucune session trouvée", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    username = req.username or MISTRAL_USERNAME
+    password = req.password or MISTRAL_PASSWORD
+
+    auto_name = sessions[0].name if len(sessions) == 1 else f"sessions_{len(sessions)}"
+    zip_stem = req.zip_name.strip() if req.zip_name and req.zip_name.strip() else auto_name
+    zip_name = f"{zip_stem}.zip"
+
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    _log_job(job, f"Préparation du ZIP '{zip_name}' ({len(sessions)} session(s))…")
+
+    VIDEO_POSITIONS = {"left", "right", "head"}
+
+    # ── Étape 1 : construction du ZIP ────────────────────────────────────────
+    tmp_dir = Path("/mnt/tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=tmp_dir)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        with zipfile.ZipFile(tmp_path, mode="w", allowZip64=True) as zf:
+            for i, sess in enumerate(sessions):
+                _log_job(job, f"[{i+1}/{len(sessions)}] Compression de {sess.name}…")
+                for f in sorted(sess.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    if not req.include_mp4 and f.suffix.lower() == ".mp4":
+                        continue
+                    compression = (zipfile.ZIP_STORED
+                                   if f.suffix.lower() in (".mp4", ".mkv", ".avi")
+                                   else zipfile.ZIP_DEFLATED)
+                    arcname = f.relative_to(sess.parent)
+                    zf.write(str(f), str(arcname), compress_type=compression)
+                _update_job(job, progress=round((i + 1) / len(sessions) * 60, 1))
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        _log_job(job, f"Erreur ZIP : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    zip_size_mb = tmp_path.stat().st_size / (1024 * 1024)
+    _log_job(job, f"ZIP prêt : {zip_name} ({zip_size_mb:.1f} Mo)")
+    _update_job(job, progress=65.0)
+
+    # ── Étape 2 : demande d'URL signée ───────────────────────────────────────
+    _log_job(job, f"Demande d'URL signée auprès de {MISTRAL_BASE_URL}…")
+    session_http = req_lib.Session()
+    payload = {
+        "username": username,
+        "password": password,
+        "repo_id":  zip_stem,
+        "filename": zip_name,
+    }
+    try:
+        r = session_http.post(
+            url=f"{MISTRAL_BASE_URL}/pd/upload",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+    except req_lib.RequestException as e:
+        tmp_path.unlink(missing_ok=True)
+        _log_job(job, f"Erreur de connexion : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    if r.status_code != 200:
+        tmp_path.unlink(missing_ok=True)
+        try:
+            err = r.json().get("error", "Unknown error")
+        except Exception:
+            err = r.text
+        _log_job(job, f"Erreur serveur Mistral ({r.status_code}) : {err}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    signed_url = r.json().get("url")
+    if not signed_url:
+        tmp_path.unlink(missing_ok=True)
+        _log_job(job, "Pas d'URL d'upload reçue.", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    _log_job(job, "URL signée obtenue. Upload en cours…")
+    _update_job(job, progress=70.0)
+
+    # ── Étape 3 : upload du fichier ──────────────────────────────────────────
+    try:
+        with open(tmp_path, "rb") as fh:
+            resp = session_http.put(
+                signed_url,
+                data=fh,
+                headers={"Content-Type": "application/zip"},
+                timeout=300,
+            )
+    except req_lib.RequestException as e:
+        tmp_path.unlink(missing_ok=True)
+        _log_job(job, f"Erreur upload : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if resp.status_code in (200, 201, 204):
+        _log_job(job, f"Upload réussi : {zip_name} ({zip_size_mb:.1f} Mo) ✓", "OK")
+        _update_job(job, status=JobStatus.DONE, finished_at=_now(), progress=100.0,
+                    result={"zip_name": zip_name, "size_mb": round(zip_size_mb, 1)})
+    else:
+        _log_job(job, f"Upload échoué {resp.status_code} : {resp.text}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+
+
+@app.post("/api/mistral/upload")
+async def mistral_upload(req: MistralUploadRequest):
+    """Lance un job asynchrone : zippe les sessions et les envoie au serveur Mistral."""
+    if not req.sessions:
+        raise HTTPException(400, "Aucune session fournie")
+    job = _new_job("mistral_upload")
+    threading.Thread(target=_worker_mistral_upload, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
 

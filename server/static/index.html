@@ -537,9 +537,10 @@
 			transform: none;
 		}
 
-		/* Modal export / reject */
+		/* Modal export / reject / mistral */
 		#export-modal-backdrop,
-		#reject-modal-backdrop {
+		#reject-modal-backdrop,
+		#mistral-modal-backdrop {
 			display: none;
 			position: fixed;
 			inset: 0;
@@ -550,7 +551,8 @@
 		}
 
 		#export-modal-backdrop.open,
-		#reject-modal-backdrop.open {
+		#reject-modal-backdrop.open,
+		#mistral-modal-backdrop.open {
 			display: flex;
 		}
 
@@ -4162,6 +4164,11 @@
 								title="Télécharger les sessions sélectionnées en ZIP">
 								⬇ Download
 							</button>
+							<button class="btn" id="btn-sess-mistral" onclick="openMistralModal()" disabled
+								style="background:#7c3aed1a;border-color:#7c3aed44;color:#a78bfa"
+								title="Zipper et envoyer les sessions au serveur Mistral">
+								🚀 Mistral
+							</button>
 							<div style="flex:1"></div>
 							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0
 								sélectionnée(s)</span>
@@ -5796,6 +5803,61 @@
 		</div>
 	</div>
 
+	<!-- ══ Modal Mistral Upload ════════════════════════════════════════ -->
+	<div id="mistral-modal-backdrop" onclick="mistralModalClose(event)">
+		<div id="export-modal">
+			<h3 style="color:#a78bfa">🚀 Envoyer vers Mistral</h3>
+			<div class="exp-sub" id="mistral-modal-sub">0 session(s) sélectionnée(s)</div>
+
+			<div class="exp-section">Nom du ZIP</div>
+			<div class="fr">
+				<label>Nom</label>
+				<input type="text" id="mistral-zip-name" placeholder="auto (nom de la session ou sessions_N)"
+					style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px;flex:1" />
+			</div>
+			<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px">Laissez vide pour le nom automatique. L'extension .zip est ajoutée automatiquement.</div>
+
+			<div class="exp-section">Options</div>
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+				<input type="checkbox" id="mistral-include-mp4" checked style="width:16px;height:16px;cursor:pointer" />
+				<label for="mistral-include-mp4" style="font-size:.85rem;color:var(--text2);cursor:pointer">Inclure les fichiers vidéo MP4</label>
+			</div>
+
+			<div class="exp-section">Authentification (optionnel)</div>
+			<div class="fr" style="margin-bottom:6px">
+				<label>Utilisateur</label>
+				<input type="text" id="mistral-username" placeholder="variable d'env MISTRAL_USERNAME"
+					style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px;flex:1" />
+			</div>
+			<div class="fr" style="margin-bottom:14px">
+				<label>Mot de passe</label>
+				<input type="password" id="mistral-password" placeholder="variable d'env MISTRAL_PASSWORD"
+					style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px;flex:1" />
+			</div>
+
+			<!-- Barre de progression inline -->
+			<div id="mistral-progress-wrap" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #7c3aed44;border-radius:var(--rs)">
+				<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+					<span id="mistral-progress-ico">⏳</span>
+					<span id="mistral-progress-text" style="font-size:.85rem;color:var(--text2)">En cours…</span>
+					<a id="mistral-job-link" href="#" onclick="nav('jobs',null);mistralModalClose();return false"
+						style="margin-left:auto;color:#a78bfa;font-size:.75rem;text-decoration:underline;display:none">Voir le job →</a>
+				</div>
+				<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
+					<div id="mistral-progress-bar" style="height:100%;background:#7c3aed;width:0%;transition:width .4s"></div>
+				</div>
+			</div>
+
+			<div class="exp-btns">
+				<button class="btn" id="mistral-btn-cancel" onclick="mistralModalClose()">Annuler</button>
+				<button class="btn" id="btn-mistral-confirm" onclick="doMistralUpload()"
+					style="background:#7c3aed22;border-color:#7c3aed66;color:#a78bfa;font-weight:700;padding:10px 24px">
+					🚀 Envoyer
+				</button>
+			</div>
+		</div>
+	</div>
+
 	<!-- ══ Modal Export ════════════════════════════════════════════════ -->
 	<div id="export-modal-backdrop" onclick="exportModalClose(event)">
 		<div id="export-modal">
@@ -6654,6 +6716,104 @@
 				alert(`Erreur lors du téléchargement : ${e.message}`);
 			} finally {
 				if (btn) { btn.disabled = sel.length === 0; btn.textContent = '⬇ Download'; }
+			}
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Mistral Upload
+		// ══════════════════════════════════════════════════════════════════
+
+		let _mistralSessions = [];
+		let _mistralJobId = null;
+		let _mistralPollTimer = null;
+
+		function openMistralModal() {
+			_mistralSessions = [...S.selected];
+			if (!_mistralSessions.length) { alert('Sélectionnez des sessions.'); return; }
+			ge('mistral-modal-sub').textContent = `${_mistralSessions.length} session(s) sélectionnée(s)`;
+			ge('mistral-zip-name').value = '';
+			ge('mistral-include-mp4').checked = true;
+			ge('mistral-username').value = '';
+			ge('mistral-password').value = '';
+			ge('mistral-progress-wrap').style.display = 'none';
+			ge('mistral-progress-bar').style.width = '0%';
+			ge('mistral-progress-ico').textContent = '⏳';
+			ge('mistral-progress-text').textContent = 'En cours…';
+			ge('mistral-job-link').style.display = 'none';
+			ge('btn-mistral-confirm').disabled = false;
+			ge('btn-mistral-confirm').textContent = '🚀 Envoyer';
+			ge('mistral-btn-cancel').textContent = 'Annuler';
+			ge('mistral-modal-backdrop').classList.add('open');
+		}
+
+		function mistralModalClose(evt) {
+			if (evt && evt.target !== ge('mistral-modal-backdrop')) return;
+			if (_mistralPollTimer) { clearInterval(_mistralPollTimer); _mistralPollTimer = null; }
+			ge('mistral-modal-backdrop').classList.remove('open');
+		}
+
+		async function doMistralUpload() {
+			const body = {
+				sessions: _mistralSessions,
+				include_mp4: ge('mistral-include-mp4').checked,
+				zip_name: ge('mistral-zip-name').value.trim() || null,
+				username: ge('mistral-username').value.trim() || null,
+				password: ge('mistral-password').value.trim() || null,
+			};
+
+			ge('btn-mistral-confirm').disabled = true;
+			ge('btn-mistral-confirm').textContent = '⏳ Envoi…';
+			ge('mistral-progress-wrap').style.display = '';
+			ge('mistral-progress-bar').style.width = '0%';
+			ge('mistral-progress-ico').textContent = '⏳';
+			ge('mistral-progress-text').textContent = 'Lancement du job…';
+
+			try {
+				const data = await api('POST', '/api/mistral/upload', body);
+				_mistralJobId = data.job_id;
+				ge('mistral-job-link').style.display = '';
+				log(`Job Mistral lancé : ${_mistralJobId}`, 'OK');
+				_mistralPollTimer = setInterval(_mistralPollJob, 1500);
+			} catch (e) {
+				ge('mistral-progress-ico').textContent = '❌';
+				ge('mistral-progress-text').textContent = `Erreur : ${e.message}`;
+				ge('btn-mistral-confirm').disabled = false;
+				ge('btn-mistral-confirm').textContent = '🚀 Envoyer';
+				log(`Erreur Mistral upload : ${e.message}`, 'ERROR');
+			}
+		}
+
+		async function _mistralPollJob() {
+			if (!_mistralJobId) return;
+			try {
+				const job = await api('GET', `/api/jobs/${_mistralJobId}`);
+				const pct = job.progress ?? 0;
+				ge('mistral-progress-bar').style.width = `${pct}%`;
+
+				if (job.status === 'running' || job.status === 'pending') {
+					const lastLog = job.logs?.length ? job.logs[job.logs.length - 1].msg : 'En cours…';
+					ge('mistral-progress-text').textContent = lastLog;
+				} else if (job.status === 'done') {
+					clearInterval(_mistralPollTimer); _mistralPollTimer = null;
+					ge('mistral-progress-bar').style.width = '100%';
+					ge('mistral-progress-ico').textContent = '✅';
+					const zipName = job.result?.zip_name ?? 'sessions.zip';
+					const sizeMb = job.result?.size_mb ?? '?';
+					ge('mistral-progress-text').textContent = `Upload réussi : ${zipName} (${sizeMb} Mo)`;
+					ge('btn-mistral-confirm').textContent = '✅ Envoyé';
+					ge('mistral-btn-cancel').textContent = 'Fermer';
+					log(`Mistral upload terminé : ${zipName} (${sizeMb} Mo) ✓`, 'OK');
+				} else if (job.status === 'error') {
+					clearInterval(_mistralPollTimer); _mistralPollTimer = null;
+					ge('mistral-progress-ico').textContent = '❌';
+					const lastErr = job.logs?.length ? job.logs[job.logs.length - 1].msg : 'Erreur inconnue';
+					ge('mistral-progress-text').textContent = lastErr;
+					ge('btn-mistral-confirm').disabled = false;
+					ge('btn-mistral-confirm').textContent = '🚀 Réessayer';
+					log(`Mistral upload échoué : ${lastErr}`, 'ERROR');
+				}
+			} catch (e) {
+				// poll silencieux, on réessaie au prochain tick
 			}
 		}
 
@@ -10713,7 +10873,7 @@
 			} catch (e) { }
 		}
 
-		// ── Boutons export/reject : activer/désactiver selon sélection ──────
+		// ── Boutons export/reject/mistral : activer/désactiver selon sélection ──
 		function refreshExportBtn() {
 			const n = S.selected.size;
 			const hasAction = n > 0 || !!S.drawerSess;
@@ -10723,6 +10883,8 @@
 			if (rbtn) rbtn.disabled = n === 0;
 			const vebtn = ge('btn-verify-export');
 			if (vebtn) vebtn.disabled = n === 0;
+			const mbtn = ge('btn-sess-mistral');
+			if (mbtn) mbtn.disabled = n === 0;
 			refreshPcExportBtn();
 		}
 

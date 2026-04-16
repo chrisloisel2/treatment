@@ -5585,60 +5585,72 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
         setup_ok, setup_warn = 0, 0
 
         for i, sess in enumerate(staged):
+            # ── Lecture metadata depuis la COPIE dans le staging ─────────────
             meta_path = sess / "metadata.json"
             meta: dict = {}
             if meta_path.exists():
                 try:
                     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log_job(job, f"  ⚠ {sess.name} — metadata illisible : {e}", "WARN")
 
             meta_scenario = (meta.get("scenario") or "").strip()
-            sc = _find_scenario_by_meta(meta_scenario, scenarios) if meta_scenario else None
+            if not meta_scenario:
+                setup_warn += 1
+                _log_job(job, f"  ⚠ {sess.name} — champ 'scenario' absent dans metadata", "WARN")
+                _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
+                continue
+
+            # ── Résolution du scénario ────────────────────────────────────────
+            # Si MongoDB accessible → sc.name = nom canonique, sc.do = instruction
+            # Sinon → on utilise meta.scenario directement comme nom de dossier
+            sc = _find_scenario_by_meta(meta_scenario, scenarios)
+            sc_name = sc["name"] if sc else meta_scenario   # fallback : nom brut
+            sc_do   = sc.get("do") if sc else None
 
             if sc is None:
-                setup_warn += 1
-                _log_job(job, f"  ⚠ {sess.name} — scénario non trouvé ('{meta_scenario}'), laissé à plat", "WARN")
-                _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
-                continue
+                _log_job(job, f"  ⚠ {sess.name} — scénario '{meta_scenario}' non trouvé en BD, "
+                              f"dossier = '{sc_name}' (metadata non mise à jour)", "WARN")
 
-            sc_name = sc["name"]
-
-            # Déjà dans /staging/{scénario}/{sous-dossier}/session → ignorer
-            if sess.parent.parent.name.lower() in known_names_lower:
+            # ── Déjà dans /staging/{sc_name}/{sous-dossier}/session → laisser ─
+            if sess.parent.parent.name == sc_name:
                 setup_ok += 1
                 _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
                 continue
 
-            # Déjà dans /staging/{scénario}/session → ok, juste metadata
+            # ── Déjà dans /staging/{sc_name}/session → juste metadata ─────────
             if sess.parent.name == sc_name:
-                if sc.get("do") and meta.get("scenario") != sc["do"]:
+                if sc_do and meta.get("scenario") != sc_do:
                     try:
-                        meta["scenario"] = sc["do"]
+                        meta["scenario"] = sc_do
                         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-                    except Exception:
-                        pass
+                        _log_job(job, f"  ~ {sess.name} — déjà placé, metadata.scenario ← '{sc_do}'")
+                    except Exception as e:
+                        _log_job(job, f"  ⚠ {sess.name} — metadata non mise à jour : {e}", "WARN")
                 setup_ok += 1
                 _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
                 continue
 
-            # Déplacer dans staging/{scénario}/session
+            # ── Déplacer dans staging/{sc_name}/session ───────────────────────
             dest = staging_dir / sc_name / sess.name
             try:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(sess), str(dest))
-                # Mettre à jour metadata
-                new_meta = dest / "metadata.json"
-                if new_meta.exists():
-                    m = json.loads(new_meta.read_text(encoding="utf-8"))
-                    if sc.get("do"):
-                        m["scenario"] = sc["do"]
-                    new_meta.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
-                _log_job(job, f"  ✓ {sess.name} → {sc_name}/")
+
+                # Mettre à jour metadata depuis la NOUVELLE position
+                new_meta_path = dest / "metadata.json"
+                if new_meta_path.exists():
+                    m = json.loads(new_meta_path.read_text(encoding="utf-8"))
+                    if sc_do:
+                        m["scenario"] = sc_do
+                        _log_job(job, f"  ✓ {sess.name} → {sc_name}/  (scenario ← '{sc_do}')")
+                    else:
+                        _log_job(job, f"  ✓ {sess.name} → {sc_name}/")
+                    new_meta_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
                 setup_ok += 1
             except Exception as e:
                 setup_warn += 1
-                _log_job(job, f"  ⚠ {sess.name} — déplacement échoué : {e}", "WARN")
+                _log_job(job, f"  ✗ {sess.name} — déplacement échoué : {e}", "ERROR")
 
             _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
 

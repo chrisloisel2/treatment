@@ -537,10 +537,11 @@
 			transform: none;
 		}
 
-		/* Modal export / reject / mistral */
+		/* Modal export / reject / mistral / setup */
 		#export-modal-backdrop,
 		#reject-modal-backdrop,
-		#mistral-modal-backdrop {
+		#mistral-modal-backdrop,
+		#setup-modal-backdrop {
 			display: none;
 			position: fixed;
 			inset: 0;
@@ -552,7 +553,8 @@
 
 		#export-modal-backdrop.open,
 		#reject-modal-backdrop.open,
-		#mistral-modal-backdrop.open {
+		#mistral-modal-backdrop.open,
+		#setup-modal-backdrop.open {
 			display: flex;
 		}
 
@@ -4169,6 +4171,11 @@
 								title="Zipper et envoyer les sessions au serveur Mistral">
 								🚀 Mistral
 							</button>
+							<button class="btn" id="btn-sess-setup" onclick="openSetupModal()" disabled
+								style="background:#0e749022;border-color:#0e749066;color:#22d3ee"
+								title="Organiser les sessions sélectionnées en dossiers par scénario">
+								🗂 Setup
+							</button>
 							<div style="flex:1"></div>
 							<span id="sess-sel-count" style="font-size:.75rem;color:var(--text3)">0
 								sélectionnée(s)</span>
@@ -5803,6 +5810,63 @@
 		</div>
 	</div>
 
+	<!-- ══ Modal Setup (organisation par scénario) ════════════════════ -->
+	<div id="setup-modal-backdrop" onclick="setupModalClose(event)">
+		<div id="export-modal">
+			<h3 style="color:#22d3ee">🗂 Setup — Organisation par scénario</h3>
+			<div class="exp-sub" id="setup-modal-sub">0 session(s) sélectionnée(s)</div>
+
+			<div class="exp-section">Répertoire racine de destination</div>
+			<div class="fr" style="margin-bottom:4px">
+				<label>Racine</label>
+				<input type="text" id="setup-root" placeholder="auto (parent commun des sessions)"
+					style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px;flex:1;font-family:monospace;font-size:.82rem" />
+			</div>
+			<div style="font-size:.73rem;color:var(--text3);margin-bottom:14px">
+				Laissez vide pour détecter automatiquement. Les sessions seront déplacées dans
+				<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">racine/{NomScénario}/{session}</code>.
+			</div>
+
+			<div class="exp-section">Options</div>
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+				<input type="checkbox" id="setup-dry-run" style="width:16px;height:16px;cursor:pointer" />
+				<label for="setup-dry-run" style="font-size:.85rem;color:var(--text2);cursor:pointer">
+					Simulation (dry-run) — aperçu sans déplacer ni modifier
+				</label>
+			</div>
+			<div style="font-size:.73rem;color:var(--text3);margin-bottom:14px">
+				En mode normal : les dossiers sont créés, les sessions déplacées et
+				<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">metadata.json</code> est mis à jour
+				(<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">scenario</code> ← valeur "DO" de la BD).
+			</div>
+
+			<!-- Barre de progression -->
+			<div id="setup-progress-wrap" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #0e749044;border-radius:var(--rs)">
+				<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+					<span id="setup-progress-ico">⏳</span>
+					<span id="setup-progress-text" style="font-size:.85rem;color:var(--text2)">En cours…</span>
+					<a id="setup-job-link" href="#" onclick="nav('jobs',null);setupModalClose();return false"
+						style="margin-left:auto;color:#22d3ee;font-size:.75rem;text-decoration:underline;display:none">Voir le job →</a>
+				</div>
+				<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
+					<div id="setup-progress-bar" style="height:100%;background:#0e7490;width:0%;transition:width .4s"></div>
+				</div>
+				<!-- Résumé résultat -->
+				<div id="setup-result-summary"
+					style="display:none;margin-top:8px;font-size:.78rem;color:var(--text2);display:none">
+				</div>
+			</div>
+
+			<div class="exp-btns">
+				<button class="btn" id="setup-btn-cancel" onclick="setupModalClose()">Annuler</button>
+				<button class="btn" id="btn-setup-confirm" onclick="doSetup()"
+					style="background:#0e749022;border-color:#0e749066;color:#22d3ee;font-weight:700;padding:10px 24px">
+					🗂 Organiser
+				</button>
+			</div>
+		</div>
+	</div>
+
 	<!-- ══ Modal Mistral Upload ════════════════════════════════════════ -->
 	<div id="mistral-modal-backdrop" onclick="mistralModalClose(event)">
 		<div id="export-modal">
@@ -6814,6 +6878,110 @@
 				}
 			} catch (e) {
 				// poll silencieux, on réessaie au prochain tick
+			}
+		}
+
+		// ══════════════════════════════════════════════════════════════════
+		// Setup — organisation par scénario
+		// ══════════════════════════════════════════════════════════════════
+
+		let _setupSessions = [];
+		let _setupJobId = null;
+		let _setupPollTimer = null;
+
+		function openSetupModal() {
+			_setupSessions = [...S.selected];
+			if (!_setupSessions.length) { alert('Sélectionnez des sessions.'); return; }
+			ge('setup-modal-sub').textContent = `${_setupSessions.length} session(s) sélectionnée(s)`;
+			ge('setup-root').value = '';
+			ge('setup-dry-run').checked = false;
+			ge('setup-progress-wrap').style.display = 'none';
+			ge('setup-progress-bar').style.width = '0%';
+			ge('setup-progress-ico').textContent = '⏳';
+			ge('setup-progress-text').textContent = 'En cours…';
+			ge('setup-job-link').style.display = 'none';
+			if (ge('setup-result-summary')) ge('setup-result-summary').style.display = 'none';
+			ge('btn-setup-confirm').disabled = false;
+			ge('btn-setup-confirm').textContent = '🗂 Organiser';
+			ge('setup-btn-cancel').textContent = 'Annuler';
+			ge('setup-modal-backdrop').classList.add('open');
+		}
+
+		function setupModalClose(evt) {
+			if (evt && evt.target !== ge('setup-modal-backdrop')) return;
+			if (_setupPollTimer) { clearInterval(_setupPollTimer); _setupPollTimer = null; }
+			ge('setup-modal-backdrop').classList.remove('open');
+		}
+
+		async function doSetup() {
+			const body = {
+				sessions: _setupSessions,
+				root: ge('setup-root').value.trim() || null,
+				dry_run: ge('setup-dry-run').checked,
+			};
+
+			ge('btn-setup-confirm').disabled = true;
+			ge('btn-setup-confirm').textContent = '⏳ En cours…';
+			ge('setup-progress-wrap').style.display = '';
+			ge('setup-progress-bar').style.width = '0%';
+			ge('setup-progress-ico').textContent = '⏳';
+			ge('setup-progress-text').textContent = 'Lancement du job…';
+			if (ge('setup-result-summary')) ge('setup-result-summary').style.display = 'none';
+
+			try {
+				const data = await api('POST', '/api/setup', body);
+				_setupJobId = data.job_id;
+				ge('setup-job-link').style.display = '';
+				log(`Job setup lancé : ${_setupJobId}${body.dry_run ? ' [DRY-RUN]' : ''}`, 'OK');
+				_setupPollTimer = setInterval(_setupPollJob, 1500);
+			} catch (e) {
+				ge('setup-progress-ico').textContent = '❌';
+				ge('setup-progress-text').textContent = `Erreur : ${e.message}`;
+				ge('btn-setup-confirm').disabled = false;
+				ge('btn-setup-confirm').textContent = '🗂 Organiser';
+				log(`Erreur setup : ${e.message}`, 'ERROR');
+			}
+		}
+
+		async function _setupPollJob() {
+			if (!_setupJobId) return;
+			try {
+				const job = await api('GET', `/api/jobs/${_setupJobId}`);
+				const pct = job.progress ?? 0;
+				ge('setup-progress-bar').style.width = `${pct}%`;
+
+				if (job.status === 'running' || job.status === 'pending') {
+					const lastLog = job.logs?.length ? job.logs[job.logs.length - 1].msg : 'En cours…';
+					ge('setup-progress-text').textContent = lastLog;
+				} else if (job.status === 'done' || job.status === 'error') {
+					clearInterval(_setupPollTimer); _setupPollTimer = null;
+					ge('setup-progress-bar').style.width = '100%';
+					const isDone = job.status === 'done';
+					ge('setup-progress-ico').textContent = isDone ? '✅' : '⚠';
+					const r = job.result || {};
+					const summary = [
+						r.dry_run ? '🔍 DRY-RUN' : '',
+						`✓ Déplacées : ${r.moved ?? 0}`,
+						`— Déjà triées : ${r.skipped ?? 0}`,
+						r.unmatched?.length ? `⚠ Sans scénario : ${r.unmatched.length}` : '',
+						r.errors?.length ? `✗ Erreurs : ${r.errors.length}` : '',
+					].filter(Boolean).join('   ');
+					ge('setup-progress-text').textContent = summary || (isDone ? 'Terminé' : 'Terminé avec avertissements');
+					const summEl = ge('setup-result-summary');
+					if (summEl && r.unmatched?.length) {
+						summEl.style.display = '';
+						summEl.innerHTML = `<strong>Sessions sans scénario :</strong><br>` +
+							r.unmatched.map(n => `<span style="font-family:monospace">${n}</span>`).join(', ');
+					}
+					ge('btn-setup-confirm').textContent = isDone ? '✅ Terminé' : '⚠ Terminé';
+					ge('setup-btn-cancel').textContent = 'Fermer';
+					log(`Setup terminé — déplacées: ${r.moved ?? 0}, sans scénario: ${r.unmatched?.length ?? 0}${r.dry_run ? ' [DRY-RUN]' : ''}`, isDone ? 'OK' : 'WARN');
+					if (!r.dry_run && (r.moved ?? 0) > 0) {
+						scanAndShow();  // rafraîchir la liste des sessions
+					}
+				}
+			} catch (e) {
+				// poll silencieux
 			}
 		}
 
@@ -10873,7 +11041,7 @@
 			} catch (e) { }
 		}
 
-		// ── Boutons export/reject/mistral : activer/désactiver selon sélection ──
+		// ── Boutons export/reject/mistral/setup : activer/désactiver selon sélection ──
 		function refreshExportBtn() {
 			const n = S.selected.size;
 			const hasAction = n > 0 || !!S.drawerSess;
@@ -10885,6 +11053,8 @@
 			if (vebtn) vebtn.disabled = n === 0;
 			const mbtn = ge('btn-sess-mistral');
 			if (mbtn) mbtn.disabled = n === 0;
+			const sbtn = ge('btn-sess-setup');
+			if (sbtn) sbtn.disabled = n === 0;
 			refreshPcExportBtn();
 		}
 

@@ -5289,6 +5289,211 @@ async def download_sessions(req: DownloadSessionsRequest):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Setup — organisation des sessions par scénario
+# ──────────────────────────────────────────────────────────────────────────────
+
+class SetupRequest(BaseModel):
+    sessions: List[str]          # chemins absolus des sessions à organiser
+    root: Optional[str] = None   # dossier racine de destination (défaut : parent commun)
+    dry_run: bool = False        # simulation sans déplacer ni modifier
+
+
+def _mongo_load_all_scenarios() -> list:
+    """Charge tous les documents de la collection scenarios depuis MongoDB.
+    Retourne une liste vide si MongoDB est indisponible."""
+    try:
+        from pymongo import MongoClient as _MC
+        uri  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        db   = os.getenv("MONGO_DB", "physical_data")
+        coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
+        client = _MC(uri, serverSelectionTimeoutMS=3000)
+        docs = list(client[db][coll].find({}, {"_id": 0, "name": 1, "description": 1, "do": 1, "reset": 1}))
+        client.close()
+        return docs
+    except Exception:
+        return []
+
+
+def _find_scenario(meta: dict, action: str, scenarios: list) -> Optional[dict]:
+    """Cherche le scénario MongoDB correspondant à une session.
+
+    Stratégie (ordre décroissant de précision) :
+      1. meta['scenario_folder'] ou meta['action'] → scenario.name (exact, insensible à la casse)
+      2. meta['scenario'] → scenario.name  (exact)
+      3. meta['scenario'] → scenario.description  (exact)
+      4. meta['scenario'] → scenario.do  (exact)
+      5. meta['scenario'] → scenario.name  (contient / est contenu)
+    """
+    if not scenarios:
+        return None
+
+    # Index insensible à la casse
+    by_name = {s["name"].lower(): s for s in scenarios if s.get("name")}
+    by_desc = {s["description"].lower(): s for s in scenarios if s.get("description")}
+    by_do   = {s["do"].lower(): s for s in scenarios if s.get("do")}
+
+    candidates: list[str] = []
+    for key in ("scenario_folder", "scenario"):
+        v = meta.get(key)
+        if v:
+            candidates.append(str(v).strip().lower())
+    if action:
+        candidates.append(action.strip().lower())
+
+    for c in candidates:
+        if c in by_name:
+            return by_name[c]
+        if c in by_desc:
+            return by_desc[c]
+        if c in by_do:
+            return by_do[c]
+
+    # Correspondance partielle sur le nom (au cas où le champ contient un slug tronqué)
+    for c in candidates:
+        for name_low, sc in by_name.items():
+            if c in name_low or name_low in c:
+                return sc
+
+    return None
+
+
+def _worker_setup(job: Job, req: SetupRequest):
+    import shutil
+
+    sessions = [Path(p) for p in req.sessions if Path(p).exists()]
+    if not sessions:
+        _log_job(job, "Aucune session valide trouvée.", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+    total = len(sessions)
+    prefix = "[DRY-RUN] " if req.dry_run else ""
+
+    # ── Chargement des scénarios MongoDB ────────────────────────────────────
+    _log_job(job, "Chargement des scénarios depuis MongoDB…")
+    scenarios = _mongo_load_all_scenarios()
+    if not scenarios:
+        _log_job(job, "⚠ Aucun scénario récupéré depuis MongoDB (MongoDB indisponible ou collection vide). "
+                      "Les sessions seront déplacées sans mise à jour du champ 'scenario'.", "WARN")
+    else:
+        _log_job(job, f"{len(scenarios)} scénario(s) chargé(s) : {', '.join(s['name'] for s in scenarios if s.get('name'))}")
+
+    # ── Calcul de la racine de destination ───────────────────────────────────
+    if req.root:
+        root_dir = Path(req.root)
+    else:
+        # Racine commune : si les sessions sont déjà dans un sous-dossier (ex: root/ScenA/sess),
+        # on remonte d'un niveau supplémentaire selon la profondeur détectée.
+        # Heuristique : si le parent direct est déjà le nom d'un scénario connu, on remonte 2.
+        known_names = {s["name"].lower() for s in scenarios if s.get("name")}
+        first = sessions[0]
+        if first.parent.name.lower() in known_names:
+            root_dir = first.parent.parent
+        else:
+            root_dir = first.parent
+
+    _log_job(job, f"Racine de destination : {root_dir}")
+
+    # ── Traitement session par session ───────────────────────────────────────
+    moved, skipped, errors, unmatched = [], [], [], []
+
+    for i, sess in enumerate(sessions):
+        meta_path = sess / "metadata.json"
+        meta: dict = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                _log_job(job, f"[{i+1}/{total}] ⚠ {sess.name} — metadata illisible : {e}", "WARN")
+
+        action = sess.parent.name  # dossier parent actuel (peut être déjà un nom de scénario)
+        sc = _find_scenario(meta, action, scenarios)
+
+        if sc is None:
+            unmatched.append(sess.name)
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name} — aucun scénario trouvé "
+                          f"(scenario='{meta.get('scenario', '')}', dossier='{action}')", "WARN")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
+
+        sc_name = sc["name"]
+        dest = root_dir / sc_name / sess.name
+
+        if dest == sess:
+            skipped.append(sess.name)
+            _log_job(job, f"[{i+1}/{total}] — {sess.name} → déjà dans {sc_name}/", "INFO")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
+
+        if dest.exists():
+            errors.append(f"{sess.name}: destination déjà occupée ({dest})")
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name} — destination occupée : {dest}", "WARN")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
+
+        _log_job(job, f"[{i+1}/{total}] {prefix}✓ {sess.name} → {sc_name}/")
+
+        if not req.dry_run:
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(sess), str(dest))
+            except Exception as e:
+                errors.append(f"{sess.name}: {e}")
+                _log_job(job, f"[{i+1}/{total}] ✗ déplacement échoué : {e}", "ERROR")
+                _update_job(job, progress=round((i + 1) / total * 100, 1))
+                continue
+
+            # Mettre à jour metadata.json
+            new_meta_path = dest / "metadata.json"
+            if new_meta_path.exists():
+                try:
+                    m = json.loads(new_meta_path.read_text(encoding="utf-8"))
+                    m["scenario_folder"] = sc_name
+                    if sc.get("do"):
+                        m["scenario"] = sc["do"]
+                    new_meta_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+                except Exception as e:
+                    _log_job(job, f"  ⚠ metadata non mise à jour : {e}", "WARN")
+
+            # Notifier le client WebSocket
+            if _loop:
+                asyncio.run_coroutine_threadsafe(
+                    _broadcast({"type": "session_removed", "session_path": str(sess), "reason": "setup"}),
+                    _loop,
+                )
+
+        moved.append({"name": sess.name, "scenario": sc_name})
+        _update_job(job, progress=round((i + 1) / total * 100, 1))
+
+    # ── Résumé ───────────────────────────────────────────────────────────────
+    _log_job(job, f"\n{'=== DRY-RUN ===' if req.dry_run else '=== RÉSUMÉ ==='}")
+    _log_job(job, f"  Déplacées   : {len(moved)}", "OK")
+    _log_job(job, f"  Déjà triées : {len(skipped)}")
+    _log_job(job, f"  Non trouvées: {len(unmatched)}", "WARN" if unmatched else "INFO")
+    _log_job(job, f"  Erreurs     : {len(errors)}", "ERROR" if errors else "INFO")
+
+    status = JobStatus.DONE if not errors or moved else JobStatus.ERROR
+    _update_job(job, status=status, finished_at=_now(), progress=100.0, result={
+        "moved": len(moved),
+        "skipped": len(skipped),
+        "unmatched": unmatched,
+        "errors": errors,
+        "dry_run": req.dry_run,
+    })
+
+
+@app.post("/api/setup")
+async def setup_sessions(req: SetupRequest):
+    """Organise les sessions sélectionnées en dossiers par scénario et met à jour leurs métadonnées."""
+    if not req.sessions:
+        raise HTTPException(400, "Aucune session fournie")
+    job = _new_job("setup")
+    threading.Thread(target=_worker_setup, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Upload sessions vers Mistral (ZIP asynchrone)
 # ──────────────────────────────────────────────────────────────────────────────
 

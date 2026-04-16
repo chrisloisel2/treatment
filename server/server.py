@@ -5314,45 +5314,32 @@ def _mongo_load_all_scenarios() -> list:
         return []
 
 
-def _find_scenario(meta: dict, action: str, scenarios: list) -> Optional[dict]:
-    """Cherche le scénario MongoDB correspondant à une session.
+def _find_scenario_by_meta(meta_scenario: str, scenarios: list) -> Optional[dict]:
+    """Trouve le scénario MongoDB correspondant à meta['scenario'].
 
-    Stratégie (ordre décroissant de précision) :
-      1. meta['scenario_folder'] ou meta['action'] → scenario.name (exact, insensible à la casse)
-      2. meta['scenario'] → scenario.name  (exact)
-      3. meta['scenario'] → scenario.description  (exact)
-      4. meta['scenario'] → scenario.do  (exact)
-      5. meta['scenario'] → scenario.name  (contient / est contenu)
+    Uniquement basé sur meta['scenario'] — testé contre :
+      1. scenario.name        (exact, insensible à la casse)
+      2. scenario.description (exact, insensible à la casse)
+      3. scenario.do          (exact, insensible à la casse)
+      4. scenario.reset       (exact, insensible à la casse)
     """
-    if not scenarios:
+    if not scenarios or not meta_scenario:
         return None
 
-    # Index insensible à la casse
-    by_name = {s["name"].lower(): s for s in scenarios if s.get("name")}
-    by_desc = {s["description"].lower(): s for s in scenarios if s.get("description")}
-    by_do   = {s["do"].lower(): s for s in scenarios if s.get("do")}
+    val = meta_scenario.strip().lower()
 
-    candidates: list[str] = []
-    for key in ("scenario_folder", "scenario"):
-        v = meta.get(key)
-        if v:
-            candidates.append(str(v).strip().lower())
-    if action:
-        candidates.append(action.strip().lower())
-
-    for c in candidates:
-        if c in by_name:
-            return by_name[c]
-        if c in by_desc:
-            return by_desc[c]
-        if c in by_do:
-            return by_do[c]
-
-    # Correspondance partielle sur le nom (au cas où le champ contient un slug tronqué)
-    for c in candidates:
-        for name_low, sc in by_name.items():
-            if c in name_low or name_low in c:
-                return sc
+    for sc in scenarios:
+        if sc.get("name", "").strip().lower() == val:
+            return sc
+    for sc in scenarios:
+        if sc.get("description", "").strip().lower() == val:
+            return sc
+    for sc in scenarios:
+        if sc.get("do", "").strip().lower() == val:
+            return sc
+    for sc in scenarios:
+        if sc.get("reset", "").strip().lower() == val:
+            return sc
 
     return None
 
@@ -5374,31 +5361,17 @@ def _worker_setup(job: Job, req: SetupRequest):
     _log_job(job, "Chargement des scénarios depuis MongoDB…")
     scenarios = _mongo_load_all_scenarios()
     if not scenarios:
-        _log_job(job, "⚠ Aucun scénario récupéré depuis MongoDB (MongoDB indisponible ou collection vide). "
-                      "Les sessions seront déplacées sans mise à jour du champ 'scenario'.", "WARN")
+        _log_job(job, "⚠ Aucun scénario récupéré depuis MongoDB.", "WARN")
     else:
-        _log_job(job, f"{len(scenarios)} scénario(s) chargé(s) : {', '.join(s['name'] for s in scenarios if s.get('name'))}")
+        _log_job(job, f"{len(scenarios)} scénario(s) : {', '.join(s['name'] for s in scenarios if s.get('name'))}")
 
-    # ── Calcul de la racine de destination ───────────────────────────────────
-    if req.root:
-        root_dir = Path(req.root)
-    else:
-        # Racine commune : si les sessions sont déjà dans un sous-dossier (ex: root/ScenA/sess),
-        # on remonte d'un niveau supplémentaire selon la profondeur détectée.
-        # Heuristique : si le parent direct est déjà le nom d'un scénario connu, on remonte 2.
-        known_names = {s["name"].lower() for s in scenarios if s.get("name")}
-        first = sessions[0]
-        if first.parent.name.lower() in known_names:
-            root_dir = first.parent.parent
-        else:
-            root_dir = first.parent
-
-    _log_job(job, f"Racine de destination : {root_dir}")
+    known_names_lower = {s["name"].lower() for s in scenarios if s.get("name")}
 
     # ── Traitement session par session ───────────────────────────────────────
     moved, skipped, errors, unmatched = [], [], [], []
 
     for i, sess in enumerate(sessions):
+        # ── Lecture metadata ─────────────────────────────────────────────────
         meta_path = sess / "metadata.json"
         meta: dict = {}
         if meta_path.exists():
@@ -5407,24 +5380,59 @@ def _worker_setup(job: Job, req: SetupRequest):
             except Exception as e:
                 _log_job(job, f"[{i+1}/{total}] ⚠ {sess.name} — metadata illisible : {e}", "WARN")
 
-        action = sess.parent.name  # dossier parent actuel (peut être déjà un nom de scénario)
-        sc = _find_scenario(meta, action, scenarios)
+        meta_scenario = (meta.get("scenario") or "").strip()
+        if not meta_scenario:
+            unmatched.append(sess.name)
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name} — champ 'scenario' absent dans metadata", "WARN")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
 
+        # ── Recherche du scénario MongoDB ────────────────────────────────────
+        sc = _find_scenario_by_meta(meta_scenario, scenarios)
         if sc is None:
             unmatched.append(sess.name)
-            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name} — aucun scénario trouvé "
-                          f"(scenario='{meta.get('scenario', '')}', dossier='{action}')", "WARN")
+            _log_job(job, f"[{i+1}/{total}] ✗ {sess.name} — scénario introuvable en BD "
+                          f"(meta.scenario='{meta_scenario}')", "WARN")
             _update_job(job, progress=round((i + 1) / total * 100, 1))
             continue
 
         sc_name = sc["name"]
-        dest = root_dir / sc_name / sess.name
 
-        if dest == sess:
+        # ── Validation : session déjà dans une sous-arborescence scénario ? ──
+        # Cas /scénario/mode/session → laisser totalement tel quel
+        if sess.parent.parent.name.lower() in known_names_lower:
             skipped.append(sess.name)
-            _log_job(job, f"[{i+1}/{total}] — {sess.name} → déjà dans {sc_name}/", "INFO")
+            _log_job(job, f"[{i+1}/{total}] — {sess.name} — sous-dossier scénario "
+                          f"({sess.parent.parent.name}/{sess.parent.name}/), ignoré", "INFO")
             _update_job(job, progress=round((i + 1) / total * 100, 1))
             continue
+
+        # Cas /scénario/session → déjà au bon endroit
+        if sess.parent.name == sc_name:
+            # Déjà au bon endroit — on met quand même à jour metadata si scenario != do
+            skipped.append(sess.name)
+            _log_job(job, f"[{i+1}/{total}] ✓ {sess.name} — déjà dans {sc_name}/", "INFO")
+            if not req.dry_run and sc.get("do") and meta.get("scenario") != sc["do"]:
+                try:
+                    meta["scenario"] = sc["do"]
+                    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+                    _log_job(job, f"          metadata.scenario mis à jour → '{sc['do']}'")
+                except Exception as e:
+                    _log_job(job, f"          ⚠ metadata non mise à jour : {e}", "WARN")
+            _update_job(job, progress=round((i + 1) / total * 100, 1))
+            continue
+
+        # ── Calcul de la racine et de la destination ─────────────────────────
+        # Si le parent actuel est déjà un dossier scénario connu → root = parent.parent
+        # Sinon → root = parent (sessions à plat)
+        if req.root:
+            root_dir = Path(req.root)
+        elif sess.parent.name.lower() in known_names_lower:
+            root_dir = sess.parent.parent
+        else:
+            root_dir = sess.parent
+
+        dest = root_dir / sc_name / sess.name
 
         if dest.exists():
             errors.append(f"{sess.name}: destination déjà occupée ({dest})")
@@ -5432,7 +5440,7 @@ def _worker_setup(job: Job, req: SetupRequest):
             _update_job(job, progress=round((i + 1) / total * 100, 1))
             continue
 
-        _log_job(job, f"[{i+1}/{total}] {prefix}✓ {sess.name} → {sc_name}/")
+        _log_job(job, f"[{i+1}/{total}] {prefix}→ {sess.name}  [{sess.parent.name}/ → {sc_name}/]")
 
         if not req.dry_run:
             try:
@@ -5449,12 +5457,12 @@ def _worker_setup(job: Job, req: SetupRequest):
             if new_meta_path.exists():
                 try:
                     m = json.loads(new_meta_path.read_text(encoding="utf-8"))
-                    m["scenario_folder"] = sc_name
                     if sc.get("do"):
                         m["scenario"] = sc["do"]
                     new_meta_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+                    _log_job(job, f"          metadata.scenario ← '{sc.get('do', sc_name)}'")
                 except Exception as e:
-                    _log_job(job, f"  ⚠ metadata non mise à jour : {e}", "WARN")
+                    _log_job(job, f"          ⚠ metadata non mise à jour : {e}", "WARN")
 
             # Notifier le client WebSocket
             if _loop:
@@ -5468,12 +5476,12 @@ def _worker_setup(job: Job, req: SetupRequest):
 
     # ── Résumé ───────────────────────────────────────────────────────────────
     _log_job(job, f"\n{'=== DRY-RUN ===' if req.dry_run else '=== RÉSUMÉ ==='}")
-    _log_job(job, f"  Déplacées   : {len(moved)}", "OK")
-    _log_job(job, f"  Déjà triées : {len(skipped)}")
-    _log_job(job, f"  Non trouvées: {len(unmatched)}", "WARN" if unmatched else "INFO")
-    _log_job(job, f"  Erreurs     : {len(errors)}", "ERROR" if errors else "INFO")
+    _log_job(job, f"  Déplacées      : {len(moved)}", "OK")
+    _log_job(job, f"  Déjà au bon endroit : {len(skipped)}")
+    _log_job(job, f"  Sans scénario  : {len(unmatched)}", "WARN" if unmatched else "INFO")
+    _log_job(job, f"  Erreurs        : {len(errors)}", "ERROR" if errors else "INFO")
 
-    status = JobStatus.DONE if not errors or moved else JobStatus.ERROR
+    status = JobStatus.DONE if not errors else JobStatus.ERROR
     _update_job(job, status=status, finished_at=_now(), progress=100.0, result={
         "moved": len(moved),
         "skipped": len(skipped),
@@ -5513,6 +5521,7 @@ class MistralUploadRequest(BaseModel):
 def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
     import tempfile
     import zipfile
+    import shutil
     import requests as req_lib
 
     sessions = [Path(p) for p in req.sessions if Path(p).exists()]
@@ -5529,44 +5538,137 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
     zip_name = f"{zip_stem}.zip"
 
     _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
-    _log_job(job, f"Préparation du ZIP '{zip_name}' ({len(sessions)} session(s))…")
 
-    VIDEO_POSITIONS = {"left", "right", "head"}
-
-    # ── Étape 1 : construction du ZIP ────────────────────────────────────────
-    tmp_dir = Path("/mnt/tmp")
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=tmp_dir)
-    tmp_path = Path(tmp.name)
-    tmp.close()
+    staging_dir = Path("/mnt/tmp") / f"mistral_{job.id}"
 
     try:
-        with zipfile.ZipFile(tmp_path, mode="w", allowZip64=True) as zf:
-            for i, sess in enumerate(sessions):
-                _log_job(job, f"[{i+1}/{len(sessions)}] Compression de {sess.name}…")
-                for f in sorted(sess.rglob("*")):
-                    if not f.is_file():
-                        continue
-                    if not req.include_mp4 and f.suffix.lower() == ".mp4":
-                        continue
-                    compression = (zipfile.ZIP_STORED
-                                   if f.suffix.lower() in (".mp4", ".mkv", ".avi")
-                                   else zipfile.ZIP_DEFLATED)
-                    arcname = f.relative_to(sess.parent)
-                    zf.write(str(f), str(arcname), compress_type=compression)
-                _update_job(job, progress=round((i + 1) / len(sessions) * 60, 1))
+        # ── Étape 1 : copie des sessions dans /mnt/tmp/mistral_{id}/ ─────────
+        _log_job(job, f"Étape 1/4 — Copie de {len(sessions)} session(s) vers {staging_dir}…")
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        staged: list[Path] = []
+        for i, sess in enumerate(sessions):
+            dest = staging_dir / sess.name
+            try:
+                shutil.copytree(str(sess), str(dest))
+                staged.append(dest)
+                _log_job(job, f"  Copié : {sess.name}")
+            except Exception as e:
+                _log_job(job, f"  ⚠ Copie échouée pour {sess.name} : {e}", "WARN")
+            _update_job(job, progress=round((i + 1) / len(sessions) * 15, 1))
+
+        if not staged:
+            _log_job(job, "Aucune session copiée avec succès.", "ERROR")
+            _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+            return
+
+        # ── Étape 2 : setup — organisation par scénario dans le staging ──────
+        _log_job(job, f"\nÉtape 2/4 — Setup (organisation par scénario)…")
+        _update_job(job, progress=18.0)
+
+        scenarios = _mongo_load_all_scenarios()
+        if not scenarios:
+            _log_job(job, "⚠ MongoDB indisponible — les sessions seront zippées à plat.", "WARN")
+        else:
+            _log_job(job, f"  {len(scenarios)} scénario(s) chargé(s)")
+
+        known_names_lower = {s["name"].lower() for s in scenarios if s.get("name")}
+        setup_ok, setup_warn = 0, 0
+
+        for i, sess in enumerate(staged):
+            meta_path = sess / "metadata.json"
+            meta: dict = {}
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            meta_scenario = (meta.get("scenario") or "").strip()
+            sc = _find_scenario_by_meta(meta_scenario, scenarios) if meta_scenario else None
+
+            if sc is None:
+                setup_warn += 1
+                _log_job(job, f"  ⚠ {sess.name} — scénario non trouvé ('{meta_scenario}'), laissé à plat", "WARN")
+                _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
+                continue
+
+            sc_name = sc["name"]
+
+            # Déjà dans /staging/{scénario}/{sous-dossier}/session → ignorer
+            if sess.parent.parent.name.lower() in known_names_lower:
+                setup_ok += 1
+                _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
+                continue
+
+            # Déjà dans /staging/{scénario}/session → ok, juste metadata
+            if sess.parent.name == sc_name:
+                if sc.get("do") and meta.get("scenario") != sc["do"]:
+                    try:
+                        meta["scenario"] = sc["do"]
+                        meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+                    except Exception:
+                        pass
+                setup_ok += 1
+                _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
+                continue
+
+            # Déplacer dans staging/{scénario}/session
+            dest = staging_dir / sc_name / sess.name
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(sess), str(dest))
+                # Mettre à jour metadata
+                new_meta = dest / "metadata.json"
+                if new_meta.exists():
+                    m = json.loads(new_meta.read_text(encoding="utf-8"))
+                    if sc.get("do"):
+                        m["scenario"] = sc["do"]
+                    new_meta.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+                _log_job(job, f"  ✓ {sess.name} → {sc_name}/")
+                setup_ok += 1
+            except Exception as e:
+                setup_warn += 1
+                _log_job(job, f"  ⚠ {sess.name} — déplacement échoué : {e}", "WARN")
+
+            _update_job(job, progress=18 + round((i + 1) / len(staged) * 22, 1))
+
+        _log_job(job, f"  Setup terminé — {setup_ok} OK, {setup_warn} avertissement(s)")
+
+        # ── Étape 3 : construction du ZIP depuis le staging ──────────────────
+        _log_job(job, f"\nÉtape 3/4 — Compression → {zip_name}…")
+        _update_job(job, progress=42.0)
+
+        tmp_zip = Path("/mnt/tmp") / zip_name
+        tmp_zip.parent.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(tmp_zip, mode="w", allowZip64=True) as zf:
+            for f in sorted(staging_dir.rglob("*")):
+                if not f.is_file():
+                    continue
+                if not req.include_mp4 and f.suffix.lower() == ".mp4":
+                    continue
+                compression = (zipfile.ZIP_STORED
+                               if f.suffix.lower() in (".mp4", ".mkv", ".avi")
+                               else zipfile.ZIP_DEFLATED)
+                arcname = f.relative_to(staging_dir)   # Scenario/session/...
+                zf.write(str(f), str(arcname), compress_type=compression)
+
+        zip_size_mb = tmp_zip.stat().st_size / (1024 * 1024)
+        _log_job(job, f"  ZIP prêt : {zip_name} ({zip_size_mb:.1f} Mo)")
+        _update_job(job, progress=65.0)
+
     except Exception as e:
-        tmp_path.unlink(missing_ok=True)
-        _log_job(job, f"Erreur ZIP : {e}", "ERROR")
+        _log_job(job, f"Erreur de préparation : {e}", "ERROR")
         _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        shutil.rmtree(staging_dir, ignore_errors=True)
         return
+    finally:
+        # Nettoyage du staging (toujours, même en cas d'erreur)
+        shutil.rmtree(staging_dir, ignore_errors=True)
 
-    zip_size_mb = tmp_path.stat().st_size / (1024 * 1024)
-    _log_job(job, f"ZIP prêt : {zip_name} ({zip_size_mb:.1f} Mo)")
-    _update_job(job, progress=65.0)
-
-    # ── Étape 2 : demande d'URL signée ───────────────────────────────────────
-    _log_job(job, f"Demande d'URL signée auprès de {MISTRAL_BASE_URL}…")
+    # ── Étape 4 : envoi vers Mistral ─────────────────────────────────────────
+    _log_job(job, f"\nÉtape 4/4 — Envoi vers Mistral…")
     session_http = req_lib.Session()
     payload = {
         "username": username,
@@ -5582,13 +5684,13 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
             timeout=15,
         )
     except req_lib.RequestException as e:
-        tmp_path.unlink(missing_ok=True)
+        tmp_zip.unlink(missing_ok=True)
         _log_job(job, f"Erreur de connexion : {e}", "ERROR")
         _update_job(job, status=JobStatus.ERROR, finished_at=_now())
         return
 
     if r.status_code != 200:
-        tmp_path.unlink(missing_ok=True)
+        tmp_zip.unlink(missing_ok=True)
         try:
             err = r.json().get("error", "Unknown error")
         except Exception:
@@ -5599,17 +5701,16 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
 
     signed_url = r.json().get("url")
     if not signed_url:
-        tmp_path.unlink(missing_ok=True)
+        tmp_zip.unlink(missing_ok=True)
         _log_job(job, "Pas d'URL d'upload reçue.", "ERROR")
         _update_job(job, status=JobStatus.ERROR, finished_at=_now())
         return
 
-    _log_job(job, "URL signée obtenue. Upload en cours…")
+    _log_job(job, "  URL signée obtenue, upload en cours…")
     _update_job(job, progress=70.0)
 
-    # ── Étape 3 : upload du fichier ──────────────────────────────────────────
     try:
-        with open(tmp_path, "rb") as fh:
+        with open(tmp_zip, "rb") as fh:
             resp = session_http.put(
                 signed_url,
                 data=fh,
@@ -5617,12 +5718,11 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
                 timeout=300,
             )
     except req_lib.RequestException as e:
-        tmp_path.unlink(missing_ok=True)
         _log_job(job, f"Erreur upload : {e}", "ERROR")
         _update_job(job, status=JobStatus.ERROR, finished_at=_now())
         return
     finally:
-        tmp_path.unlink(missing_ok=True)
+        tmp_zip.unlink(missing_ok=True)
 
     if resp.status_code in (200, 201, 204):
         _log_job(job, f"Upload réussi : {zip_name} ({zip_size_mb:.1f} Mo) ✓", "OK")

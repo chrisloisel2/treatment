@@ -1914,12 +1914,16 @@
 			display: none;
 			position: fixed;
 			inset: 0;
-			background: rgba(0,0,0,.55);
+			background: rgba(0, 0, 0, .55);
 			z-index: 200;
 			align-items: center;
 			justify-content: center;
 		}
-		#fix-modal-backdrop.open { display: flex }
+
+		#fix-modal-backdrop.open {
+			display: flex
+		}
+
 		#fix-modal {
 			background: var(--bg2);
 			border: 1px solid var(--border);
@@ -1930,12 +1934,28 @@
 			width: 93vw;
 			box-shadow: 0 8px 32px #0009;
 		}
-		#fix-modal h3 { margin:0 0 3px; font-size:.9rem; color:var(--text) }
-		#fix-modal .sm-sub { font-size:.72rem; color:var(--text3); margin-bottom:4px }
-		#fix-modal .sm-section {
-			font-size:.68rem; font-weight:700; color:var(--text3);
-			text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;
+
+		#fix-modal h3 {
+			margin: 0 0 3px;
+			font-size: .9rem;
+			color: var(--text)
 		}
+
+		#fix-modal .sm-sub {
+			font-size: .72rem;
+			color: var(--text3);
+			margin-bottom: 4px
+		}
+
+		#fix-modal .sm-section {
+			font-size: .68rem;
+			font-weight: 700;
+			color: var(--text3);
+			text-transform: uppercase;
+			letter-spacing: .06em;
+			margin-bottom: 6px;
+		}
+
 		.fix-opt {
 			display: grid;
 			grid-template-columns: 18px 22px 1fr;
@@ -1948,15 +1968,44 @@
 			margin-bottom: 3px;
 			transition: background .12s;
 		}
-		.fix-opt:hover { background: var(--bg3) }
-		.fix-opt input[type=checkbox] { grid-row:1; margin-top:2px; cursor:pointer }
-		.fix-opt-icon { grid-row:1; font-size:.85rem; text-align:center }
-		.fix-opt-label { grid-row:1; font-size:.8rem; font-weight:600; color:var(--text) }
-		.fix-opt-label em { font-weight:400; font-style:normal; color:var(--accent2,#e8a020) }
-		.fix-opt-desc {
-			grid-column: 3; grid-row:2;
-			font-size:.68rem; color:var(--text3); line-height:1.4;
+
+		.fix-opt:hover {
+			background: var(--bg3)
 		}
+
+		.fix-opt input[type=checkbox] {
+			grid-row: 1;
+			margin-top: 2px;
+			cursor: pointer
+		}
+
+		.fix-opt-icon {
+			grid-row: 1;
+			font-size: .85rem;
+			text-align: center
+		}
+
+		.fix-opt-label {
+			grid-row: 1;
+			font-size: .8rem;
+			font-weight: 600;
+			color: var(--text)
+		}
+
+		.fix-opt-label em {
+			font-weight: 400;
+			font-style: normal;
+			color: var(--accent2, #e8a020)
+		}
+
+		.fix-opt-desc {
+			grid-column: 3;
+			grid-row: 2;
+			font-size: .68rem;
+			color: var(--text3);
+			line-height: 1.4;
+		}
+
 		.fix-force-row {
 			margin-top: 10px;
 			font-size: .75rem;
@@ -1965,7 +2014,10 @@
 			background: var(--bg3);
 			border-radius: 5px;
 		}
-		.fix-force-row label { cursor:pointer }
+
+		.fix-force-row label {
+			cursor: pointer
+		}
 
 		/* ── Scripts section ──────────────────────────────────────────────── */
 		.script-chip {
@@ -2467,12 +2519,32 @@
 			color: #fff;
 			line-height: 1;
 		}
-		.tv-sess-grade.A { background: var(--green) }
-		.tv-sess-grade.B { background: #22c55e }
-		.tv-sess-grade.C { background: var(--orange) }
-		.tv-sess-grade.D { background: #f97316 }
-		.tv-sess-grade.F { background: var(--red) }
-		.tv-sess-grade.none { background: var(--bg4); color: var(--text3); font-size:.55rem }
+
+		.tv-sess-grade.A {
+			background: var(--green)
+		}
+
+		.tv-sess-grade.B {
+			background: #22c55e
+		}
+
+		.tv-sess-grade.C {
+			background: var(--orange)
+		}
+
+		.tv-sess-grade.D {
+			background: #f97316
+		}
+
+		.tv-sess-grade.F {
+			background: var(--red)
+		}
+
+		.tv-sess-grade.none {
+			background: var(--bg4);
+			color: var(--text3);
+			font-size: .55rem
+		}
 
 		/* Filtre grade VIEW */
 		#tv-grade-filter {
@@ -2482,6 +2554,7 @@
 			padding: 4px 8px 6px;
 			flex-wrap: wrap;
 		}
+
 		.tv-grade-btn {
 			display: inline-flex;
 			align-items: center;
@@ -2497,15 +2570,47 @@
 			opacity: .55;
 			transition: opacity .15s, border-color .15s;
 		}
-		.tv-grade-btn:hover { opacity: .85 }
-		.tv-grade-btn.active { opacity: 1; border-color: #fff6 }
-		.tv-grade-btn.A { background: var(--green) }
-		.tv-grade-btn.B { background: #22c55e }
-		.tv-grade-btn.C { background: var(--orange) }
-		.tv-grade-btn.D { background: #f97316 }
-		.tv-grade-btn.F { background: var(--red) }
-		.tv-grade-btn.all { background: var(--bg4); color: var(--text2); font-size:.65rem; width:auto; padding: 0 6px }
-		.tv-grade-btn.all.active { border-color: var(--accent) }
+
+		.tv-grade-btn:hover {
+			opacity: .85
+		}
+
+		.tv-grade-btn.active {
+			opacity: 1;
+			border-color: #fff6
+		}
+
+		.tv-grade-btn.A {
+			background: var(--green)
+		}
+
+		.tv-grade-btn.B {
+			background: #22c55e
+		}
+
+		.tv-grade-btn.C {
+			background: var(--orange)
+		}
+
+		.tv-grade-btn.D {
+			background: #f97316
+		}
+
+		.tv-grade-btn.F {
+			background: var(--red)
+		}
+
+		.tv-grade-btn.all {
+			background: var(--bg4);
+			color: var(--text2);
+			font-size: .65rem;
+			width: auto;
+			padding: 0 6px
+		}
+
+		.tv-grade-btn.all.active {
+			border-color: var(--accent)
+		}
 
 		#tv-sess-empty {
 			padding: 24px 14px;
@@ -2736,6 +2841,7 @@
 			flex-wrap: wrap;
 			justify-content: flex-end;
 		}
+
 		#tv-score-badge {
 			display: none;
 			align-items: center;
@@ -2748,13 +2854,47 @@
 			white-space: nowrap;
 			cursor: default;
 		}
-		#tv-score-badge.visible { display: flex; }
-		#tv-score-badge.grade-A { background: var(--green)22; border-color: var(--green)66; color: var(--green); }
-		#tv-score-badge.grade-B { background: #22c55e22; border-color: #22c55e66; color: #22c55e; }
-		#tv-score-badge.grade-C { background: var(--orange)22; border-color: var(--orange)66; color: var(--orange); }
-		#tv-score-badge.grade-D { background: #f9731622; border-color: #f9731666; color: #f97316; }
-		#tv-score-badge.grade-F { background: var(--red)22; border-color: var(--red)66; color: var(--red); }
-		#tv-score-badge.grade-none { background: var(--bg3); border-color: var(--border); color: var(--text3); }
+
+		#tv-score-badge.visible {
+			display: flex;
+		}
+
+		#tv-score-badge.grade-A {
+			background: var(--green)22;
+			border-color: var(--green)66;
+			color: var(--green);
+		}
+
+		#tv-score-badge.grade-B {
+			background: #22c55e22;
+			border-color: #22c55e66;
+			color: #22c55e;
+		}
+
+		#tv-score-badge.grade-C {
+			background: var(--orange)22;
+			border-color: var(--orange)66;
+			color: var(--orange);
+		}
+
+		#tv-score-badge.grade-D {
+			background: #f9731622;
+			border-color: #f9731666;
+			color: #f97316;
+		}
+
+		#tv-score-badge.grade-F {
+			background: var(--red)22;
+			border-color: var(--red)66;
+			color: var(--red);
+		}
+
+		#tv-score-badge.grade-none {
+			background: var(--bg3);
+			border-color: var(--border);
+			color: var(--text3);
+		}
+
 		#tv-score-reason {
 			font-size: .72rem;
 			color: var(--text3);
@@ -2763,8 +2903,15 @@
 			text-overflow: ellipsis;
 			max-width: 280px;
 		}
-		#tv-score-reason.bad { color: var(--red); }
-		#tv-score-reason.warn { color: var(--orange); }
+
+		#tv-score-reason.bad {
+			color: var(--red);
+		}
+
+		#tv-score-reason.warn {
+			color: var(--orange);
+		}
+
 		.tv-fix-btn {
 			display: inline-flex;
 			align-items: center;
@@ -2779,8 +2926,15 @@
 			transition: opacity .12s;
 			background: transparent;
 		}
-		.tv-fix-btn:hover { opacity: .8; }
-		.tv-fix-btn:disabled { opacity: .4; cursor: default; }
+
+		.tv-fix-btn:hover {
+			opacity: .8;
+		}
+
+		.tv-fix-btn:disabled {
+			opacity: .4;
+			cursor: default;
+		}
 
 		/* Onglets */
 		#tv-tabs {
@@ -2806,11 +2960,13 @@
 		#tv-tc-meta {
 			gap: 12px;
 		}
+
 		.meta-grid {
 			display: grid;
 			grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 			gap: 8px;
 		}
+
 		.meta-card {
 			background: var(--bg2);
 			border: 1px solid var(--border);
@@ -2820,26 +2976,31 @@
 			flex-direction: column;
 			gap: 3px;
 		}
+
 		.meta-card-label {
 			font-size: .7rem;
 			text-transform: uppercase;
 			letter-spacing: .05em;
 			color: var(--text3);
 		}
+
 		.meta-card-value {
 			font-size: .88rem;
 			font-weight: 600;
 			color: var(--text1);
 			word-break: break-word;
 		}
+
 		.meta-card-value.mono {
 			font-family: monospace;
 			font-size: .82rem;
 			font-weight: 400;
 		}
+
 		.meta-raw-wrap {
 			flex-shrink: 0;
 		}
+
 		.meta-raw-wrap summary {
 			cursor: pointer;
 			font-size: .78rem;
@@ -2847,7 +3008,11 @@
 			user-select: none;
 			padding: 4px 0;
 		}
-		.meta-raw-wrap summary:hover { color: var(--text2); }
+
+		.meta-raw-wrap summary:hover {
+			color: var(--text2);
+		}
+
 		.meta-raw {
 			background: var(--bg2);
 			border: 1px solid var(--border);
@@ -3089,16 +3254,20 @@
 			left: 0;
 			right: 0;
 			height: 3px;
-			background: rgba(0,0,0,.25);
+			background: rgba(0, 0, 0, .25);
 			z-index: 6;
 			pointer-events: none;
 			transition: opacity .5s ease;
 		}
-		.tv-vid-buffer-bar.done { opacity: 0; }
+
+		.tv-vid-buffer-bar.done {
+			opacity: 0;
+		}
+
 		.tv-vid-buffer-fill {
 			height: 100%;
 			width: 0%;
-			background: rgba(91,125,245,.75);
+			background: rgba(91, 125, 245, .75);
 			transition: width .25s ease;
 		}
 
@@ -3120,6 +3289,7 @@
 			opacity: 0;
 			pointer-events: none;
 		}
+
 		.ovl-loading {
 			display: flex;
 			flex-direction: column;
@@ -3127,6 +3297,7 @@
 			gap: 8px;
 			width: 80%;
 		}
+
 		.ovl-progress-bar {
 			width: 100%;
 			height: 4px;
@@ -3134,6 +3305,7 @@
 			border-radius: 2px;
 			overflow: hidden;
 		}
+
 		.ovl-progress-fill {
 			height: 100%;
 			width: 0%;
@@ -3141,6 +3313,7 @@
 			border-radius: 2px;
 			transition: width .2s ease;
 		}
+
 		.ovl-pct {
 			font-size: .72rem;
 			color: var(--text2);
@@ -3934,8 +4107,11 @@
 								<label style="font-size:.78rem;color:var(--text2);white-space:nowrap">Date</label>
 								<input type="date" id="s-date-filter" onchange="onDateFilterChange()"
 									style="font-size:.8rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text1);height:32px;cursor:pointer" />
-								<button class="btn sm" onclick="setDateToday()" title="Aujourd'hui" style="white-space:nowrap">Aujourd'hui</button>
-								<button class="btn sm" onclick="clearDateFilter()" title="Effacer le filtre date" id="btn-date-clear" style="display:none;color:var(--red);border-color:var(--red)44">✕</button>
+								<button class="btn sm" onclick="setDateToday()" title="Aujourd'hui"
+									style="white-space:nowrap">Aujourd'hui</button>
+								<button class="btn sm" onclick="clearDateFilter()" title="Effacer le filtre date"
+									id="btn-date-clear"
+									style="display:none;color:var(--red);border-color:var(--red)44">✕</button>
 							</div>
 							<button class="btn p" onclick="scanAndShow()">⟳ Scanner</button>
 						</div>
@@ -4140,7 +4316,8 @@
 									style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:.8rem;padding:6px 16px">
 									⬇ Charger plus — <span id="load-more-remaining">?</span> restantes
 								</button>
-								<span style="margin-left:10px;font-size:.75rem;color:var(--text3)" id="load-more-info"></span>
+								<span style="margin-left:10px;font-size:.75rem;color:var(--text3)"
+									id="load-more-info"></span>
 							</div>
 						</div>
 						<div class="div" style="margin:10px 0 8px"></div>
@@ -4358,12 +4535,18 @@
 								<div class="tv-pane active" id="tv-pane-sessions">
 									<div id="tv-grade-filter">
 										<span style="font-size:.65rem;color:var(--text3);margin-right:2px">Note</span>
-										<button class="tv-grade-btn all active" id="tv-gf-all" onclick="tvGradeFilter(null,this)" title="Toutes les notes">Tout</button>
-										<button class="tv-grade-btn A" onclick="tvGradeFilter('A',this)" title="Note A">A</button>
-										<button class="tv-grade-btn B" onclick="tvGradeFilter('B',this)" title="Note B">B</button>
-										<button class="tv-grade-btn C" onclick="tvGradeFilter('C',this)" title="Note C">C</button>
-										<button class="tv-grade-btn D" onclick="tvGradeFilter('D',this)" title="Note D">D</button>
-										<button class="tv-grade-btn F" onclick="tvGradeFilter('F',this)" title="Note F">F</button>
+										<button class="tv-grade-btn all active" id="tv-gf-all"
+											onclick="tvGradeFilter(null,this)" title="Toutes les notes">Tout</button>
+										<button class="tv-grade-btn A" onclick="tvGradeFilter('A',this)"
+											title="Note A">A</button>
+										<button class="tv-grade-btn B" onclick="tvGradeFilter('B',this)"
+											title="Note B">B</button>
+										<button class="tv-grade-btn C" onclick="tvGradeFilter('C',this)"
+											title="Note C">C</button>
+										<button class="tv-grade-btn D" onclick="tvGradeFilter('D',this)"
+											title="Note D">D</button>
+										<button class="tv-grade-btn F" onclick="tvGradeFilter('F',this)"
+											title="Note F">F</button>
 									</div>
 									<div id="tv-sess-list">
 										<div id="tv-sess-empty">Cliquez « Scanner »<br />pour charger les sessions</div>
@@ -4445,11 +4628,15 @@
 												</div>
 											</div>
 											<video id="tv-vid-left" preload="auto" muted playsinline></video>
-											<div class="tv-vid-buffer-bar" id="tv-vbuf-left"><div class="tv-vid-buffer-fill" id="tv-vbufl-left"></div></div>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-left">
+												<div class="tv-vid-buffer-fill" id="tv-vbufl-left"></div>
+											</div>
 											<div class="tv-vid-overlay" id="tv-ovl-left">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
-													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-left"></div></div>
+													<div class="ovl-progress-bar">
+														<div class="ovl-progress-fill" id="tv-vprog-left"></div>
+													</div>
 													<span class="ovl-pct" id="tv-vpct-left">0%</span>
 												</div>
 											</div>
@@ -4474,11 +4661,15 @@
 												</div>
 											</div>
 											<video id="tv-vid-head" preload="auto" muted playsinline></video>
-											<div class="tv-vid-buffer-bar" id="tv-vbuf-head"><div class="tv-vid-buffer-fill" id="tv-vbufl-head"></div></div>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-head">
+												<div class="tv-vid-buffer-fill" id="tv-vbufl-head"></div>
+											</div>
 											<div class="tv-vid-overlay" id="tv-ovl-head">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
-													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-head"></div></div>
+													<div class="ovl-progress-bar">
+														<div class="ovl-progress-fill" id="tv-vprog-head"></div>
+													</div>
 													<span class="ovl-pct" id="tv-vpct-head">0%</span>
 												</div>
 											</div>
@@ -4503,11 +4694,15 @@
 												</div>
 											</div>
 											<video id="tv-vid-right" preload="auto" muted playsinline></video>
-											<div class="tv-vid-buffer-bar" id="tv-vbuf-right"><div class="tv-vid-buffer-fill" id="tv-vbufl-right"></div></div>
+											<div class="tv-vid-buffer-bar" id="tv-vbuf-right">
+												<div class="tv-vid-buffer-fill" id="tv-vbufl-right"></div>
+											</div>
 											<div class="tv-vid-overlay" id="tv-ovl-right">
 												<span class="ovl-no-vid">Pas de vidéo</span>
 												<div class="ovl-loading" style="display:none">
-													<div class="ovl-progress-bar"><div class="ovl-progress-fill" id="tv-vprog-right"></div></div>
+													<div class="ovl-progress-bar">
+														<div class="ovl-progress-fill" id="tv-vprog-right"></div>
+													</div>
 													<span class="ovl-pct" id="tv-vpct-right">0%</span>
 												</div>
 											</div>
@@ -4645,7 +4840,8 @@
 										<!-- Colonne temporelle -->
 										<div class="tv-rp-section">
 											<div class="tv-rp-title">Colonne temporelle</div>
-											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+											<div class="tv-rp-row"
+												style="flex-direction:column;align-items:flex-start;gap:4px">
 												<label style="font-size:.7rem;color:var(--text3)">Tracker</label>
 												<select id="rp-tcol-tracker" class="tv-sel"
 													style="font-size:.74rem;width:100%"
@@ -4653,7 +4849,8 @@
 													<option value="">auto</option>
 												</select>
 											</div>
-											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+											<div class="tv-rp-row"
+												style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
 												<label style="font-size:.7rem;color:var(--text3)">Gripper gauche</label>
 												<select id="rp-tcol-gripper-left" class="tv-sel"
 													style="font-size:.74rem;width:100%"
@@ -4661,7 +4858,8 @@
 													<option value="">auto</option>
 												</select>
 											</div>
-											<div class="tv-rp-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
+											<div class="tv-rp-row"
+												style="flex-direction:column;align-items:flex-start;gap:4px;margin-top:5px">
 												<label style="font-size:.7rem;color:var(--text3)">Gripper droit</label>
 												<select id="rp-tcol-gripper-right" class="tv-sel"
 													style="font-size:.74rem;width:100%"
@@ -4772,11 +4970,13 @@
 														onclick="tvMetaSelectMode('reset')" disabled>reset</button>
 												</div>
 											</div>
-											<button class="tv-rp-btn" id="tv-rp-btn-set-meta" onclick="tvApplyScenarioMode()"
+											<button class="tv-rp-btn" id="tv-rp-btn-set-meta"
+												onclick="tvApplyScenarioMode()"
 												style="margin-top:6px;background:var(--accent)1a;border-color:var(--accent)55;color:var(--accent);font-weight:600"
 												disabled>Appliquer</button>
 											<div id="tv-meta-status"
-												style="font-size:.7rem;color:var(--text3);margin-top:3px;min-height:1em"></div>
+												style="font-size:.7rem;color:var(--text3);margin-top:3px;min-height:1em">
+											</div>
 										</div>
 
 										<!-- Export / Rejet session -->
@@ -5334,7 +5534,8 @@
 						</div>
 						<div id="pool-threads-list" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
 						<!-- Pool configuration -->
-						<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+						<div
+							style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:14px;align-items:center;flex-wrap:wrap">
 							<span style="color:var(--text2);font-weight:600">Configurer</span>
 							<label style="display:flex;align-items:center;gap:6px">
 								Processeurs (workers)
@@ -5347,7 +5548,8 @@
 									style="width:60px;background:var(--bg4);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:2px 6px;font-size:.78rem" />
 							</label>
 							<button class="btn sm" onclick="applyPoolConfig()">Appliquer</button>
-							<span style="color:var(--text3);font-size:.72rem">Recrée le pool — les jobs en cours seront annulés</span>
+							<span style="color:var(--text3);font-size:.72rem">Recrée le pool — les jobs en cours seront
+								annulés</span>
 						</div>
 					</div>
 
@@ -5410,7 +5612,8 @@
 							<div class="fr">
 								<label>Limite scan</label>
 								<div style="display:flex;align-items:center;gap:8px">
-									<input type="number" id="s-scan-limit" value="500" min="0" step="100" style="width:100px" />
+									<input type="number" id="s-scan-limit" value="500" min="0" step="100"
+										style="width:100px" />
 									<span style="font-size:.75rem;color:var(--text3)">0 = illimité</span>
 								</div>
 							</div>
@@ -5731,7 +5934,8 @@
 			<label class="fix-opt"><input type="checkbox" id="fix-opt-tracker" checked>
 				<span class="fix-opt-icon">📍</span>
 				<span class="fix-opt-label">Labels trackers <em>head/left/right</em></span>
-				<span class="fix-opt-desc">4 tests géométriques indépendants — hauteur Y, centralité, mobilité, projection latérale</span>
+				<span class="fix-opt-desc">4 tests géométriques indépendants — hauteur Y, centralité, mobilité,
+					projection latérale</span>
 			</label>
 			<label class="fix-opt"><input type="checkbox" id="fix-opt-camera-lbl" checked>
 				<span class="fix-opt-icon">🎥</span>
@@ -5824,7 +6028,8 @@
 			</div>
 			<div style="font-size:.73rem;color:var(--text3);margin-bottom:14px">
 				Laissez vide pour détecter automatiquement. Les sessions seront déplacées dans
-				<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">racine/{NomScénario}/{session}</code>.
+				<code
+					style="background:var(--bg3);padding:1px 4px;border-radius:3px">racine/{NomScénario}/{session}</code>.
 			</div>
 
 			<div class="exp-section">Options</div>
@@ -5836,20 +6041,25 @@
 			</div>
 			<div style="font-size:.73rem;color:var(--text3);margin-bottom:14px">
 				En mode normal : les dossiers sont créés, les sessions déplacées et
-				<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">metadata.json</code> est mis à jour
-				(<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">scenario</code> ← valeur "DO" de la BD).
+				<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">metadata.json</code> est mis à
+				jour
+				(<code style="background:var(--bg3);padding:1px 4px;border-radius:3px">scenario</code> ← valeur "DO" de
+				la BD).
 			</div>
 
 			<!-- Barre de progression -->
-			<div id="setup-progress-wrap" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #0e749044;border-radius:var(--rs)">
+			<div id="setup-progress-wrap"
+				style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #0e749044;border-radius:var(--rs)">
 				<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
 					<span id="setup-progress-ico">⏳</span>
 					<span id="setup-progress-text" style="font-size:.85rem;color:var(--text2)">En cours…</span>
 					<a id="setup-job-link" href="#" onclick="nav('jobs',null);setupModalClose();return false"
-						style="margin-left:auto;color:#22d3ee;font-size:.75rem;text-decoration:underline;display:none">Voir le job →</a>
+						style="margin-left:auto;color:#22d3ee;font-size:.75rem;text-decoration:underline;display:none">Voir
+						le job →</a>
 				</div>
 				<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
-					<div id="setup-progress-bar" style="height:100%;background:#0e7490;width:0%;transition:width .4s"></div>
+					<div id="setup-progress-bar" style="height:100%;background:#0e7490;width:0%;transition:width .4s">
+					</div>
 				</div>
 				<!-- Résumé résultat -->
 				<div id="setup-result-summary"
@@ -5879,12 +6089,14 @@
 				<input type="text" id="mistral-zip-name" placeholder="auto (nom de la session ou sessions_N)"
 					style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);padding:5px 8px;flex:1" />
 			</div>
-			<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px">Laissez vide pour le nom automatique. L'extension .zip est ajoutée automatiquement.</div>
+			<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px">Laissez vide pour le nom automatique.
+				L'extension .zip est ajoutée automatiquement.</div>
 
 			<div class="exp-section">Options</div>
 			<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
 				<input type="checkbox" id="mistral-include-mp4" checked style="width:16px;height:16px;cursor:pointer" />
-				<label for="mistral-include-mp4" style="font-size:.85rem;color:var(--text2);cursor:pointer">Inclure les fichiers vidéo MP4</label>
+				<label for="mistral-include-mp4" style="font-size:.85rem;color:var(--text2);cursor:pointer">Inclure les
+					fichiers vidéo MP4</label>
 			</div>
 			<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
 				<input type="checkbox" id="mistral-prepare-only" style="width:16px;height:16px;cursor:pointer" />
@@ -5893,13 +6105,9 @@
 				</label>
 			</div>
 
-			<div class="exp-section" style="display:flex;align-items:center;justify-content:space-between">
-				<span>Authentification (optionnel)</span>
-				<button class="btn" onclick="debugMongo()" style="font-size:.72rem;padding:2px 8px;height:auto">
-					🔌 Tester MongoDB
-				</button>
-			</div>
-			<div id="mistral-mongo-status" style="display:none;font-size:.75rem;padding:6px 10px;border-radius:var(--rs);margin-bottom:8px"></div>
+
+			<div id="mistral-mongo-status"
+				style="display:none;font-size:.75rem;padding:6px 10px;border-radius:var(--rs);margin-bottom:8px"></div>
 			<div class="fr" style="margin-bottom:6px">
 				<label>Utilisateur</label>
 				<input type="text" id="mistral-username" placeholder="variable d'env MISTRAL_USERNAME"
@@ -5912,15 +6120,18 @@
 			</div>
 
 			<!-- Barre de progression inline -->
-			<div id="mistral-progress-wrap" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #7c3aed44;border-radius:var(--rs)">
+			<div id="mistral-progress-wrap"
+				style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid #7c3aed44;border-radius:var(--rs)">
 				<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
 					<span id="mistral-progress-ico">⏳</span>
 					<span id="mistral-progress-text" style="font-size:.85rem;color:var(--text2)">En cours…</span>
 					<a id="mistral-job-link" href="#" onclick="nav('jobs',null);mistralModalClose();return false"
-						style="margin-left:auto;color:#a78bfa;font-size:.75rem;text-decoration:underline;display:none">Voir le job →</a>
+						style="margin-left:auto;color:#a78bfa;font-size:.75rem;text-decoration:underline;display:none">Voir
+						le job →</a>
 				</div>
 				<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
-					<div id="mistral-progress-bar" style="height:100%;background:#7c3aed;width:0%;transition:width .4s"></div>
+					<div id="mistral-progress-bar" style="height:100%;background:#7c3aed;width:0%;transition:width .4s">
+					</div>
 				</div>
 				<!-- Aperçu du staging après prepare_only -->
 				<div id="mistral-staging-preview"
@@ -6156,9 +6367,9 @@
 				case 'pair_result':
 					S.estimates.push(m.estimate); break;
 				case 'pong': break;
-			case 'session_removed':
-				_removeSession(m.session_path);
-				break;
+				case 'session_removed':
+					_removeSession(m.session_path);
+					break;
 			}
 		}
 
@@ -6209,8 +6420,8 @@
 				const sess = S.sessions.find(s => s.path === sessPath);
 				if (sess) {
 					if (!sess.meta) sess.meta = {};
-					if (job.result.score != null)   sess.meta.check_score   = job.result.score;
-					if (job.result.grade != null)   sess.meta.check_grade   = job.result.grade;
+					if (job.result.score != null) sess.meta.check_score = job.result.score;
+					if (job.result.grade != null) sess.meta.check_grade = job.result.grade;
 					if (job.result.verdict != null) sess.meta.check_verdict = job.result.verdict;
 					if (job.result.ia_score != null) sess.meta.check_ia_score = job.result.ia_score;
 					if (job.result.blocking_reason != null) sess.meta.check_blocking = job.result.blocking_reason;
@@ -6277,8 +6488,10 @@
 			ge('cfg-root-display').textContent = root;
 			// Réinitialiser la pagination
 			const dateFilter = _dateFilterStr(); // "YYYYMMDD" ou null
-			S.scan = { totalFound: 0, offset: 0, limit: SCAN_LIMIT,
-				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath, dateFilter };
+			S.scan = {
+				totalFound: 0, offset: 0, limit: SCAN_LIMIT,
+				hasMore: false, inputFmt: fmt, root, lerobot_path: lrPath, dateFilter
+			};
 			const scanBody = { root, input_format: fmt, limit: SCAN_LIMIT, offset: 0 };
 			if (dateFilter) scanBody.date_filter = dateFilter;
 			if (fmt === 'lerobot') {
@@ -6297,8 +6510,8 @@
 						const { sessions } = job.result;
 						// Mettre à jour état pagination
 						S.scan.totalFound = job.result.total_found ?? sessions.length;
-						S.scan.hasMore    = job.result.has_more ?? false;
-						S.scan.offset     = sessions.length;
+						S.scan.hasMore = job.result.has_more ?? false;
+						S.scan.offset = sessions.length;
 						// Pour LeRobot, on skip le loadSessionPipelineState (pas de pipeline_state.json)
 						const loaders = fmt === 'lerobot'
 							? sessions.map(s => Promise.resolve(s))
@@ -6341,8 +6554,8 @@
 						_scanInProgress = false;
 						const { sessions: newSess } = job.result;
 						S.scan.totalFound = job.result.total_found ?? S.scan.totalFound;
-						S.scan.hasMore    = job.result.has_more ?? false;
-						S.scan.offset     += newSess.length;
+						S.scan.hasMore = job.result.has_more ?? false;
+						S.scan.offset += newSess.length;
 						const loaders = fmt === 'lerobot'
 							? newSess.map(s => Promise.resolve(s))
 							: newSess.map(loadSessionPipelineState);
@@ -6500,13 +6713,13 @@
 				// Détail par dimension
 				const comp = r.components || {};
 				const DIM_LABELS = {
-					video_orientation:      'Orientation vidéos  (gate)',
-					gripper_health:         'Santé pinces        (gate)',
+					video_orientation: 'Orientation vidéos  (gate)',
+					gripper_health: 'Santé pinces        (gate)',
 					gripper_timestamp_sync: 'TS gripper          (25%)',
-					video_tracker_sync:     'Vidéo/tracker IA    (25%)',
-					tracker_placement:      'Placement trackers  (15%)',
-					video_quality:          'Qualité vidéo       (20%)',
-					gripper_frame_sync:     'Sync frame/capteur  (15%)',
+					video_tracker_sync: 'Vidéo/tracker IA    (25%)',
+					tracker_placement: 'Placement trackers  (15%)',
+					video_quality: 'Qualité vidéo       (20%)',
+					gripper_frame_sync: 'Sync frame/capteur  (15%)',
 				};
 				for (const [key, label] of Object.entries(DIM_LABELS)) {
 					const d = comp[key];
@@ -6522,8 +6735,8 @@
 							const sd = d.details[side];
 							if (!sd || sd.status) continue;
 							const pos = (sd.mean_position ?? 0.5).toFixed(3);
-										const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
-										const lc = sd.at_bottom ? 'ERROR' : 'INFO';
+							const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
+							const lc = sd.at_bottom ? 'ERROR' : 'INFO';
 							log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
 						}
 					}
@@ -6578,7 +6791,7 @@
 
 				if (r.tracker_auto_fixed) {
 					const fm = r.tracker_fix_mapping || {};
-					const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
+					const swaps = Object.entries(fm).filter(([d, s]) => d !== s).map(([d, s]) => `${s}→${d}`).join(', ');
 					log(`  🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
 				}
 				return r.repair_perfect;
@@ -7404,9 +7617,9 @@
 
 			// ── Bloc vérifications ───────────────────────────────────────────
 			{
-				const verif      = sess.meta?.verification;
+				const verif = sess.meta?.verification;
 				const labelVerif = sess.meta?.camera_label_verification;
-				const metaFull   = sess.meta || {};
+				const metaFull = sess.meta || {};
 				const checkScore = sess.meta?.check_score ?? null;
 				const hasAnyVerif = verif || labelVerif || metaFull.ia_sync_validated || checkScore != null;
 
@@ -7416,13 +7629,13 @@
 
 					// ── Score global ─────────────────────────────────────────────
 					if (checkScore != null) {
-						const grade    = metaFull.check_grade || '';
-						const verdict  = metaFull.check_verdict || '';
+						const grade = metaFull.check_grade || '';
+						const verdict = metaFull.check_verdict || '';
 						const blocking = metaFull.check_blocking || '';
-						const iaScore  = metaFull.check_ia_score;
+						const iaScore = metaFull.check_ia_score;
 
 						const scoreColor = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
-						const gradeBg    = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
+						const gradeBg = checkScore >= 70 ? 'var(--green)' : checkScore >= 40 ? 'var(--orange)' : 'var(--red)';
 
 						// Explication humaine du score
 						let scoreExpl = '';
@@ -7461,13 +7674,13 @@
 
 					// ── Problèmes verify (trackers + désync vidéo) ───────────────
 					if (verif) {
-						const issues   = verif.issues || [];
+						const issues = verif.issues || [];
 						const warnings = verif.warnings || [];
-						const stats    = verif.stats || {};
+						const stats = verif.stats || {};
 
 						// Étiquettes humaines pour les types de problèmes connus
 						const issueLabel = (txt) => {
-							if (/gap|trou|manquant/i.test(txt))   return ['Trous dans les données tracker', 'Le tracker a perdu le signal pendant l\'enregistrement.'];
+							if (/gap|trou|manquant/i.test(txt)) return ['Trous dans les données tracker', 'Le tracker a perdu le signal pendant l\'enregistrement.'];
 							if (/vitesse|mouvement|statique/i.test(txt)) return ['Robot immobile ou trop lent', 'Pas assez de mouvement pour valider la synchronisation.'];
 							if (/désync|décalage|vidéo/i.test(txt)) return ['Désynchronisation vidéo', 'Les flux vidéo ne sont pas alignés avec les capteurs.'];
 							if (/inver|swap|gauche|droite/i.test(txt)) return ['Trackers inversés', 'Les trackers gauche et droit semblent être échangés.'];
@@ -7509,9 +7722,9 @@
 
 						// Stats en grille compacte
 						const statRows = [];
-						if (stats.tracker_rows)            statRows.push(['Lignes tracker',      stats.tracker_rows.toLocaleString()]);
-						if (stats.tracker_dt_ms)           statRows.push(['Intervalle tracker',  `${stats.tracker_dt_ms} ms`]);
-						if (stats.tracker_gaps_200ms)      statRows.push(['Trous > 200 ms',      stats.tracker_gaps_200ms, stats.tracker_gaps_200ms > 0 ? 'var(--orange)' : null]);
+						if (stats.tracker_rows) statRows.push(['Lignes tracker', stats.tracker_rows.toLocaleString()]);
+						if (stats.tracker_dt_ms) statRows.push(['Intervalle tracker', `${stats.tracker_dt_ms} ms`]);
+						if (stats.tracker_gaps_200ms) statRows.push(['Trous > 200 ms', stats.tracker_gaps_200ms, stats.tracker_gaps_200ms > 0 ? 'var(--orange)' : null]);
 						if (stats.tracker_lr_dist_mean_m != null) statRows.push(['Distance L–R (moy.)', `${stats.tracker_lr_dist_mean_m} m`]);
 						if (stats.video_max_delay_ms != null) statRows.push(['Désync vidéo max', `${stats.video_max_delay_ms} ms`, stats.video_max_delay_ms > 500 ? 'var(--red)' : stats.video_max_delay_ms > 200 ? 'var(--orange)' : null]);
 
@@ -7542,11 +7755,11 @@
 
 					// ── Labels caméra ────────────────────────────────────────────
 					if (labelVerif) {
-						const lblOk   = labelVerif.global_ok;
-						const conf    = labelVerif.confidence;
+						const lblOk = labelVerif.global_ok;
+						const conf = labelVerif.confidence;
 						const verdicts = labelVerif.verdicts || [];
-						const nOk     = verdicts.filter(v => v.label_correct ?? v.ok).length;
-						const nFail   = verdicts.length - nOk;
+						const nOk = verdicts.filter(v => v.label_correct ?? v.ok).length;
+						const nFail = verdicts.length - nOk;
 
 						html += `<div style="background:var(--bg3);border:1px solid ${lblOk ? 'var(--green)' : 'var(--red)'}44;border-radius:6px;padding:10px 12px;margin-bottom:8px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${verdicts.length ? 8 : 0}px">
@@ -7558,8 +7771,8 @@
   </div>`;
 						if (verdicts.length) {
 							verdicts.forEach(v => {
-								const ok        = v.label_correct ?? v.ok;
-								const declared  = v.declared_label ?? v.label;
+								const ok = v.label_correct ?? v.ok;
+								const declared = v.declared_label ?? v.label;
 								const predicted = v.predicted_label ?? v.predicted;
 								html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-top:1px solid var(--border)33;font-size:.78rem">
   <span style="color:var(--text2)">${esc(declared)}</span>
@@ -7574,9 +7787,9 @@
 
 					// ── Validation IA sync ───────────────────────────────────────
 					if (metaFull.ia_sync_validated) {
-						const nRel    = metaFull.ia_sync_n_reliable;
-						const avgSc   = metaFull.ia_sync_avg_score;
-						const shifts  = metaFull.ia_sync_shifts_ms || {};
+						const nRel = metaFull.ia_sync_n_reliable;
+						const avgSc = metaFull.ia_sync_avg_score;
+						const shifts = metaFull.ia_sync_shifts_ms || {};
 						const nShifts = Object.keys(shifts).length;
 
 						html += `<div style="background:var(--bg3);border:1px solid var(--green)44;border-radius:6px;padding:10px 12px;margin-bottom:8px">
@@ -7829,13 +8042,13 @@
 				// — Détail par dimension —
 				const comp = r.components || {};
 				const DIM_LABELS = {
-					video_orientation:      'Orientation vidéos  (gate)',
-					gripper_health:         'Santé pinces        (gate)',
+					video_orientation: 'Orientation vidéos  (gate)',
+					gripper_health: 'Santé pinces        (gate)',
 					gripper_timestamp_sync: 'TS gripper          (25%)',
-					video_tracker_sync:     'Vidéo/tracker IA    (25%)',
-					tracker_placement:      'Trackers            (15%)',
-					video_quality:          'Qualité vidéo       (20%)',
-					gripper_frame_sync:     'Sync frame/cap      (15%)',
+					video_tracker_sync: 'Vidéo/tracker IA    (25%)',
+					tracker_placement: 'Trackers            (15%)',
+					video_quality: 'Qualité vidéo       (20%)',
+					gripper_frame_sync: 'Sync frame/cap      (15%)',
 				};
 				for (const [key, label] of Object.entries(DIM_LABELS)) {
 					const d = comp[key];
@@ -7851,9 +8064,9 @@
 						for (const side of ['left', 'right']) {
 							const sd = d.details[side];
 							if (!sd || sd.status) continue;
-							const pos  = (sd.mean_position ?? 0.5).toFixed(3);
-										const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
-										const lc   = sd.at_bottom ? 'ERROR' : 'INFO';
+							const pos = (sd.mean_position ?? 0.5).toFixed(3);
+							const icon = sd.at_bottom ? '↓ BAS ✗ RETOURNÉE' : '↑ HAUT ✓';
+							const lc = sd.at_bottom ? 'ERROR' : 'INFO';
 							log(`    ${side}: ${icon}  position=${pos}  σ=${(sd.std_position || 0).toFixed(3)}  (${sd.n_frames || 0} frames)`, lc);
 						}
 					}
@@ -7863,7 +8076,7 @@
 						for (const side of ['left', 'right']) {
 							const sd = d.details[side];
 							if (!sd || sd.status) continue;
-							const lc  = sd.defective ? 'ERROR' : 'INFO';
+							const lc = sd.defective ? 'ERROR' : 'INFO';
 							const tag = sd.defective ? '✗ DEFECTUEUSE' : '✓ OK';
 							log(`    ${side}: ${tag}  mean=${(sd.mean_mm || 0).toFixed(3)}mm  range=[${(sd.min_mm || 0).toFixed(1)}, ${(sd.max_mm || 0).toFixed(1)}]  n=${sd.n_samples || 0}`, lc);
 						}
@@ -7907,7 +8120,7 @@
 				// — Auto-fix inversion trackers —
 				if (r.tracker_auto_fixed) {
 					const fm = r.tracker_fix_mapping || {};
-					const swaps = Object.entries(fm).filter(([d,s]) => d !== s).map(([d,s]) => `${s}→${d}`).join(', ');
+					const swaps = Object.entries(fm).filter(([d, s]) => d !== s).map(([d, s]) => `${s}→${d}`).join(', ');
 					log(`🔄 Inversion trackers détectée et corrigée automatiquement (${swaps}) — check relancé`, 'WARN');
 				}
 
@@ -8439,12 +8652,12 @@
 
 			const payload = {
 				sessions,
-				force:               ge('fix-opt-force')?.checked      ?? false,
-				run_tracker_labels:  ge('fix-opt-tracker')?.checked    ?? true,
-				run_camera_labels:   ge('fix-opt-camera-lbl')?.checked ?? true,
-				run_camera_offset:   ge('fix-opt-offset')?.checked     ?? true,
-				run_timestamp_sync:  ge('fix-opt-ts')?.checked         ?? true,
-				run_gripper_sync:    ge('fix-opt-gripper')?.checked    ?? true,
+				force: ge('fix-opt-force')?.checked ?? false,
+				run_tracker_labels: ge('fix-opt-tracker')?.checked ?? true,
+				run_camera_labels: ge('fix-opt-camera-lbl')?.checked ?? true,
+				run_camera_offset: ge('fix-opt-offset')?.checked ?? true,
+				run_timestamp_sync: ge('fix-opt-ts')?.checked ?? true,
+				run_gripper_sync: ge('fix-opt-gripper')?.checked ?? true,
 			};
 
 			// Vérifier qu'au moins une option est cochée
@@ -8769,7 +8982,7 @@
 			gripOffset: 0,    // décalage en ms appliqué aux données gripper (visuel uniquement)
 			_gradeFilter: null, // filtre d'affichage par note (null = tout afficher)
 			_seekRaf: null,        // RAF throttle pour seeks pendant scrubbing
-	
+
 		};
 
 		const TV_COLORS = {
@@ -8800,7 +9013,7 @@
 		// ── Colonnes temporelles ────────────────────────────────────────────
 		async function tvLoadTimestampCols(path) {
 			const sel = {
-				tracker:      ge('rp-tcol-tracker'),
+				tracker: ge('rp-tcol-tracker'),
 				gripper_left: ge('rp-tcol-gripper-left'),
 				gripper_right: ge('rp-tcol-gripper-right'),
 			};
@@ -8827,17 +9040,17 @@
 						s.value = 't_ms';
 					}
 				}
-			} catch (_) {}
+			} catch (_) { }
 		}
 
 		function tvBuildDataUrl(path) {
 			let url = `/api/session/data?session_path=${encodeURIComponent(path)}`;
 			const tracker = ge('rp-tcol-tracker')?.value;
-			const gripL   = ge('rp-tcol-gripper-left')?.value;
-			const gripR   = ge('rp-tcol-gripper-right')?.value;
+			const gripL = ge('rp-tcol-gripper-left')?.value;
+			const gripR = ge('rp-tcol-gripper-right')?.value;
 			if (tracker) url += `&time_col_tracker=${encodeURIComponent(tracker)}`;
-			if (gripL)   url += `&time_col_gripper_left=${encodeURIComponent(gripL)}`;
-			if (gripR)   url += `&time_col_gripper_right=${encodeURIComponent(gripR)}`;
+			if (gripL) url += `&time_col_gripper_left=${encodeURIComponent(gripL)}`;
+			if (gripR) url += `&time_col_gripper_right=${encodeURIComponent(gripR)}`;
 			return url;
 		}
 
@@ -8861,7 +9074,7 @@
 				const has3d = !!(data?.tracker?.t_ms?.length);
 				if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
 				tvSeekVideos(0);
-			} catch (_) {}
+			} catch (_) { }
 		}
 
 		let _tvRightPanelOpen = true;
@@ -9313,8 +9526,8 @@
 		// ── Score panel (toolbar haut droite) ────────────────────────────
 
 		function tvUpdateScorePanel(sess) {
-			const badge   = ge('tv-score-badge');
-			const reason  = ge('tv-score-reason');
+			const badge = ge('tv-score-badge');
+			const reason = ge('tv-score-reason');
 			const fixArea = ge('tv-score-fix-btns');
 			if (!badge || !reason || !fixArea) return;
 
@@ -9327,12 +9540,12 @@
 				return;
 			}
 
-			const meta   = sess.meta || {};
-			const score  = meta.check_score;
-			const grade  = meta.check_grade || '';
+			const meta = sess.meta || {};
+			const score = meta.check_score;
+			const grade = meta.check_grade || '';
 			const verdict = meta.check_verdict || '';
 			const blocking = meta.check_blocking || '';
-			const verif  = meta.verification || null;
+			const verif = meta.verification || null;
 
 			// Badge grade + score
 			const gradeClass = grade ? `grade-${grade}` : 'grade-none';
@@ -10057,13 +10270,13 @@
 				ovl.classList.remove('hidden');
 			}
 
-			const barEl  = ge(`tv-vbuf-${side}`);
+			const barEl = ge(`tv-vbuf-${side}`);
 			const fillEl = ge(`tv-vbufl-${side}`);
 			const pctOvl = ge(`tv-vpct-${side}`);
-			const prOvl  = ge(`tv-vprog-${side}`);
+			const prOvl = ge(`tv-vprog-${side}`);
 
 			// Réinitialiser la barre de buffer
-			if (barEl)  { barEl.classList.remove('done'); barEl.style.opacity = '1'; }
+			if (barEl) { barEl.classList.remove('done'); barEl.style.opacity = '1'; }
 			if (fillEl) fillEl.style.width = '0%';
 
 			let _ready = false;
@@ -10076,8 +10289,8 @@
 			function updateBar() {
 				const pct = bufferedPct();
 				if (fillEl) fillEl.style.width = pct + '%';
-				if (prOvl)  prOvl.style.width  = pct + '%';
-				if (pctOvl) pctOvl.textContent  = Math.round(pct) + '%';
+				if (prOvl) prOvl.style.width = pct + '%';
+				if (pctOvl) pctOvl.textContent = Math.round(pct) + '%';
 				if (pct >= 99.5) {
 					// Fully buffered → fade out the bar
 					if (barEl) barEl.classList.add('done');
@@ -10086,10 +10299,10 @@
 			}
 
 			function cleanup() {
-				v.removeEventListener('progress',   updateBar);
+				v.removeEventListener('progress', updateBar);
 				v.removeEventListener('loadeddata', updateBar);
-				v.removeEventListener('canplay',    onCanPlay);
-				v.removeEventListener('error',      onError);
+				v.removeEventListener('canplay', onCanPlay);
+				v.removeEventListener('error', onError);
 			}
 
 			function onCanPlay() {
@@ -10115,22 +10328,22 @@
 
 			// Nettoyer les anciens listeners avant de rebrancher
 			v.oncanplay = null; v.onerror = null; v.onseeked = null;
-			v.removeEventListener('progress',   updateBar);
+			v.removeEventListener('progress', updateBar);
 			v.removeEventListener('loadeddata', updateBar);
-			v.removeEventListener('canplay',    onCanPlay);
-			v.removeEventListener('error',      onError);
+			v.removeEventListener('canplay', onCanPlay);
+			v.removeEventListener('error', onError);
 
-			v.addEventListener('progress',   updateBar);
+			v.addEventListener('progress', updateBar);
 			v.addEventListener('loadeddata', updateBar);
-			v.addEventListener('canplay',    onCanPlay);
-			v.addEventListener('error',      onError);
+			v.addEventListener('canplay', onCanPlay);
+			v.addEventListener('error', onError);
 
 			v.src = url;
 			v.load();
 
 			// Fetch parallèle pour pré-remplir le cache HTTP dès que possible
 			// Le navigateur servira ensuite les Range requests depuis le cache disque
-			fetch(url, { priority: 'high' }).catch(() => {});
+			fetch(url, { priority: 'high' }).catch(() => { });
 		}
 
 
@@ -10151,7 +10364,7 @@
 		}
 
 		function tvUpdateBufferBar(side, v) {
-			const barEl  = ge(`tv-vbuf-${side}`);
+			const barEl = ge(`tv-vbuf-${side}`);
 			const fillEl = ge(`tv-vbufl-${side}`);
 			if (!fillEl || !v.duration || !isFinite(v.duration) || !v.buffered.length) return;
 			const pct = Math.min(100, (v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
@@ -10248,7 +10461,7 @@
 			const sess = S.sessions?.find(s => s.path === TV.sessPath);
 			const meta = sess?.meta || null;
 
-			ge('meta-empty').style.display  = meta ? 'none' : '';
+			ge('meta-empty').style.display = meta ? 'none' : '';
 			ge('meta-content').style.display = meta ? '' : 'none';
 			if (!meta) return;
 
@@ -10272,14 +10485,14 @@
 			let durStr = '—';
 			if (meta.duration_seconds != null) {
 				const s = Math.round(meta.duration_seconds);
-				durStr = s >= 60 ? `${Math.floor(s/60)}min ${s%60}s` : `${s}s`;
+				durStr = s >= 60 ? `${Math.floor(s / 60)}min ${s % 60}s` : `${s}s`;
 			}
 
 			// Caméras
 			let camStr = '—';
 			if (meta.cameras && typeof meta.cameras === 'object') {
 				const cams = Object.entries(meta.cameras).map(([id, c]) =>
-					c?.role ? `${c.role} (${id.slice(0,8)}…)` : id.slice(0, 8)
+					c?.role ? `${c.role} (${id.slice(0, 8)}…)` : id.slice(0, 8)
 				);
 				camStr = cams.join(', ') || '—';
 			}
@@ -10288,7 +10501,7 @@
 			let trkStr = '—';
 			if (meta.trackers && typeof meta.trackers === 'object') {
 				const trks = Object.entries(meta.trackers).map(([id, t]) =>
-					t?.role ? `${t.role} (${id.slice(0,8)}…)` : id.slice(0, 8)
+					t?.role ? `${t.role} (${id.slice(0, 8)}…)` : id.slice(0, 8)
 				);
 				trkStr = trks.join(', ') || '—';
 			}
@@ -10301,16 +10514,16 @@
 			}
 
 			const cards = [
-				{ label: 'Scénario',  value: fmt(meta.scenario) },
-				{ label: 'Date',      value: dateStr },
-				{ label: 'Durée',     value: durStr },
+				{ label: 'Scénario', value: fmt(meta.scenario) },
+				{ label: 'Date', value: dateStr },
+				{ label: 'Durée', value: durStr },
 				{ label: 'Opérateur', value: fmt(meta.operator || meta.user) },
 				{ label: 'Type de tâche', value: fmt(meta.task_type) },
-				{ label: 'Caméras',   value: camStr },
-				{ label: 'Trackers',  value: trkStr },
+				{ label: 'Caméras', value: camStr },
+				{ label: 'Trackers', value: trkStr },
 				{ label: 'Score vérif.', value: scoreStr },
-				{ label: 'Verdict',   value: fmt(meta.check_verdict) },
-				{ label: 'Dossier',   value: fmt(meta.session_folder || TV.sessPath), mono: true },
+				{ label: 'Verdict', value: fmt(meta.check_verdict) },
+				{ label: 'Dossier', value: fmt(meta.session_folder || TV.sessPath), mono: true },
 			].filter(c => c.value && c.value !== '—');
 
 			ge('meta-cards').innerHTML = cards.map(c => `
@@ -11752,8 +11965,8 @@
 							if (sess) {
 								if (!sess.meta) sess.meta = {};
 								if (score >= 0) sess.meta.check_score = r.score;
-								if (r.grade)    sess.meta.check_grade = r.grade;
-								if (r.verdict)  sess.meta.check_verdict = r.verdict;
+								if (r.grade) sess.meta.check_grade = r.grade;
+								if (r.verdict) sess.meta.check_verdict = r.verdict;
 								if (r.ia_score != null) sess.meta.check_ia_score = r.ia_score;
 								if (r.blocking_reason != null) sess.meta.check_blocking = r.blocking_reason;
 								_patchSessRow(sessPath);

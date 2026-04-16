@@ -4589,7 +4589,7 @@ async def set_scenario_mode(req: SetScenarioModeRequest):
         _mongo_coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
         _client = _MongoClient(_mongo_uri, serverSelectionTimeoutMS=3000)
         _doc = _client[_mongo_db][_mongo_coll].find_one(
-            {"name": {"$regex": f"^{scenario_slug}$", "$options": "i"}},
+            {"nom": {"$regex": f"^{scenario_slug}$", "$options": "i"}},
             {"_id": 0, "do": 1, "reset": 1},
         )
         if _doc:
@@ -5307,7 +5307,7 @@ def _mongo_load_all_scenarios() -> tuple[list, str | None]:
         db   = os.getenv("MONGO_DB", "physical_data")
         coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
         client = _MC(uri, serverSelectionTimeoutMS=3000)
-        docs = list(client[db][coll].find({}, {"_id": 0, "name": 1, "description": 1, "do": 1, "reset": 1}))
+        docs = list(client[db][coll].find({}, {"_id": 0, "nom": 1, "description": 1, "do": 1, "reset": 1}))
         client.close()
         return docs, None
     except Exception as e:
@@ -5329,7 +5329,7 @@ def _find_scenario_by_meta(meta_scenario: str, scenarios: list) -> Optional[dict
     val = meta_scenario.strip().lower()
 
     for sc in scenarios:
-        if sc.get("name", "").strip().lower() == val:
+        if sc.get("nom", "").strip().lower() == val:
             return sc
     for sc in scenarios:
         if sc.get("description", "").strip().lower() == val:
@@ -5366,9 +5366,9 @@ def _worker_setup(job: Job, req: SetupRequest):
     elif not scenarios:
         _log_job(job, "⚠ Collection scenarios vide.", "WARN")
     else:
-        _log_job(job, f"{len(scenarios)} scénario(s) : {', '.join(s['name'] for s in scenarios if s.get('name'))}")
+        _log_job(job, f"{len(scenarios)} scénario(s) : {', '.join(s['nom'] for s in scenarios if s.get('nom'))}")
 
-    known_names_lower = {s["name"].lower() for s in scenarios if s.get("name")}
+    known_names_lower = {s["nom"].lower() for s in scenarios if s.get("nom")}
 
     # ── Traitement session par session ───────────────────────────────────────
     moved, skipped, errors, unmatched = [], [], [], []
@@ -5399,7 +5399,7 @@ def _worker_setup(job: Job, req: SetupRequest):
             _update_job(job, progress=round((i + 1) / total * 100, 1))
             continue
 
-        sc_name = sc["name"]
+        sc_name = sc["nom"]
 
         # ── Validation : session déjà dans une sous-arborescence scénario ? ──
         # Cas /scénario/mode/session → laisser totalement tel quel
@@ -5586,9 +5586,9 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
             _log_job(job, "⚠ Collection scenarios vide.", "WARN")
         else:
             _log_job(job, f"  {len(scenarios)} scénario(s) chargé(s) : "
-                          f"{', '.join(s['name'] for s in scenarios if s.get('name'))}")
+                          f"{', '.join(s['nom'] for s in scenarios if s.get('nom'))}")
 
-        known_names_lower = {s["name"].lower() for s in scenarios if s.get("name")}
+        known_names_lower = {s["nom"].lower() for s in scenarios if s.get("nom")}
         setup_ok, setup_warn = 0, 0
 
         for i, sess in enumerate(staged):
@@ -5612,7 +5612,7 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
             # Si MongoDB accessible → sc.name = nom canonique, sc.do = instruction
             # Sinon → on utilise meta.scenario directement comme nom de dossier
             sc = _find_scenario_by_meta(meta_scenario, scenarios)
-            sc_name = sc["name"] if sc else meta_scenario   # fallback : nom brut
+            sc_name = sc["nom"] if sc else meta_scenario   # fallback : nom brut
             sc_do   = sc.get("do") if sc else None
 
             if sc is None:

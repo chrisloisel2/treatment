@@ -6990,8 +6990,8 @@
 			try {
 				const r = await api('GET', '/api/mistral/debug-mongo');
 				if (r.connected) {
-					const names = r.scenarios.map(s => s.name || '?').join(', ') || '(aucun)';
-					const missing_do = r.scenarios.filter(s => !s.do).map(s => s.name);
+					const names = r.scenarios.map(s => s.nom || '?').join(', ') || '(aucun)';
+					const missing_do = r.scenarios.filter(s => !s.do).map(s => s.nom);
 					el.style.background = '#16a34a1a';
 					el.style.border = '1px solid #16a34a44';
 					el.style.color = '#4ade80';

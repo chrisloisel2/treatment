@@ -4584,7 +4584,7 @@ async def set_scenario_mode(req: SetScenarioModeRequest):
     scenario_instruction: str | None = None
     try:
         from pymongo import MongoClient as _MongoClient
-        _mongo_uri  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        _mongo_uri  = os.getenv("MONGO_URI", "mongodb://admin:admin123@100.93.248.105/")
         _mongo_db   = os.getenv("MONGO_DB", "physical_data")
         _mongo_coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
         _client = _MongoClient(_mongo_uri, serverSelectionTimeoutMS=3000)
@@ -5303,7 +5303,7 @@ def _mongo_load_all_scenarios() -> tuple[list, str | None]:
     Retourne (docs, None) en cas de succès, ([], message_erreur) en cas d'échec."""
     try:
         from pymongo import MongoClient as _MC
-        uri  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        uri  = os.getenv("MONGO_URI", "mongodb://admin:admin123@100.93.248.105/")
         db   = os.getenv("MONGO_DB", "physical_data")
         coll = os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios")
         client = _MC(uri, serverSelectionTimeoutMS=3000)
@@ -5927,7 +5927,7 @@ async def mistral_debug_mongo():
         return {
             "connected": False,
             "error": err,
-            "uri": os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+            "uri": os.getenv("MONGO_URI", "mongodb://admin:admin123@100.93.248.105/"),
             "db": os.getenv("MONGO_DB", "physical_data"),
             "collection": os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios"),
             "scenarios": [],
@@ -5935,7 +5935,7 @@ async def mistral_debug_mongo():
     return {
         "connected": True,
         "error": None,
-        "uri": os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+        "uri": os.getenv("MONGO_URI", "mongodb://admin:admin123@100.93.248.105/"),
         "db": os.getenv("MONGO_DB", "physical_data"),
         "collection": os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios"),
         "count": len(scenarios),

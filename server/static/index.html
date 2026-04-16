@@ -5893,7 +5893,13 @@
 				</label>
 			</div>
 
-			<div class="exp-section">Authentification (optionnel)</div>
+			<div class="exp-section" style="display:flex;align-items:center;justify-content:space-between">
+				<span>Authentification (optionnel)</span>
+				<button class="btn" onclick="debugMongo()" style="font-size:.72rem;padding:2px 8px;height:auto">
+					🔌 Tester MongoDB
+				</button>
+			</div>
+			<div id="mistral-mongo-status" style="display:none;font-size:.75rem;padding:6px 10px;border-radius:var(--rs);margin-bottom:8px"></div>
 			<div class="fr" style="margin-bottom:6px">
 				<label>Utilisateur</label>
 				<input type="text" id="mistral-username" placeholder="variable d'env MISTRAL_USERNAME"
@@ -6971,6 +6977,36 @@
 				}
 			} catch (e) {
 				// poll silencieux, on réessaie au prochain tick
+			}
+		}
+
+		async function debugMongo() {
+			const el = ge('mistral-mongo-status');
+			el.style.display = '';
+			el.style.background = 'var(--bg3)';
+			el.style.border = '1px solid var(--border)';
+			el.style.color = 'var(--text2)';
+			el.textContent = '⏳ Connexion à MongoDB…';
+			try {
+				const r = await api('GET', '/api/mistral/debug-mongo');
+				if (r.connected) {
+					const names = r.scenarios.map(s => s.name || '?').join(', ') || '(aucun)';
+					const missing_do = r.scenarios.filter(s => !s.do).map(s => s.name);
+					el.style.background = '#16a34a1a';
+					el.style.border = '1px solid #16a34a44';
+					el.style.color = '#4ade80';
+					el.innerHTML = `✅ Connecté — ${r.count} scénario(s) : ${names}`
+						+ (missing_do.length ? `<br>⚠ Sans champ "do" : ${missing_do.join(', ')}` : '');
+				} else {
+					el.style.background = 'var(--red)1a';
+					el.style.border = '1px solid var(--red)44';
+					el.style.color = 'var(--red)';
+					el.innerHTML = `❌ MongoDB inaccessible<br><code style="font-size:.7rem">${r.error}</code>`
+						+ `<br>URI : <code style="font-size:.7rem">${r.uri}</code>`;
+				}
+			} catch (e) {
+				el.style.color = 'var(--red)';
+				el.textContent = `❌ Erreur : ${e.message}`;
 			}
 		}
 

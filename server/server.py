@@ -5298,9 +5298,9 @@ class SetupRequest(BaseModel):
     dry_run: bool = False        # simulation sans déplacer ni modifier
 
 
-def _mongo_load_all_scenarios() -> list:
+def _mongo_load_all_scenarios() -> tuple[list, str | None]:
     """Charge tous les documents de la collection scenarios depuis MongoDB.
-    Retourne une liste vide si MongoDB est indisponible."""
+    Retourne (docs, None) en cas de succès, ([], message_erreur) en cas d'échec."""
     try:
         from pymongo import MongoClient as _MC
         uri  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
@@ -5309,9 +5309,9 @@ def _mongo_load_all_scenarios() -> list:
         client = _MC(uri, serverSelectionTimeoutMS=3000)
         docs = list(client[db][coll].find({}, {"_id": 0, "name": 1, "description": 1, "do": 1, "reset": 1}))
         client.close()
-        return docs
-    except Exception:
-        return []
+        return docs, None
+    except Exception as e:
+        return [], str(e)
 
 
 def _find_scenario_by_meta(meta_scenario: str, scenarios: list) -> Optional[dict]:
@@ -5358,10 +5358,13 @@ def _worker_setup(job: Job, req: SetupRequest):
     prefix = "[DRY-RUN] " if req.dry_run else ""
 
     # ── Chargement des scénarios MongoDB ────────────────────────────────────
-    _log_job(job, "Chargement des scénarios depuis MongoDB…")
-    scenarios = _mongo_load_all_scenarios()
-    if not scenarios:
-        _log_job(job, "⚠ Aucun scénario récupéré depuis MongoDB.", "WARN")
+    _log_job(job, f"Chargement des scénarios (URI={os.getenv('MONGO_URI','mongodb://localhost:27017')})…")
+    scenarios, mongo_err = _mongo_load_all_scenarios()
+    if mongo_err:
+        _log_job(job, f"⚠ MongoDB inaccessible : {mongo_err}", "WARN")
+        _log_job(job, "  Les dossiers seront créés avec le nom brut de meta.scenario.", "WARN")
+    elif not scenarios:
+        _log_job(job, "⚠ Collection scenarios vide.", "WARN")
     else:
         _log_job(job, f"{len(scenarios)} scénario(s) : {', '.join(s['name'] for s in scenarios if s.get('name'))}")
 
@@ -5575,11 +5578,15 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
         _log_job(job, f"\nÉtape 2/4 — Setup (organisation par scénario)…")
         _update_job(job, progress=18.0)
 
-        scenarios = _mongo_load_all_scenarios()
-        if not scenarios:
-            _log_job(job, "⚠ MongoDB indisponible — les sessions seront zippées à plat.", "WARN")
+        scenarios, mongo_err = _mongo_load_all_scenarios()
+        if mongo_err:
+            _log_job(job, f"⚠ MongoDB inaccessible : {mongo_err}", "WARN")
+            _log_job(job, "  Organisation par nom brut de meta.scenario (sans mise à jour do).", "WARN")
+        elif not scenarios:
+            _log_job(job, "⚠ Collection scenarios vide.", "WARN")
         else:
-            _log_job(job, f"  {len(scenarios)} scénario(s) chargé(s)")
+            _log_job(job, f"  {len(scenarios)} scénario(s) chargé(s) : "
+                          f"{', '.join(s['name'] for s in scenarios if s.get('name'))}")
 
         known_names_lower = {s["name"].lower() for s in scenarios if s.get("name")}
         setup_ok, setup_warn = 0, 0
@@ -5910,6 +5917,30 @@ async def mistral_staging_delete(staging_dir: str):
         raise HTTPException(403, "Suppression non autorisée en dehors de /mnt/tmp/mistral_*")
     shutil.rmtree(p, ignore_errors=True)
     return {"status": "ok", "deleted": str(p)}
+
+
+@app.get("/api/mistral/debug-mongo")
+async def mistral_debug_mongo():
+    """Teste la connexion MongoDB et retourne les scénarios disponibles."""
+    scenarios, err = _mongo_load_all_scenarios()
+    if err:
+        return {
+            "connected": False,
+            "error": err,
+            "uri": os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+            "db": os.getenv("MONGO_DB", "physical_data"),
+            "collection": os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios"),
+            "scenarios": [],
+        }
+    return {
+        "connected": True,
+        "error": None,
+        "uri": os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+        "db": os.getenv("MONGO_DB", "physical_data"),
+        "collection": os.getenv("MONGO_SCENARIOS_COLLECTION", "scenarios"),
+        "count": len(scenarios),
+        "scenarios": scenarios,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────

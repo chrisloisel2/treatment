@@ -5882,9 +5882,15 @@
 			<div style="font-size:.73rem;color:var(--text3);margin-bottom:10px">Laissez vide pour le nom automatique. L'extension .zip est ajoutée automatiquement.</div>
 
 			<div class="exp-section">Options</div>
-			<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
 				<input type="checkbox" id="mistral-include-mp4" checked style="width:16px;height:16px;cursor:pointer" />
 				<label for="mistral-include-mp4" style="font-size:.85rem;color:var(--text2);cursor:pointer">Inclure les fichiers vidéo MP4</label>
+			</div>
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+				<input type="checkbox" id="mistral-prepare-only" style="width:16px;height:16px;cursor:pointer" />
+				<label for="mistral-prepare-only" style="font-size:.85rem;color:var(--text2);cursor:pointer">
+					Préparer seulement — vérifier avant d'envoyer
+				</label>
 			</div>
 
 			<div class="exp-section">Authentification (optionnel)</div>
@@ -5910,10 +5916,13 @@
 				<div style="background:var(--border);border-radius:4px;height:4px;overflow:hidden">
 					<div id="mistral-progress-bar" style="height:100%;background:#7c3aed;width:0%;transition:width .4s"></div>
 				</div>
+				<!-- Aperçu du staging après prepare_only -->
+				<div id="mistral-staging-preview"
+					style="display:none;margin-top:10px;font-size:.78rem;color:var(--text2)"></div>
 			</div>
 
 			<div class="exp-btns">
-				<button class="btn" id="mistral-btn-cancel" onclick="mistralModalClose()">Annuler</button>
+				<button class="btn" id="mistral-btn-cancel" onclick="mistralCancelOrClose()">Annuler</button>
 				<button class="btn" id="btn-mistral-confirm" onclick="doMistralUpload()"
 					style="background:#7c3aed22;border-color:#7c3aed66;color:#a78bfa;font-weight:700;padding:10px 24px">
 					🚀 Envoyer
@@ -6790,16 +6799,22 @@
 		let _mistralSessions = [];
 		let _mistralJobId = null;
 		let _mistralPollTimer = null;
+		let _mistralStagingDir = null;   // chemin staging après prepare_only
+		let _mistralZipName = null;      // nom du ZIP pour la confirmation
 
 		function openMistralModal() {
 			_mistralSessions = [...S.selected];
 			if (!_mistralSessions.length) { alert('Sélectionnez des sessions.'); return; }
+			_mistralStagingDir = null;
+			_mistralZipName = null;
 			ge('mistral-modal-sub').textContent = `${_mistralSessions.length} session(s) sélectionnée(s)`;
 			ge('mistral-zip-name').value = '';
 			ge('mistral-include-mp4').checked = true;
+			ge('mistral-prepare-only').checked = false;
 			ge('mistral-username').value = '';
 			ge('mistral-password').value = '';
 			ge('mistral-progress-wrap').style.display = 'none';
+			ge('mistral-staging-preview').style.display = 'none';
 			ge('mistral-progress-bar').style.width = '0%';
 			ge('mistral-progress-ico').textContent = '⏳';
 			ge('mistral-progress-text').textContent = 'En cours…';
@@ -6816,17 +6831,33 @@
 			ge('mistral-modal-backdrop').classList.remove('open');
 		}
 
+		// Bouton Annuler : si un staging existe et qu'on n'a pas encore envoyé, le supprimer
+		async function mistralCancelOrClose() {
+			if (_mistralStagingDir) {
+				try {
+					await fetch(`/api/mistral/staging?staging_dir=${encodeURIComponent(_mistralStagingDir)}`,
+						{ method: 'DELETE' });
+					log(`Staging supprimé : ${_mistralStagingDir}`, 'INFO');
+				} catch (e) { /* silencieux */ }
+				_mistralStagingDir = null;
+			}
+			mistralModalClose();
+		}
+
 		async function doMistralUpload() {
+			const prepareOnly = ge('mistral-prepare-only').checked;
 			const body = {
 				sessions: _mistralSessions,
 				include_mp4: ge('mistral-include-mp4').checked,
 				zip_name: ge('mistral-zip-name').value.trim() || null,
 				username: ge('mistral-username').value.trim() || null,
 				password: ge('mistral-password').value.trim() || null,
+				prepare_only: prepareOnly,
 			};
 
 			ge('btn-mistral-confirm').disabled = true;
-			ge('btn-mistral-confirm').textContent = '⏳ Envoi…';
+			ge('btn-mistral-confirm').textContent = prepareOnly ? '⏳ Préparation…' : '⏳ Envoi…';
+			ge('mistral-staging-preview').style.display = 'none';
 			ge('mistral-progress-wrap').style.display = '';
 			ge('mistral-progress-bar').style.width = '0%';
 			ge('mistral-progress-ico').textContent = '⏳';
@@ -6836,7 +6867,7 @@
 				const data = await api('POST', '/api/mistral/upload', body);
 				_mistralJobId = data.job_id;
 				ge('mistral-job-link').style.display = '';
-				log(`Job Mistral lancé : ${_mistralJobId}`, 'OK');
+				log(`Job Mistral lancé : ${_mistralJobId}${prepareOnly ? ' [prépare seulement]' : ''}`, 'OK');
 				_mistralPollTimer = setInterval(_mistralPollJob, 1500);
 			} catch (e) {
 				ge('mistral-progress-ico').textContent = '❌';
@@ -6844,6 +6875,39 @@
 				ge('btn-mistral-confirm').disabled = false;
 				ge('btn-mistral-confirm').textContent = '🚀 Envoyer';
 				log(`Erreur Mistral upload : ${e.message}`, 'ERROR');
+			}
+		}
+
+		async function doMistralConfirm() {
+			if (!_mistralStagingDir) return;
+			ge('btn-mistral-confirm').disabled = true;
+			ge('btn-mistral-confirm').textContent = '⏳ Envoi…';
+			ge('mistral-staging-preview').style.display = 'none';
+			ge('mistral-progress-bar').style.width = '0%';
+			ge('mistral-progress-ico').textContent = '⏳';
+			ge('mistral-progress-text').textContent = 'Zip + upload en cours…';
+
+			const body = {
+				staging_dir: _mistralStagingDir,
+				zip_name: _mistralZipName,
+				include_mp4: ge('mistral-include-mp4').checked,
+				username: ge('mistral-username').value.trim() || null,
+				password: ge('mistral-password').value.trim() || null,
+			};
+			_mistralStagingDir = null;  // on le confie au serveur
+
+			try {
+				const data = await api('POST', '/api/mistral/confirm', body);
+				_mistralJobId = data.job_id;
+				ge('mistral-job-link').style.display = '';
+				log(`Job Mistral confirm lancé : ${_mistralJobId}`, 'OK');
+				_mistralPollTimer = setInterval(_mistralPollJob, 1500);
+			} catch (e) {
+				ge('mistral-progress-ico').textContent = '❌';
+				ge('mistral-progress-text').textContent = `Erreur : ${e.message}`;
+				ge('btn-mistral-confirm').disabled = false;
+				ge('btn-mistral-confirm').textContent = '🚀 Envoyer maintenant';
+				log(`Erreur confirm : ${e.message}`, 'ERROR');
 			}
 		}
 
@@ -6857,6 +6921,33 @@
 				if (job.status === 'running' || job.status === 'pending') {
 					const lastLog = job.logs?.length ? job.logs[job.logs.length - 1].msg : 'En cours…';
 					ge('mistral-progress-text').textContent = lastLog;
+
+				} else if (job.status === 'done' && job.result?.prepare_only) {
+					// ── Phase préparation terminée → afficher aperçu + bouton confirm ──
+					clearInterval(_mistralPollTimer); _mistralPollTimer = null;
+					_mistralStagingDir = job.result.staging_dir;
+					_mistralZipName = job.result.zip_name;
+					ge('mistral-progress-bar').style.width = '100%';
+					ge('mistral-progress-ico').textContent = '🔍';
+					const ok = job.result.setup_ok ?? 0;
+					const warn = job.result.setup_warn ?? 0;
+					ge('mistral-progress-text').textContent =
+						`Staging prêt — ${ok} session(s) organisée(s)${warn ? `, ${warn} avertissement(s)` : ''}`;
+					// Aperçu des dossiers du staging (depuis les logs)
+					const stagingLogs = (job.logs || [])
+						.filter(l => l.msg.startsWith('  ') && l.msg.includes('/  ('))
+						.map(l => `<li style="font-family:monospace">${l.msg.trim()}</li>`)
+						.join('');
+					const previewEl = ge('mistral-staging-preview');
+					previewEl.innerHTML = `<strong>Structure du staging :</strong><ul style="margin:4px 0 0 12px;padding:0">${stagingLogs || '<li>(aucun dossier scénario détecté)</li>'}</ul>
+						<div style="margin-top:6px;color:var(--text3);font-size:.72rem">Dossier : ${_mistralStagingDir}</div>`;
+					previewEl.style.display = '';
+					ge('btn-mistral-confirm').disabled = false;
+					ge('btn-mistral-confirm').textContent = '🚀 Envoyer maintenant';
+					ge('btn-mistral-confirm').onclick = doMistralConfirm;
+					ge('mistral-btn-cancel').textContent = 'Annuler et supprimer le staging';
+					log(`Staging Mistral prêt — vérifiez avant d'envoyer`, 'OK');
+
 				} else if (job.status === 'done') {
 					clearInterval(_mistralPollTimer); _mistralPollTimer = null;
 					ge('mistral-progress-bar').style.width = '100%';
@@ -6867,6 +6958,7 @@
 					ge('btn-mistral-confirm').textContent = '✅ Envoyé';
 					ge('mistral-btn-cancel').textContent = 'Fermer';
 					log(`Mistral upload terminé : ${zipName} (${sizeMb} Mo) ✓`, 'OK');
+
 				} else if (job.status === 'error') {
 					clearInterval(_mistralPollTimer); _mistralPollTimer = null;
 					ge('mistral-progress-ico').textContent = '❌';
@@ -6874,6 +6966,7 @@
 					ge('mistral-progress-text').textContent = lastErr;
 					ge('btn-mistral-confirm').disabled = false;
 					ge('btn-mistral-confirm').textContent = '🚀 Réessayer';
+					ge('btn-mistral-confirm').onclick = doMistralUpload;
 					log(`Mistral upload échoué : ${lastErr}`, 'ERROR');
 				}
 			} catch (e) {

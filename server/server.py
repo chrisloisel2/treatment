@@ -5511,11 +5511,20 @@ MISTRAL_PASSWORD = os.getenv("MISTRAL_PASSWORD", os.getenv("PASSWORD", ""))
 
 
 class MistralUploadRequest(BaseModel):
-    sessions:    List[str]      # chemins absolus des sessions
-    include_mp4: bool = True    # inclure les fichiers MP4
-    zip_name:    Optional[str] = None  # nom du ZIP (sans .zip), auto si absent
-    username:    Optional[str] = None  # surcharge la var d'env
-    password:    Optional[str] = None  # surcharge la var d'env
+    sessions:     List[str]      # chemins absolus des sessions
+    include_mp4:  bool = True    # inclure les fichiers MP4
+    zip_name:     Optional[str] = None  # nom du ZIP (sans .zip), auto si absent
+    username:     Optional[str] = None  # surcharge la var d'env
+    password:     Optional[str] = None  # surcharge la var d'env
+    prepare_only: bool = False   # si True : copie + setup seulement, sans zip ni upload
+
+
+class MistralConfirmRequest(BaseModel):
+    staging_dir: str             # chemin du staging préparé (résultat de prepare_only)
+    zip_name:    str             # nom du ZIP (avec .zip)
+    include_mp4: bool = True
+    username:    Optional[str] = None
+    password:    Optional[str] = None
 
 
 def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
@@ -5635,6 +5644,24 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
 
         _log_job(job, f"  Setup terminé — {setup_ok} OK, {setup_warn} avertissement(s)")
 
+        # ── prepare_only : on s'arrête ici, le staging reste sur disque ────
+        if req.prepare_only:
+            _log_job(job, "\n=== APERÇU DU STAGING ===")
+            for entry in sorted(staging_dir.iterdir()):
+                if entry.is_dir():
+                    count = sum(1 for _ in entry.rglob("metadata.json"))
+                    _log_job(job, f"  {entry.name}/  ({count} session(s))")
+            _log_job(job, f"\nDossier staging : {staging_dir}")
+            _log_job(job, "Vérifiez les données puis confirmez l'envoi.", "OK")
+            _update_job(job, status=JobStatus.DONE, finished_at=_now(), progress=100.0, result={
+                "prepare_only": True,
+                "staging_dir": str(staging_dir),
+                "zip_name": zip_name,
+                "setup_ok": setup_ok,
+                "setup_warn": setup_warn,
+            })
+            return
+
         # ── Étape 3 : construction du ZIP depuis le staging ──────────────────
         _log_job(job, f"\nÉtape 3/4 — Compression → {zip_name}…")
         _update_job(job, progress=42.0)
@@ -5664,8 +5691,9 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
         shutil.rmtree(staging_dir, ignore_errors=True)
         return
     finally:
-        # Nettoyage du staging (toujours, même en cas d'erreur)
-        shutil.rmtree(staging_dir, ignore_errors=True)
+        # Nettoyage du staging seulement si on n'est PAS en prepare_only
+        if not req.prepare_only:
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
     # ── Étape 4 : envoi vers Mistral ─────────────────────────────────────────
     _log_job(job, f"\nÉtape 4/4 — Envoi vers Mistral…")
@@ -5735,12 +5763,141 @@ def _worker_mistral_upload(job: Job, req: MistralUploadRequest):
 
 @app.post("/api/mistral/upload")
 async def mistral_upload(req: MistralUploadRequest):
-    """Lance un job asynchrone : zippe les sessions et les envoie au serveur Mistral."""
+    """Lance un job asynchrone : copie + setup + (optionnel) zip + upload vers Mistral."""
     if not req.sessions:
         raise HTTPException(400, "Aucune session fournie")
     job = _new_job("mistral_upload")
     threading.Thread(target=_worker_mistral_upload, args=(job, req), daemon=True).start()
     return {"job_id": job.id}
+
+
+def _worker_mistral_confirm(job: Job, req: MistralConfirmRequest):
+    """Reprend un staging préparé : zip + upload + nettoyage."""
+    import zipfile
+    import shutil
+    import requests as req_lib
+
+    staging_dir = Path(req.staging_dir)
+    if not staging_dir.exists():
+        _log_job(job, f"Staging introuvable : {staging_dir}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    username = req.username or MISTRAL_USERNAME
+    password = req.password or MISTRAL_PASSWORD
+    zip_name = req.zip_name if req.zip_name.endswith(".zip") else f"{req.zip_name}.zip"
+    zip_stem = zip_name[:-4]
+
+    _update_job(job, status=JobStatus.RUNNING, started_at=_now(), progress=0.0)
+
+    # ── Étape 1 : ZIP ────────────────────────────────────────────────────────
+    _log_job(job, f"Étape 1/2 — Compression → {zip_name}…")
+    tmp_zip = Path("/mnt/tmp") / zip_name
+    tmp_zip.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(tmp_zip, mode="w", allowZip64=True) as zf:
+            all_files = sorted(staging_dir.rglob("*"))
+            for f in all_files:
+                if not f.is_file():
+                    continue
+                if not req.include_mp4 and f.suffix.lower() == ".mp4":
+                    continue
+                compression = (zipfile.ZIP_STORED
+                               if f.suffix.lower() in (".mp4", ".mkv", ".avi")
+                               else zipfile.ZIP_DEFLATED)
+                arcname = f.relative_to(staging_dir)
+                zf.write(str(f), str(arcname), compress_type=compression)
+    except Exception as e:
+        tmp_zip.unlink(missing_ok=True)
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        _log_job(job, f"Erreur ZIP : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    zip_size_mb = tmp_zip.stat().st_size / (1024 * 1024)
+    _log_job(job, f"  ZIP prêt : {zip_name} ({zip_size_mb:.1f} Mo)")
+    _update_job(job, progress=50.0)
+
+    # Nettoyage du staging maintenant qu'on a le ZIP
+    shutil.rmtree(staging_dir, ignore_errors=True)
+
+    # ── Étape 2 : upload vers Mistral ────────────────────────────────────────
+    _log_job(job, f"\nÉtape 2/2 — Envoi vers Mistral…")
+    session_http = req_lib.Session()
+    payload = {"username": username, "password": password, "repo_id": zip_stem, "filename": zip_name}
+
+    try:
+        r = session_http.post(f"{MISTRAL_BASE_URL}/pd/upload", json=payload,
+                              headers={"Content-Type": "application/json"}, timeout=15)
+    except req_lib.RequestException as e:
+        tmp_zip.unlink(missing_ok=True)
+        _log_job(job, f"Erreur de connexion : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    if r.status_code != 200:
+        tmp_zip.unlink(missing_ok=True)
+        try:
+            err = r.json().get("error", "Unknown error")
+        except Exception:
+            err = r.text
+        _log_job(job, f"Erreur serveur Mistral ({r.status_code}) : {err}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    signed_url = r.json().get("url")
+    if not signed_url:
+        tmp_zip.unlink(missing_ok=True)
+        _log_job(job, "Pas d'URL d'upload reçue.", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+
+    _log_job(job, "  URL signée obtenue, upload en cours…")
+    _update_job(job, progress=60.0)
+
+    try:
+        with open(tmp_zip, "rb") as fh:
+            resp = session_http.put(signed_url, data=fh,
+                                    headers={"Content-Type": "application/zip"}, timeout=300)
+    except req_lib.RequestException as e:
+        _log_job(job, f"Erreur upload : {e}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+        return
+    finally:
+        tmp_zip.unlink(missing_ok=True)
+
+    if resp.status_code in (200, 201, 204):
+        _log_job(job, f"Upload réussi : {zip_name} ({zip_size_mb:.1f} Mo) ✓", "OK")
+        _update_job(job, status=JobStatus.DONE, finished_at=_now(), progress=100.0,
+                    result={"zip_name": zip_name, "size_mb": round(zip_size_mb, 1)})
+    else:
+        _log_job(job, f"Upload échoué {resp.status_code} : {resp.text}", "ERROR")
+        _update_job(job, status=JobStatus.ERROR, finished_at=_now())
+
+
+@app.post("/api/mistral/confirm")
+async def mistral_confirm(req: MistralConfirmRequest):
+    """Zippe et envoie un staging déjà préparé vers Mistral."""
+    if not req.staging_dir or not Path(req.staging_dir).exists():
+        raise HTTPException(404, "Staging introuvable ou chemin manquant")
+    job = _new_job("mistral_confirm")
+    threading.Thread(target=_worker_mistral_confirm, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
+
+
+@app.delete("/api/mistral/staging")
+async def mistral_staging_delete(staging_dir: str):
+    """Supprime un staging préparé (annulation après preview)."""
+    import shutil
+    p = Path(staging_dir)
+    if not p.exists():
+        raise HTTPException(404, "Staging introuvable")
+    # Sécurité : doit être dans /mnt/tmp/mistral_*
+    if not str(p).startswith("/mnt/tmp/mistral_"):
+        raise HTTPException(403, "Suppression non autorisée en dehors de /mnt/tmp/mistral_*")
+    shutil.rmtree(p, ignore_errors=True)
+    return {"status": "ok", "deleted": str(p)}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

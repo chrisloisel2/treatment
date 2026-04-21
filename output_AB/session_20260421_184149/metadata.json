@@ -1,0 +1,136 @@
+{
+  "session_id": "20260421_184149",
+  "operator": "HANI",
+  "scenario": "Pile",
+  "start_time": "2026-04-21T15:41:49.450989+00:00",
+  "start_time_ns": 1776786109450989312,
+  "video_config": {
+    "width": 1920,
+    "height": 1200,
+    "fps": 30
+  },
+  "cameras": {
+    "0": {
+      "name": "USB3.0 Camera",
+      "position": "left",
+      "serial": "41024"
+    },
+    "1": {
+      "name": "USB3.0 Camera",
+      "position": "right",
+      "serial": "40977"
+    },
+    "2": {
+      "name": "USB3.0 Camera",
+      "position": "head",
+      "serial": "41089"
+    }
+  },
+  "camera_anchors": {
+    "left": {
+      "mono_start": 34474.5322875,
+      "mono_offset_from_record": 0.0
+    },
+    "right": {
+      "mono_start": 34474.5322875,
+      "mono_offset_from_record": 0.0
+    },
+    "head": {
+      "mono_start": 34474.5322875,
+      "mono_offset_from_record": 0.0
+    }
+  },
+  "trackers": {
+    "1": {
+      "serial": "56-A33R02752",
+      "model": "VIVE Ultimate Tracker 1"
+    },
+    "2": {
+      "serial": "56-A33R04393",
+      "model": "VIVE Ultimate Tracker 3"
+    },
+    "3": {
+      "serial": "56-A33R02381",
+      "model": "VIVE Ultimate Tracker 2"
+    }
+  },
+  "grippers": {
+    "right": {
+      "port": "COM3",
+      "baud": "115200"
+    },
+    "left": {
+      "port": "COM4",
+      "baud": "115200"
+    }
+  },
+  "precise_timer": true,
+  "camera_init_latencies_ms": {
+    "left": {
+      "latency_ms": null,
+      "mode": "unknown"
+    },
+    "right": {
+      "latency_ms": null,
+      "mode": "unknown"
+    },
+    "head": {
+      "latency_ms": null,
+      "mode": "unknown"
+    }
+  },
+  "end_time": "2026-04-21T15:41:58.876555+00:00",
+  "end_time_ns": 1776786118876555417,
+  "trigger_time_ns": 1776786109393667017,
+  "trigger_time": "2026-04-21T15:41:49.393667+00:00",
+  "duration_seconds": 9.425566105,
+  "failed": false,
+  "jsonl_capture_time_unit": "milliseconds",
+  "check_score": 97.8,
+  "check_grade": "A",
+  "check_verdict": "PARFAITE",
+  "check_confidence": 0.941,
+  "check_blocking": "",
+  "check_repairs": [],
+  "check_components": {
+    "video_orientation": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Orientation correcte — gripper en haut (left=0.47  right=0.47)",
+      "blocking": false
+    },
+    "gripper_health": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Pinces saines (2/2 côtés vérifiés)",
+      "blocking": false
+    },
+    "gripper_timestamp_sync": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Alignement gripper/vidéo nominal (2 côtés)",
+      "blocking": false
+    },
+    "video_tracker_sync": {
+      "score": 93.1,
+      "grade": "A",
+      "summary": "Toutes portes OK — score math=93.1%",
+      "blocking": false
+    },
+    "video_quality": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Timestamps vidéo excellents (3 caméras)",
+      "blocking": false
+    },
+    "gripper_frame_sync": {
+      "score": 99.0,
+      "grade": "A",
+      "summary": "Sync parfaite — fusion visuel+proprio (2 côtés, score=99.0%)",
+      "blocking": false
+    }
+  },
+  "repair_perfect": true,
+  "repair_unrecoverable": false,
+  "repair_score": 97.8
+}

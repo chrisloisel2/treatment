@@ -1,0 +1,141 @@
+{
+  "session_id": "20260421_165805",
+  "operator": "HANI",
+  "scenario": "Pile",
+  "start_time": "2026-04-21T13:58:05.816849+00:00",
+  "start_time_ns": 1776779885816848896,
+  "video_config": {
+    "width": 1920,
+    "height": 1200,
+    "fps": 30
+  },
+  "cameras": {
+    "0": {
+      "name": "USB3.0 Camera",
+      "position": "left",
+      "serial": "41024"
+    },
+    "1": {
+      "name": "USB3.0 Camera",
+      "position": "right",
+      "serial": "40977"
+    },
+    "2": {
+      "name": "USB3.0 Camera",
+      "position": "head",
+      "serial": "41089"
+    }
+  },
+  "camera_anchors": {
+    "left": {
+      "mono_start": 28250.8981483,
+      "mono_offset_from_record": 0.0
+    },
+    "right": {
+      "mono_start": 28250.8981483,
+      "mono_offset_from_record": 0.0
+    },
+    "head": {
+      "mono_start": 28250.8981483,
+      "mono_offset_from_record": 0.0
+    }
+  },
+  "trackers": {
+    "1": {
+      "serial": "56-A33R02752",
+      "model": "VIVE Ultimate Tracker 1"
+    },
+    "2": {
+      "serial": "56-A33R04393",
+      "model": "VIVE Ultimate Tracker 3"
+    },
+    "3": {
+      "serial": "56-A33R02381",
+      "model": "VIVE Ultimate Tracker 2"
+    }
+  },
+  "grippers": {
+    "right": {
+      "port": "COM3",
+      "baud": "115200"
+    },
+    "left": {
+      "port": "COM4",
+      "baud": "115200"
+    }
+  },
+  "precise_timer": true,
+  "camera_init_latencies_ms": {
+    "left": {
+      "latency_ms": null,
+      "mode": "unknown"
+    },
+    "head": {
+      "latency_ms": null,
+      "mode": "unknown"
+    },
+    "right": {
+      "latency_ms": null,
+      "mode": "unknown"
+    }
+  },
+  "end_time": "2026-04-21T13:58:15.386065+00:00",
+  "end_time_ns": 1776779895386065423,
+  "trigger_time_ns": 1776779885742143623,
+  "trigger_time": "2026-04-21T13:58:05.742144+00:00",
+  "duration_seconds": 9.569216527,
+  "failed": false,
+  "jsonl_capture_time_unit": "milliseconds",
+  "check_score": 72.1,
+  "check_grade": "C",
+  "check_verdict": "BLOQUÉE",
+  "check_confidence": 0.941,
+  "check_blocking": "[gripper_timestamp_sync] 2 erreur(s), 0 avert. sur 2 côté(s)",
+  "check_repairs": [
+    "gripper_right: offset démarrage +7127ms — exécuter fix_camera_offset",
+    "gripper_right: Offset démarrage +7126.9ms > seuil 200ms  [corrigeable par fix_camera_offset]",
+    "Flux désalignés au démarrage — exécuter ✂ Trim pour rogner le tracker/gripper"
+  ],
+  "check_components": {
+    "video_orientation": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Orientation correcte — gripper en haut (left=0.47  right=0.47)",
+      "blocking": false
+    },
+    "gripper_health": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Pinces saines (2/2 côtés vérifiés)",
+      "blocking": false
+    },
+    "gripper_timestamp_sync": {
+      "score": 72.5,
+      "grade": "C",
+      "summary": "2 erreur(s), 0 avert. sur 2 côté(s)",
+      "blocking": true
+    },
+    "video_tracker_sync": {
+      "score": 33.0,
+      "grade": "F",
+      "summary": "1 porte(s) échouée(s): ['stream_alignment']",
+      "blocking": true
+    },
+    "video_quality": {
+      "score": 100.0,
+      "grade": "A",
+      "summary": "Drops=1 jitter_max=3.0ms (3 caméras)",
+      "blocking": false
+    },
+    "gripper_frame_sync": {
+      "score": 99.3,
+      "grade": "A",
+      "summary": "Sync parfaite — fusion visuel+proprio (2 côtés, score=99.3%)",
+      "blocking": false
+    }
+  },
+  "repair_perfect": false,
+  "repair_unrecoverable": true,
+  "repair_score": 72.1,
+  "repair_failure_reason": "[gripper_timestamp_sync] 2 erreur(s), 0 avert. sur 2 côté(s)"
+}

@@ -111,7 +111,14 @@ def _parse_jsonl(path) -> list:
 try:
     from pipeline.pipeline import INGEST_DIR, SILVER_DIR, MODEL_DIR
 except ImportError:
-    INGEST_DIR = Path("/mnt/storage/silver/")
+    # Cherche d'abord un dossier data/ à côté du serveur ou à la racine du projet
+    _server_dir = Path(__file__).resolve().parent
+    _candidates = [
+        _server_dir.parent / "data",   # traitement/data/
+        _server_dir / "data",          # traitement/server/data/
+        Path("/mnt/storage/silver/"),
+    ]
+    INGEST_DIR = next((p for p in _candidates if p.exists()), Path("/mnt/storage/silver/"))
     SILVER_DIR = Path("/home/ia/silver")
     MODEL_DIR  = INGEST_DIR / "_sync_ml_model"
 
@@ -329,10 +336,12 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
                 return []
 
         def _is_session(p: Path) -> bool:
-            """Un seul scandir pour voir si metadata.json ou videos/ est présent."""
+            """Un seul scandir pour voir si metadata.json/videos/ (ancien) ou config.json/cameras/ (nouveau) est présent."""
             try:
                 names = {e.name for e in os.scandir(p)}
-                return "metadata.json" in names or "videos" in names
+                return ("metadata.json" in names or "videos" in names
+                        or "config.json" in names or "cameras" in names
+                        or "mission.json" in names)
             except Exception:
                 return False
 
@@ -410,6 +419,16 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
             pass
 
         def _enrich(s: Path) -> dict:
+            try:
+                root_names = {e.name for e in os.scandir(s)}
+            except Exception:
+                root_names = set()
+
+            # ── Nouveau format (config.json / cameras/ / mission.json) ──────────
+            if "config.json" in root_names or ("cameras" in root_names and "metadata.json" not in root_names):
+                return _enrich_new_format(s, root_names)
+
+            # ── Ancien format ────────────────────────────────────────────────────
             meta = {}
             meta_path = s / "metadata.json"
             if meta_path.exists():
@@ -437,11 +456,6 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
                     rotate_info = json.loads(rotate_marker.read_text(encoding="utf-8"))
                 except Exception:
                     rotate_info = {}
-
-            try:
-                root_names = {e.name for e in os.scandir(s)}
-            except Exception:
-                root_names = set()
 
             has_tracker  = "tracker_positions.csv" in root_names
             has_gripper  = ("gripper_left_data.csv" in root_names
@@ -482,6 +496,117 @@ def _worker_scan(job: Job, limit: int = 500, offset: int = 0, root: str = "", da
                 "last_result":    last_result,
                 "pipeline_done":  pipeline_done,
                 "pipeline_steps": pipeline_steps,
+            }
+
+        def _enrich_new_format(s: Path, root_names: set) -> dict:
+            """Enrichit une session au nouveau format (config.json / cameras/ / sensors/)."""
+            meta: dict = {}
+
+            # config.json → caméras, capteurs
+            cfg: dict = {}
+            if "config.json" in root_names:
+                try:
+                    cfg = json.loads((s / "config.json").read_text())
+                except Exception:
+                    pass
+
+            # mission.json → scénario, instructions
+            if "mission.json" in root_names:
+                try:
+                    mission = json.loads((s / "mission.json").read_text())
+                    meta["scenario"]     = mission.get("name", "")
+                    meta["instructions"] = mission.get("instructions", "")
+                except Exception:
+                    pass
+
+            # result.json → résultat SUCCESS/FAILED
+            last_result = None
+            if "result.json" in root_names:
+                try:
+                    last_result = json.loads((s / "result.json").read_text())
+                    meta["result"] = last_result.get("result", "")
+                except Exception:
+                    pass
+
+            # analysis.json → durée, qualité, warnings
+            if "analysis.json" in root_names:
+                try:
+                    analysis = json.loads((s / "analysis.json").read_text())
+                    meta["errors"]   = analysis.get("errors", [])
+                    meta["warnings"] = analysis.get("warnings", [])
+                    meta["analysis"] = analysis
+                    sc = analysis.get("sync_check", {})
+                    dur = sc.get("camera_duration_median_sec") or sc.get("sensor_duration_median_sec")
+                    if dur is not None:
+                        meta["duration_seconds"] = float(dur)
+                    fps_check = analysis.get("fps_check", {})
+                    cams_fps = fps_check.get("cameras", {})
+                    if cams_fps:
+                        first_cam = next(iter(cams_fps.values()), {})
+                        meta["fps"] = first_cam.get("expected_fps")
+                except Exception:
+                    pass
+
+            # Construire meta.cameras depuis config.json (pour groupement par poste)
+            cfg_cams = cfg.get("cameras", [])
+            if cfg_cams:
+                cameras_meta = {}
+                for cam in cfg_cams:
+                    name = cam.get("name", "")
+                    if name:
+                        cameras_meta[name] = {
+                            "serial":   cam.get("serial_id", ""),
+                            "position": name,
+                            "fps":      cam.get("output_fps") or cam.get("fps"),
+                            "width":    cam.get("width"),
+                            "height":   cam.get("height"),
+                        }
+                meta["cameras"] = cameras_meta
+
+            # FPS depuis config si pas encore rempli
+            if "fps" not in meta and cfg_cams:
+                meta["fps"] = cfg_cams[0].get("output_fps") or cfg_cams[0].get("fps")
+
+            # Trackers Vive
+            has_tracker = bool(cfg.get("vive_tracker"))
+
+            # Sensors (grippers)
+            sensors_dir = s / "sensors"
+            has_gripper = False
+            if sensors_dir.is_dir():
+                try:
+                    snsr_names = {e.name for e in os.scandir(sensors_dir)}
+                    has_gripper = any(n.endswith(".jsonl") for n in snsr_names)
+                except Exception:
+                    pass
+
+            # cameras/
+            cameras_dir = s / "cameras"
+            has_jsonl = False
+            if cameras_dir.is_dir():
+                try:
+                    cam_names = {e.name for e in os.scandir(cameras_dir)}
+                    has_jsonl = any(n.endswith(".jsonl") for n in cam_names)
+                except Exception:
+                    pass
+
+            return {
+                "name":           s.name,
+                "path":           str(s),
+                "action":         "",
+                "new_format":     True,
+                "has_tracker":    has_tracker,
+                "has_gripper":    has_gripper,
+                "has_ux":         False,
+                "has_flux_csv":   False,
+                "has_jsonl":      has_jsonl,
+                "has_subtitle":   False,
+                "video_rotated":  False,
+                "rotate_info":    None,
+                "meta":           meta,
+                "last_result":    last_result,
+                "pipeline_done":  meta.get("result") == "SUCCESS",
+                "pipeline_steps": {},
             }
 
         _update_job(job, progress=50)
@@ -1965,6 +2090,7 @@ def _compute_session_start_ns(session_path: str) -> int:
             except Exception:
                 pass
 
+    # Ancien format : videos/{side}.jsonl → capture_time (epoch ms)
     vid_dir = sess / "videos"
     if vid_dir.exists():
         for side in ("head", "left", "right"):
@@ -1973,6 +2099,26 @@ def _compute_session_start_ns(session_path: str) -> int:
                 rows = _parse_jsonl(jl)
                 if rows:
                     candidates.append(float(rows[0]["capture_time"]) * 1_000_000)
+
+    # Nouveau format : cameras/{side}.jsonl → capture_timestamp_sec (epoch sec)
+    cam_dir = sess / "cameras"
+    if cam_dir.exists():
+        for side in ("head", "left", "right"):
+            jl = cam_dir / f"{side}.jsonl"
+            if jl.exists():
+                rows = _parse_jsonl(jl)
+                if rows and "capture_timestamp_sec" in rows[0]:
+                    candidates.append(float(rows[0]["capture_timestamp_sec"]) * 1_000_000_000)
+
+    # Nouveau format : sensors/{side}.jsonl → host_time_sec (epoch sec)
+    snsr_dir = sess / "sensors"
+    if snsr_dir.exists():
+        for side in ("left", "right"):
+            jl = snsr_dir / f"{side}.jsonl"
+            if jl.exists():
+                rows = _parse_jsonl(jl)
+                if rows and "host_time_sec" in rows[0]:
+                    candidates.append(float(rows[0]["host_time_sec"]) * 1_000_000_000)
 
     if candidates:
         return int(min(candidates))
@@ -2089,18 +2235,30 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
     result["start_ns"] = start_ns
 
     # ── Charger les données brutes ──
+    # Détecter le format : nouveau (cameras/) ou ancien (videos/)
+    _is_new_fmt = (sess / "cameras").exists() and not (sess / "videos").exists()
+
     trk_path = sess / "tracker_positions.csv"
     trk_df = None
     if trk_path.exists():
         trk_df = pd.read_csv(trk_path)
 
+    # Grippers : ancien format CSV, nouveau format JSONL sensors/
     grip_dfs: dict = {}
     for side in ("left", "right"):
-        grip_path = sess / f"gripper_{side}_data.csv"
-        if grip_path.exists():
-            grip_dfs[side] = pd.read_csv(grip_path)
+        if _is_new_fmt:
+            jl = sess / "sensors" / f"{side}.jsonl"
+            if jl.exists():
+                rows = _parse_jsonl(jl)
+                if rows:
+                    grip_dfs[side] = pd.DataFrame(rows)
+        else:
+            grip_path = sess / f"gripper_{side}_data.csv"
+            if grip_path.exists():
+                grip_dfs[side] = pd.read_csv(grip_path)
 
-    vid_dir = sess / "videos"
+    # JSONL vidéo : ancien format videos/, nouveau format cameras/
+    vid_dir = sess / ("cameras" if _is_new_fmt else "videos")
     jsonl_rows: dict = {}
     if vid_dir.exists():
         for side in ("head", "left", "right"):
@@ -2122,27 +2280,28 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
     def _auto_to_ms(arr) -> list:
         """
         Détecte automatiquement le format d'une colonne temporelle et la convertit
-        en ms depuis start_ns.  Formats supportés (détection par magnitude) :
-          > 1e15  → nanosecondes epoch     → soustrait start_ns, divise par 1e6
-          > 1e12  → microsecondes epoch    → convertit en ns, puis idem
-          > 1e9   → millisecondes epoch    → soustrait start_ns/1e6
-          > 0.5   → millisecondes relative → ramène à 0 (début = premier point)
-          ≤ 0.5   → secondes relatives     → ×1000, ramène à 0
-        Garantit que le résultat commence à ≥ 0 et ne contient pas de NaN/inf.
+        en ms depuis start_ns.  Seuils calibrés pour les dates 2001-2286 :
+          > 1e16  → nanosecondes epoch  (2026 ns  ≈ 1.78e18)
+          > 1e13  → microsecondes epoch (2026 µs  ≈ 1.78e15)
+          > 1e10  → millisecondes epoch (2026 ms  ≈ 1.78e12)
+          > 1e7   → secondes epoch      (2026 s   ≈ 1.78e9 )  ← host_time_sec
+          > 0.5   → millisecondes relatives
+          ≤ 0.5   → secondes relatives
         """
         a = np.asarray(arr, dtype=np.float64)
-        # Valeur représentative (médiane ignore les outliers)
         valid = a[np.isfinite(a)]
         if len(valid) == 0:
             return [0.0] * len(a)
         sample = float(np.median(valid))
 
-        if sample > 1e15:                        # nanosecondes epoch
+        if sample > 1e16:                        # nanosecondes epoch
             out = (a - start_ns) / 1_000_000
-        elif sample > 1e12:                      # microsecondes epoch
+        elif sample > 1e13:                      # microsecondes epoch
             out = (a * 1_000 - start_ns) / 1_000_000
-        elif sample > 1e9:                       # millisecondes epoch
+        elif sample > 1e10:                      # millisecondes epoch
             out = a - (start_ns / 1_000_000)
+        elif sample > 1e7:                       # secondes epoch (host_time_sec, capture_timestamp_sec)
+            out = a * 1_000 - (start_ns / 1_000_000)
         elif sample > 0.5:                       # ms relatif (offset inconnu)
             out = a - a[np.isfinite(a)][0]
         else:                                    # secondes relatives
@@ -2192,8 +2351,9 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         # Colonne temporelle : override UI ou auto-détection, toujours via _auto_to_ms
         grip_t_col = time_cols.get(f"gripper_{side}")
         if not (grip_t_col and grip_t_col in df.columns):
-            # Fallback prioritaire
-            for candidate in ("timestamp_ns", "t_ms_corrected_ns", "t_ms", "time_seconds"):
+            # Nouveau format : host_time_sec (epoch sec)
+            # Ancien format : timestamp_ns, t_ms_corrected_ns, t_ms, time_seconds
+            for candidate in ("host_time_sec", "timestamp_ns", "t_ms_corrected_ns", "t_ms", "time_seconds"):
                 if candidate in df.columns:
                     grip_t_col = candidate
                     break
@@ -2202,16 +2362,118 @@ def _load_session_timeseries(session_path: str, time_cols: dict = None) -> dict:
         else:
             t_ms = [0.0] * len(df)
         grip: dict = {"t_ms": t_ms}
+        # Ancien format
         if "opening_mm" in df.columns:
             grip["opening_mm"] = df["opening_mm"].tolist()
         if "angle_deg" in df.columns:
             grip["angle_deg"] = df["angle_deg"].tolist()
+        # Nouveau format (sensors JSONL)
+        # Ouverture : "Ouverture" (gauche) ou "Opening_width" (droite)
+        ouv_col = next((c for c in ("Ouverture", "Opening_width") if c in df.columns), None)
+        if ouv_col:
+            grip["opening_mm"] = df[ouv_col].tolist()
+        if "Angle" in df.columns:
+            grip["angle_deg"] = df["Angle"].tolist()
+        if "FSR_R" in df.columns:
+            grip["fsr_r"] = df["FSR_R"].tolist()
+        if "FSR_L" in df.columns:
+            grip["fsr_l"] = df["FSR_L"].tolist()
+        # IMU : quaternion et accélération (colonnes de listes dans le DataFrame)
+        if "q" in df.columns:
+            try:
+                q_arr = np.array(df["q"].tolist(), dtype=float)  # (N, 4)
+                for i, name in enumerate(("q_w", "q_x", "q_y", "q_z")):
+                    grip[name] = q_arr[:, i].tolist()
+            except Exception:
+                pass
+        if "a" in df.columns:
+            try:
+                a_arr = np.array(df["a"].tolist(), dtype=float)  # (N, 3)
+                for i, name in enumerate(("a_x", "a_y", "a_z")):
+                    grip[name] = a_arr[:, i].tolist()
+                grip["a_norm"] = np.linalg.norm(a_arr, axis=1).tolist()
+            except Exception:
+                pass
         result[f"gripper_{side}"] = grip
+
+    # ── Tracker depuis IMU capteurs (nouveau format, pas de Vive) ──────────
+    if _is_new_fmt and not result["tracker"] and any(
+        "a_norm" in result.get(f"gripper_{s}", {}) for s in ("left", "right")
+    ):
+        trk: dict = {}
+        ref_side = "left" if result.get("gripper_left", {}).get("t_ms") else "right"
+        trk["t_ms"] = result[f"gripper_{ref_side}"]["t_ms"]
+        t_ref = np.asarray(trk["t_ms"])
+
+        for role in ("left", "right"):
+            g = result.get(f"gripper_{role}", {})
+            if not g.get("t_ms"):
+                continue
+            t_g = np.asarray(g["t_ms"])
+
+            def _interp(arr):
+                return np.interp(t_ref, t_g, np.asarray(arr))
+
+            # ── Position 3D par double-intégration IMU ──────────────────────
+            has_imu = all(k in g for k in ("q_w", "q_x", "q_y", "q_z", "a_x", "a_y", "a_z"))
+            if has_imu:
+                try:
+                    # Rééchantillonner sur la grille de référence
+                    qw = _interp(g["q_w"]); qx = _interp(g["q_x"])
+                    qy = _interp(g["q_y"]); qz = _interp(g["q_z"])
+                    ax_ = _interp(g["a_x"]); ay_ = _interp(g["a_y"]); az_ = _interp(g["a_z"])
+
+                    N = len(t_ref)
+                    # Rotation accélération body → world via quaternion
+                    a_wx = (1-2*(qy**2+qz**2))*ax_ + 2*(qx*qy-qz*qw)*ay_ + 2*(qx*qz+qy*qw)*az_
+                    a_wy = 2*(qx*qy+qz*qw)*ax_ + (1-2*(qx**2+qz**2))*ay_ + 2*(qy*qz-qx*qw)*az_
+                    a_wz = 2*(qx*qz-qy*qw)*ax_ + 2*(qy*qz+qx*qw)*ay_ + (1-2*(qx**2+qy**2))*az_
+
+                    # Supprimer la gravité (moyenne = orientation quasi-statique en moyenne)
+                    a_lin = np.stack([a_wx - a_wx.mean(),
+                                      a_wy - a_wy.mean(),
+                                      a_wz - a_wz.mean()], axis=1)  # (N, 3)
+
+                    # dt en secondes
+                    dt = np.diff(t_ref / 1000.0, prepend=t_ref[0] / 1000.0)
+                    dt = np.clip(dt, 0, 0.1)
+
+                    # Intégration → vitesse, retrait de la dérive linéaire
+                    vel = np.cumsum(a_lin * dt[:, None], axis=0)
+                    t_n = np.linspace(0, 1, N)
+                    for i in range(3):
+                        vel[:, i] -= np.interp(t_n, [0, 1], [0, vel[-1, i]])
+
+                    # Intégration → position, retrait de la dérive linéaire
+                    pos = np.cumsum(vel * dt[:, None], axis=0)
+                    for i in range(3):
+                        pos[:, i] -= np.polyval(np.polyfit(t_n, pos[:, i], 1), t_n)
+
+                    trk[f"{role}_x"] = pos[:, 0].tolist()
+                    trk[f"{role}_y"] = pos[:, 1].tolist()
+                    trk[f"{role}_z"] = pos[:, 2].tolist()
+                except Exception:
+                    pass
+
+            # Mode speed → norme d'accélération
+            if "a_norm" in g:
+                trk[f"{role}_speed"]    = _interp(g["a_norm"]).tolist()
+                trk[f"{role}_pos_norm"] = _interp(g["a_norm"]).tolist()
+
+        result["tracker"] = trk
+        result["tracker_source"] = "imu"
 
     # ── JSONL vidéo (timestamps frames) ──
     for side, rows in jsonl_rows.items():
-        t_ms = _epoch_ms_to_ms([r["capture_time"] for r in rows])
-        idx  = [r["index"] for r in rows]
+        # Nouveau format : capture_timestamp_sec (epoch sec) + frame_index
+        # Ancien format  : capture_time (epoch ms) + index
+        if rows and "capture_timestamp_sec" in rows[0]:
+            start_sec = start_ns / 1_000_000_000
+            t_ms = [(float(r["capture_timestamp_sec"]) - start_sec) * 1000.0 for r in rows]
+            idx  = [r["frame_index"] for r in rows]
+        else:
+            t_ms = _epoch_ms_to_ms([r["capture_time"] for r in rows])
+            idx  = [r["index"] for r in rows]
         result["videos"][side] = {"t_ms": t_ms, "frame_idx": idx}
 
     # ── Flux CSV (optical flow) ──
@@ -2271,8 +2533,12 @@ def _extract_video_frame(session_path: str, side: str, t_ms: float) -> Optional[
         # Utiliser le vrai t=0 (minimum des timestamps réels de tous les flux)
         start_ns = _compute_session_start_ns(session_path)
 
+        # Nouveau format : cameras/ ; ancien format : videos/
+        _new_fmt = (sess / "cameras").exists() and not (sess / "videos").exists()
+        vid_subdir = "cameras" if _new_fmt else "videos"
+
         # Charger le JSONL pour trouver l'index de frame le plus proche
-        jl_path = sess / "videos" / f"{side}.jsonl"
+        jl_path = sess / vid_subdir / f"{side}.jsonl"
         if not jl_path.exists():
             return None
 
@@ -2281,15 +2547,22 @@ def _extract_video_frame(session_path: str, side: str, t_ms: float) -> Optional[
             return None
 
         start_ms = start_ns / 1_000_000
-        target_epoch_ms = start_ms + t_ms
 
         # Frame la plus proche
-        times  = np.array([r["capture_time"] for r in rows], dtype=float)
-        idx    = int(np.argmin(np.abs(times - target_epoch_ms)))
-        frame_number = rows[idx]["index"]
+        if _new_fmt and "capture_timestamp_sec" in rows[0]:
+            start_sec = start_ns / 1_000_000_000
+            target_sec = start_sec + t_ms / 1000.0
+            times = np.array([r["capture_timestamp_sec"] for r in rows], dtype=float)
+            idx   = int(np.argmin(np.abs(times - target_sec)))
+            frame_number = rows[idx]["frame_index"]
+        else:
+            target_epoch_ms = start_ms + t_ms
+            times  = np.array([r["capture_time"] for r in rows], dtype=float)
+            idx    = int(np.argmin(np.abs(times - target_epoch_ms)))
+            frame_number = rows[idx]["index"]
 
         # Ouvrir la vidéo et extraire la frame
-        mp4_path = sess / "videos" / f"{side}.mp4"
+        mp4_path = sess / vid_subdir / f"{side}.mp4"
         if not mp4_path.exists():
             return None
 
@@ -2396,7 +2669,8 @@ async def session_video(side: str, session_path: str, request: Request):
     if side not in ("head", "left", "right"):
         raise HTTPException(400, "side doit être head, left ou right")
     sess = Path(session_path)
-    vid_dir = sess / "videos"
+    # Nouveau format : cameras/ ; ancien format : videos/
+    vid_dir = sess / "cameras" if (sess / "cameras").exists() and not (sess / "videos").exists() else sess / "videos"
 
     mp4 = vid_dir / f"{side}.mp4"
 
@@ -2445,18 +2719,25 @@ async def session_video_info(session_path: str):
     start_ns = _compute_session_start_ns(session_path)
     start_ms = start_ns / 1_000_000
 
+    _new_fmt = (sess / "cameras").exists() and not (sess / "videos").exists()
+    vid_subdir = "cameras" if _new_fmt else "videos"
+
     result = {}
     for side in ("head", "left", "right"):
-        jl = sess / "videos" / f"{side}.jsonl"
-        mp4 = sess / "videos" / f"{side}.mp4"
+        jl = sess / vid_subdir / f"{side}.jsonl"
+        mp4 = sess / vid_subdir / f"{side}.mp4"
         if not jl.exists() or not mp4.exists():
             continue
         rows = _parse_jsonl(jl)
         if not rows:
             continue
-        first_capture_ms = float(rows[0]["capture_time"])
-        # offset = temps de la première frame relative au vrai t=0 (en secondes)
-        t0_s = (first_capture_ms - start_ms) / 1000.0
+        # Nouveau format : capture_timestamp_sec (epoch sec) ; ancien : capture_time (epoch ms)
+        if _new_fmt and "capture_timestamp_sec" in rows[0]:
+            start_sec = start_ns / 1_000_000_000
+            t0_s = float(rows[0]["capture_timestamp_sec"]) - start_sec
+        else:
+            first_capture_ms = float(rows[0]["capture_time"])
+            t0_s = (first_capture_ms - start_ms) / 1000.0
         result[side] = {
             "t0_s": t0_s,
             "available": True,
@@ -4524,6 +4805,75 @@ def _worker_check_pinces(job: Job, req: CheckPincesRequest):
     except Exception as e:
         _update_job(job, status=JobStatus.ERROR, ended_at=_now(), error=str(e))
         _log_job(job, f"Erreur check_pinces : {e}", "ERROR")
+
+
+class ArucoTrackRequest(BaseModel):
+    session:        str
+    marker_size_mm: float = 30.0
+    left_id:        int   = 0
+    right_id:       int   = 1
+    focal_px:       Optional[float] = None
+
+
+def _worker_aruco_track(job: Job, req: ArucoTrackRequest):
+    job.status     = JobStatus.RUNNING
+    job.started_at = _now()
+    try:
+        from verification.gripper_aruco_tracker import process_session
+
+        id_to_side = {}
+        if req.left_id  >= 0: id_to_side[req.left_id]  = "left"
+        if req.right_id >= 0: id_to_side[req.right_id] = "right"
+
+        total_frames: list = [0]
+
+        def _progress(fi: int, tot: int):
+            total_frames[0] = tot
+            if tot > 0:
+                job.progress = round(fi / tot * 100, 1)
+
+        res = process_session(
+            session_path   = req.session,
+            marker_size_mm = req.marker_size_mm,
+            id_to_side     = id_to_side,
+            camera_matrix  = None,
+            dist_coeffs    = None,
+            focal_px       = req.focal_px if req.focal_px and req.focal_px > 0 else None,
+            dict_name      = "DICT_4X4_50",
+            debug_video    = False,
+            progress_fn    = _progress,
+        )
+
+        job.progress = 100.0
+        job.result   = {
+            "success":      res.success,
+            "error":        res.error,
+            "n_frames":     res.n_frames,
+            "n_detections": res.n_detections,
+            "csv_path":     res.csv_path,
+            "session_name": res.session_name,
+        }
+        job.status   = JobStatus.DONE
+    except Exception:
+        job.status = JobStatus.ERROR
+        job.error  = traceback.format_exc()
+    finally:
+        job.ended_at = _now()
+        _persist_job(job)
+
+
+@app.post("/api/session/aruco_track")
+async def aruco_track(req: ArucoTrackRequest):
+    """Détecte et suit les marqueurs ArUco des pinces dans la vidéo head."""
+    if not req.session:
+        raise HTTPException(400, "session manquante")
+    if not Path(req.session).exists():
+        raise HTTPException(404, f"Session introuvable : {req.session}")
+    if not (Path(req.session) / "videos" / "head.mp4").exists():
+        raise HTTPException(404, "head.mp4 absent dans cette session")
+    job = _new_job("aruco_track")
+    threading.Thread(target=_worker_aruco_track, args=(job, req), daemon=True).start()
+    return {"job_id": job.id}
 
 
 @app.post("/api/session/check_pinces")

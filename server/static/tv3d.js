@@ -147,11 +147,15 @@ function tv3dBuild() {
 	if (!TV3D.initialized) return;
 
 	const raw = TV.data?.tracker;
+	const imuMode = TV.data?.tracker_source === 'imu';
 	if (!raw?.t_ms?.length) {
 		ge('tv3d-empty-msg').style.display = '';
-		ge('tv3d-empty-msg').textContent = 'Pas de données tracker';
+		ge('tv3d-empty-msg').textContent = imuMode ? 'Calcul position IMU indisponible' : 'Pas de données tracker';
 		return;
 	}
+
+	// Rôles disponibles selon la source
+	const ALL_ROLES = imuMode ? ['left', 'right'] : ['head', 'left', 'right'];
 
 	// Nettoyer anciens objets
 	for (const role of ['head', 'left', 'right']) {
@@ -161,12 +165,14 @@ function tv3dBuild() {
 	}
 
 	// Quels rôles ont des XYZ ?
-	const roles = ['head', 'left', 'right'].filter(r =>
+	const roles = ALL_ROLES.filter(r =>
 		Array.isArray(raw[`${r}_x`]) && raw[`${r}_x`].length > 0
 	);
 	if (!roles.length) {
 		ge('tv3d-empty-msg').style.display = '';
-		ge('tv3d-empty-msg').textContent = `Colonnes XYZ manquantes (clés: ${Object.keys(raw).join(', ')})`;
+		ge('tv3d-empty-msg').textContent = imuMode
+			? 'Position IMU non disponible (données insuffisantes)'
+			: `Colonnes XYZ manquantes (clés: ${Object.keys(raw).join(', ')})`;
 		return;
 	}
 	ge('tv3d-empty-msg').style.display = 'none';
@@ -251,6 +257,7 @@ function tv3dBuild() {
 	tv3dApplyCamera();
 	tv3dApplyMode();
 	tv3dUpdateLegend();
+	tv3dUpdateTitle();
 }
 
 // Retourne les 3 axes selon axesMode
@@ -272,6 +279,7 @@ function tv3dUpdateCursor(t_ms) {
 	while (lo < hi) { const mid = (lo + hi) >> 1; if (ts[mid] < t_ms) lo = mid + 1; else hi = mid; }
 	const best = (lo > 0 && Math.abs(ts[lo - 1] - t_ms) < Math.abs(ts[lo] - t_ms)) ? lo - 1 : lo;
 
+	const imuMode = TV.data?.tracker_source === 'imu';
 	const parts = [];
 	for (const role of ['head', 'left', 'right']) {
 		const sphere = TV3D.cursors[role];
@@ -280,9 +288,11 @@ function tv3dUpdateCursor(t_ms) {
 		const [ax1, ax2, ax3] = tv3dGetAxes(role, data);
 		if (!sphere || !ax1 || best >= ax1.length) continue;
 		sphere.position.set(ax1[best], ax2[best], ax3[best]);
-		parts.push(`${role}: (${ax1[best].toFixed(3)}, ${ax2[best].toFixed(3)}, ${ax3[best].toFixed(3)})`);
+		const lbl = imuMode
+			? (role === 'left' ? 'Gauche' : role === 'right' ? 'Droite' : role)
+			: role;
+		parts.push(`${lbl}: (${ax1[best].toFixed(3)}, ${ax2[best].toFixed(3)}, ${ax3[best].toFixed(3)})`);
 
-		// Mettre à jour le drawRange : afficher seulement les points déjà parcourus
 		if (line && pts) {
 			const stride = Math.max(1, Math.ceil(ax1.length / pts.length));
 			const ptIdx = Math.min(Math.floor(best / stride) + 1, pts.length);
@@ -307,12 +317,24 @@ function tv3dSetAxes(val) { TV3D.axesMode = val; tv3dBuild(); tv3dUpdateCursor(T
 function tv3dUpdateLegend() {
 	const leg = ge('tv3d-legend');
 	if (!leg) return;
+	const imuMode = TV.data?.tracker_source === 'imu';
 	const roles = ['head', 'left', 'right'].filter(r => TV3D.cursors[r]);
 	leg.innerHTML = roles.map(role => {
 		const hex = '#' + TV3D_COLORS[role].toString(16).padStart(6, '0');
+		const label = imuMode
+			? (role === 'left' ? 'Pince gauche' : role === 'right' ? 'Pince droite' : role)
+			: role;
 		return `<div style="display:flex;align-items:center;gap:5px;background:#00000099;padding:2px 8px;border-radius:99px">
       <div style="width:10px;height:10px;border-radius:50%;background:${hex}"></div>
-      <span style="color:#dde0f5">${role}</span>
+      <span style="color:#dde0f5">${label}</span>
     </div>`;
 	}).join('');
+}
+
+// Label du titre 3D selon la source
+function tv3dUpdateTitle() {
+	const titleEl = ge('tv-3d-block')?.querySelector('.tv-vid-label');
+	if (!titleEl) return;
+	const imuMode = TV.data?.tracker_source === 'imu';
+	titleEl.textContent = imuMode ? '3D Pinces (IMU)' : '3D Trackers';
 }

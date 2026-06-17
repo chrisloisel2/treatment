@@ -541,7 +541,8 @@
 		#export-modal-backdrop,
 		#reject-modal-backdrop,
 		#mistral-modal-backdrop,
-		#setup-modal-backdrop {
+		#setup-modal-backdrop,
+		#aruco-modal-backdrop {
 			display: none;
 			position: fixed;
 			inset: 0;
@@ -554,8 +555,48 @@
 		#export-modal-backdrop.open,
 		#reject-modal-backdrop.open,
 		#mistral-modal-backdrop.open,
-		#setup-modal-backdrop.open {
+		#setup-modal-backdrop.open,
+		#aruco-modal-backdrop.open {
 			display: flex;
+		}
+
+		#aruco-modal {
+			background: var(--bg2);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 24px 28px 20px;
+			width: 360px;
+			box-shadow: 0 8px 40px #0008;
+		}
+		#aruco-modal h3 { margin: 0 0 4px; color: var(--accent); font-size: 15px; }
+		#aruco-modal .aruco-sub { color: var(--text2); font-size: 11px; margin-bottom: 14px; }
+		#aruco-modal .aruco-row {
+			display: flex; align-items: center; gap: 8px;
+			margin-bottom: 9px;
+		}
+		#aruco-modal .aruco-row label {
+			color: var(--text2); font-size: 12px; width: 110px; flex-shrink: 0;
+		}
+		#aruco-modal .aruco-row input[type=number] {
+			flex: 1; background: var(--bg3); border: 1px solid var(--border);
+			border-radius: 4px; color: var(--text); padding: 4px 7px; font-size: 13px;
+		}
+		#aruco-modal .aruco-ids { display: flex; gap: 6px; flex: 1; }
+		#aruco-modal .aruco-ids input { flex: 1; }
+		#aruco-modal .aruco-btns {
+			display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
+		}
+		#aruco-modal .aruco-progress {
+			margin-top: 10px; font-size: 12px; color: var(--text2);
+			display: none;
+		}
+		#aruco-modal .aruco-progress.visible { display: block; }
+		#aruco-progress-bar {
+			height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px;
+		}
+		#aruco-progress-bar-inner {
+			height: 100%; background: var(--accent); border-radius: 2px;
+			width: 0%; transition: width 0.3s;
 		}
 
 		#export-modal {
@@ -4803,15 +4844,15 @@
 											</div>
 										</div>
 
-										<!-- Trackers (charts) -->
+										<!-- Trackers / IMU (charts) -->
 										<div class="tv-rp-section">
-											<div class="tv-rp-title">Graphique trackers</div>
+											<div class="tv-rp-title" id="trk-rp-title">Graphique trackers</div>
 											<div class="tv-rp-row">
 												<label>Mode</label>
 												<select id="tv-trk-mode" class="tv-sel" onchange="tvRebuildCharts()"
 													style="font-size:.76rem">
-													<option value="speed">Vitesse</option>
-													<option value="xyz">Position XYZ</option>
+													<option value="speed">Mouvement |a| / Vitesse</option>
+													<option value="xyz">Orientation q / XYZ</option>
 													<option value="norm">Norme</option>
 												</select>
 											</div>
@@ -4992,6 +5033,10 @@
 												onclick="tvViewerCheckPinces()"
 												style="background:var(--orange)1a;border-color:var(--orange)55;color:var(--orange);font-weight:600;margin-top:4px"
 												disabled>🦾 Pinces</button>
+											<button class="tv-rp-btn" id="tv-rp-btn-aruco"
+												onclick="tvViewerAruco()"
+												style="background:var(--accent2)1a;border-color:var(--accent2)55;color:var(--accent2);font-weight:600;margin-top:4px"
+												disabled>🎯 ArUco</button>
 											<button class="tv-rp-btn" id="tv-rp-btn-trim-sw" onclick="tvViewerTrimSW()"
 												style="background:var(--yellow)1a;border-color:var(--yellow)55;color:var(--yellow);font-weight:600;margin-top:4px"
 												disabled>✂ Trim SW</button>
@@ -7556,6 +7601,81 @@
 				return;
 			}
 
+			// ── Mode Nouveau format ────────────────────────────────────────────
+			if (sess.new_format) {
+				const analysis = meta.analysis || {};
+				const errors   = meta.errors || [];
+				const warnings = meta.warnings || [];
+				const resCls   = meta.result === 'SUCCESS' ? 'var(--green)' : meta.result === 'FAILED' ? 'var(--red)' : 'var(--text3)';
+				html += `
+    <div style="margin-bottom:12px;padding:8px 10px;background:${meta.result==='SUCCESS'?'var(--green)':'var(--red)'}18;border:1px solid ${meta.result==='SUCCESS'?'var(--green)':'var(--red)'}44;border-radius:var(--rs)">
+      <span style="font-size:.72rem;font-weight:700;color:${resCls}">${meta.result || '?'}</span>
+      <span style="font-size:.72rem;color:var(--text3);margin-left:8px">${sess.name}</span>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Métadonnées</div>
+      <table style="width:100%;font-size:.78rem">
+        <tr><td style="color:var(--text3);padding:2px 0;width:110px">Mission</td><td>${esc(meta.scenario || '—')}</td></tr>
+        ${meta.instructions ? `<tr><td style="color:var(--text3);padding:2px 0">Instructions</td><td style="font-size:.72rem">${esc(meta.instructions)}</td></tr>` : ''}
+        <tr><td style="color:var(--text3);padding:2px 0">Durée</td><td>${meta.duration_seconds != null ? meta.duration_seconds.toFixed(2) + 's' : '—'}</td></tr>
+        <tr><td style="color:var(--text3);padding:2px 0">FPS</td><td>${meta.fps || '—'}</td></tr>
+      </table>
+    </div>`;
+
+				// ── Qualité : sync, fps, drift ─────────────────────────────────────
+				const syncChk  = analysis.sync_check  || {};
+				const fpsChk   = analysis.fps_check   || {};
+				const driftChk = analysis.drift_check || {};
+				const sensorChk = analysis.sensor_check || {};
+				if (Object.keys(syncChk).length || Object.keys(fpsChk).length) {
+					html += `<div class="div" style="margin:8px 0"></div>
+    <div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Analyse qualité</div>`;
+
+					// Sync
+					if (syncChk.ok != null) {
+						const sc = syncChk.ok ? 'var(--green)' : 'var(--orange)';
+						html += `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)22;font-size:.78rem">
+      <span style="color:var(--text2)">Sync caméras/capteurs</span>
+      <span style="color:${sc};font-weight:700">${syncChk.ok ? 'OK' : '!'} ${syncChk.delta_sec != null ? '(Δ '+((syncChk.delta_sec)*1000).toFixed(1)+'ms)' : ''}</span></div>`;
+					}
+
+					// FPS par caméra
+					const fpsData = fpsChk.cameras || {};
+					Object.entries(fpsData).forEach(([cam, d]) => {
+						const ok = (d.low_fps_seconds||[]).length === 0 && d.sequence_gaps < 50;
+						html += `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)22;font-size:.78rem">
+      <span style="color:var(--text2)">FPS ${cam}</span>
+      <span style="color:${ok?'var(--text)':'var(--orange)'};font-family:monospace">${d.measured_fps?.toFixed(1)||'?'} fps (${d.duration_sec?.toFixed(1)||'?'}s)</span></div>`;
+					});
+
+					// Sensors
+					const snsDat = sensorChk.sensors || {};
+					Object.entries(snsDat).forEach(([side, d]) => {
+						html += `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)22;font-size:.78rem">
+      <span style="color:var(--text2)">Capteur ${side}</span>
+      <span style="color:var(--text);font-family:monospace">${d.measured_hz?.toFixed(1)||'?'} Hz — ouv. ${d.ouverture_min_mm||'?'}…${d.ouverture_max_mm||'?'} mm</span></div>`;
+					});
+				}
+
+				// ── Warnings/Errors ────────────────────────────────────────────────
+				if (errors.length) {
+					html += `<div class="div" style="margin:8px 0"></div>
+    <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--red);margin-bottom:6px">Erreurs (${errors.length})</div>`;
+					errors.forEach(e => {
+						html += `<div style="font-size:.73rem;color:var(--red);padding:2px 0">• ${esc(e)}</div>`;
+					});
+				}
+				if (warnings.length) {
+					html += `<div class="div" style="margin:8px 0"></div>
+    <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--orange);margin-bottom:6px">Avertissements (${warnings.length})</div>`;
+					warnings.forEach(w => {
+						html += `<div style="font-size:.73rem;color:var(--orange);padding:2px 0">• ${esc(w)}</div>`;
+					});
+				}
+				body.innerHTML = html;
+				return;
+			}
+
 			// ── Mode Custom (pipeline standard) ──────────────────────────────────
 			// Score en haut si disponible
 			const scoreBlock = scoreBadgeHTML(ps, 'lg');
@@ -7575,9 +7695,9 @@
     <div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Étapes pipeline</div>
   `;
 
-			const steps = ps?.steps || {};
+			const steps2 = ps?.steps || {};
 			STEPS.forEach((name, i) => {
-				const st = steps[name] || {};
+				const st = steps2[name] || {};
 				const status = st.status || 'pending';
 				const dur = st.duration_s ? `${st.duration_s}s` : '';
 				const msg = st.message || '';
@@ -8402,6 +8522,7 @@
 			const steps = ps?.steps || {};
 			const verif = meta.verification;
 			const lblV = meta.camera_label_verification;
+			const isNewFmt = !!s.new_format;
 
 			// ── colonne checkbox ──
 			const tdCb = document.createElement('td');
@@ -8415,54 +8536,69 @@
 			const perfectBadge = meta.repair_perfect
 				? `<span title="Session parfaite" style="color:var(--green);margin-left:5px;font-size:.8em">★</span>`
 				: '';
+			const resultBadge = isNewFmt && meta.result
+				? `<span style="color:${meta.result==='SUCCESS'?'var(--green)':'var(--red)'};margin-left:5px;font-size:.7em;font-weight:700">${meta.result}</span>`
+				: '';
 			tdName.innerHTML = (s.action
 				? `<span style="color:var(--text2);font-weight:400;font-size:.8em;margin-right:5px">[${s.action}]</span>${s.name}`
-				: s.name) + perfectBadge;
+				: s.name) + perfectBadge + resultBadge;
 			tr.appendChild(tdName);
 
 			// ── colonne fichiers ──
 			const tdFiles = document.createElement('td');
 			const c = (ok, lbl) => `<span class="st-chip ${ok ? 'ck' : 'cx'}">${lbl}</span>`;
-			tdFiles.innerHTML = `<div class="st-chips">${c(s.has_tracker, 'trk')}${c(s.has_gripper, 'grp')}${c(s.has_ux, 'ux')}${c(s.has_jsonl, 'jsonl')}</div>`;
+			if (isNewFmt) {
+				tdFiles.innerHTML = `<div class="st-chips">${c(s.has_gripper,'snsr')}${c(s.has_jsonl,'cam')}${c(s.has_tracker,'vive')}</div>`;
+			} else {
+				tdFiles.innerHTML = `<div class="st-chips">${c(s.has_tracker, 'trk')}${c(s.has_gripper, 'grp')}${c(s.has_ux, 'ux')}${c(s.has_jsonl, 'jsonl')}</div>`;
+			}
 			tr.appendChild(tdFiles);
 
 			// ── colonne checks ──
 			const tdChk = document.createElement('td');
 
-			// sync
-			const chkScore = meta.check_score ?? null;
-			const vidDelay = verif?.stats?.video_max_delay_ms;
-			const syncSt = steps['check_sync']?.status;
-			let syncCls = 'pen';
-			if (chkScore != null) syncCls = chkScore >= 70 ? 'ok' : chkScore >= 40 ? 'wrn' : 'err';
-			else if (vidDelay != null) syncCls = vidDelay <= 500 ? 'ok' : 'err';
-			else if (syncSt === 'done') syncCls = 'ok';
-			else if (syncSt === 'failed') syncCls = 'err';
-			const syncLbl = chkScore != null
-				? `${meta.check_grade ? meta.check_grade + ' ' : ''}${Math.round(chkScore)}%`
-				: 'sync';
-
-			// trackers
-			const gripIss = (verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
-			const gripCls = verif ? (gripIss ? 'err' : 'ok') : (steps['verify']?.status === 'done' ? 'ok' : steps['verify']?.status === 'failed' ? 'err' : 'pen');
-
-			// vidéo
-			const vidIss = (verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
-			const vidCls = verif ? (vidIss ? 'err' : 'ok') : (steps['video']?.status === 'done' ? 'ok' : steps['video']?.status === 'failed' ? 'err' : 'pen');
-
-			// labels
-			const lblCls = lblV != null ? (lblV.global_ok ? 'ok' : 'err') : (steps['verify_labels']?.status === 'done' ? 'ok' : steps['verify_labels']?.status === 'failed' ? 'err' : 'pen');
-
-			// ia_sync
-			const iaCls = meta.ia_sync_validated ? 'ok' : (steps['validate']?.status === 'done' ? 'ok' : steps['validate']?.status === 'failed' ? 'err' : 'pen');
-
-			tdChk.innerHTML = `<div class="st-dots">
-				<span class="st-dot ${syncCls}" title="${syncLbl}">${syncLbl}</span>
-				<span class="st-dot ${gripCls}" title="trackers">trk</span>
-				<span class="st-dot ${vidCls}"  title="vidéo">vid</span>
-				<span class="st-dot ${lblCls}"  title="labels">lbl</span>
-				<span class="st-dot ${iaCls}"   title="ia_sync">ia</span>
-			</div>`;
+			if (isNewFmt) {
+				// Nouveau format : indicateurs basés sur analysis.json
+				const analysis = meta.analysis || {};
+				const errors = meta.errors || [];
+				const warnings = meta.warnings || [];
+				const syncOk = analysis.sync_check?.ok;
+				const hasDrift = (warnings || []).some(w => /drift/i.test(w));
+				const syncCls2 = errors.length ? 'err' : syncOk === false ? 'err' : syncOk === true ? 'ok' : 'pen';
+				const warnCls = warnings.length ? (hasDrift ? 'wrn' : 'wrn') : 'ok';
+				const resCls = meta.result === 'SUCCESS' ? 'ok' : meta.result === 'FAILED' ? 'err' : 'pen';
+				tdChk.innerHTML = `<div class="st-dots">
+					<span class="st-dot ${resCls}"   title="résultat">${meta.result || '?'}</span>
+					<span class="st-dot ${syncCls2}" title="sync caméras">${syncOk === true ? 'sync' : syncOk === false ? '!sync' : 'sync'}</span>
+					<span class="st-dot ${warnCls}"  title="${warnings.length} avertissement(s)">${warnings.length ? warnings.length+'w' : 'ok'}</span>
+				</div>`;
+			} else {
+				// Ancien format
+				const chkScore = meta.check_score ?? null;
+				const vidDelay = verif?.stats?.video_max_delay_ms;
+				const syncSt = steps['check_sync']?.status;
+				let syncCls = 'pen';
+				if (chkScore != null) syncCls = chkScore >= 70 ? 'ok' : chkScore >= 40 ? 'wrn' : 'err';
+				else if (vidDelay != null) syncCls = vidDelay <= 500 ? 'ok' : 'err';
+				else if (syncSt === 'done') syncCls = 'ok';
+				else if (syncSt === 'failed') syncCls = 'err';
+				const syncLbl = chkScore != null
+					? `${meta.check_grade ? meta.check_grade + ' ' : ''}${Math.round(chkScore)}%`
+					: 'sync';
+				const gripIss = (verif?.issues || []).some(i => /gripper|tracker.*gel|gel.*tracker|déplacement/i.test(i));
+				const gripCls = verif ? (gripIss ? 'err' : 'ok') : (steps['verify']?.status === 'done' ? 'ok' : steps['verify']?.status === 'failed' ? 'err' : 'pen');
+				const vidIss = (verif?.issues || []).some(i => /vidéo|désync|décalage/i.test(i));
+				const vidCls = verif ? (vidIss ? 'err' : 'ok') : (steps['video']?.status === 'done' ? 'ok' : steps['video']?.status === 'failed' ? 'err' : 'pen');
+				const lblCls = lblV != null ? (lblV.global_ok ? 'ok' : 'err') : (steps['verify_labels']?.status === 'done' ? 'ok' : steps['verify_labels']?.status === 'failed' ? 'err' : 'pen');
+				const iaCls = meta.ia_sync_validated ? 'ok' : (steps['validate']?.status === 'done' ? 'ok' : steps['validate']?.status === 'failed' ? 'err' : 'pen');
+				tdChk.innerHTML = `<div class="st-dots">
+					<span class="st-dot ${syncCls}" title="${syncLbl}">${syncLbl}</span>
+					<span class="st-dot ${gripCls}" title="trackers">trk</span>
+					<span class="st-dot ${vidCls}"  title="vidéo">vid</span>
+					<span class="st-dot ${lblCls}"  title="labels">lbl</span>
+					<span class="st-dot ${iaCls}"   title="ia_sync">ia</span>
+				</div>`;
+			}
 			tr.appendChild(tdChk);
 
 			// ── colonne score ──
@@ -9406,6 +9542,7 @@
 			ge('tv-rp-btn-export').disabled = false;
 			ge('tv-rp-btn-check').disabled = false;
 			ge('tv-rp-btn-pinces').disabled = false;
+			ge('tv-rp-btn-aruco').disabled = false;
 			ge('tv-rp-btn-trim-sw').disabled = false;
 			ge('tv-rp-btn-rotate').disabled = false;
 			ge('tv-rp-btn-repair').disabled = false;
@@ -9500,14 +9637,19 @@
 				if (syncBtn) { syncBtn.style.display = 'flex'; syncBtn.disabled = false; syncBtn.classList.remove('running'); syncBtn.textContent = '⟳ Sync'; }
 
 				const has3d = !!(data?.tracker?.t_ms?.length);
+				const imuMode = data?.tracker_source === 'imu';
 				ge('tv3d-empty-msg').style.display = has3d ? 'none' : '';
+				// Mettre à jour les titres selon la source
+				const trkTitle = ge('trk-rp-title');
+				if (trkTitle) trkTitle.textContent = imuMode ? 'IMU capteurs' : 'Graphique trackers';
+				const chkTrkLabel = ge('chk-tracker')?.parentElement;
+				if (chkTrkLabel) chkTrkLabel.childNodes[chkTrkLabel.childNodes.length - 1].textContent = imuMode ? ' IMU' : ' Trackers';
 
 				requestAnimationFrame(() => {
 					tvBuildCharts();
 					tvUpdateLegend();
 					tv3dInitIfNeeded();
 					if (has3d) { tv3dBuild(); tv3dUpdateCursor(0); }
-					// Positionner les vidéos à t=0 sans les jouer
 					tvSeekVideos(0);
 				});
 
@@ -9937,46 +10079,85 @@
 		function tvBuildCharts() {
 			const d = TV.data;
 			const mode = ge('tv-trk-mode').value;
+			const imuMode = d?.tracker_source === 'imu';
 
 			// Détruire anciens charts
 			['tracker', 'gripper', 'flux'].forEach(k => {
 				if (TV.charts[k]) { TV.charts[k].destroy(); delete TV.charts[k]; }
 			});
 
-			// ── Chart trackers ──
+			// ── Chart trackers / IMU ──
 			const trkDs = [];
-			['head', 'left', 'right'].forEach(role => {
-				const t = d.tracker?.t_ms;
-				if (!t?.length) return;
-				let vals;
-				if (mode === 'xyz') {
-					// 3 axes = 3 séries par tracker
-					['x', 'y', 'z'].forEach((ax, ai) => {
-						const col = `${role}_${ax}`;
-						if (!d.tracker[col]) return;
-						trkDs.push({
-							label: `${role}.${ax}`,
-							data: tvDownsample(t, d.tracker[col], 800),
-							borderColor: TV_COLORS[role] + (ai === 0 ? 'ff' : ai === 1 ? '99' : '55'),
-							borderWidth: ai === 0 ? 1.5 : 1,
-							pointRadius: 0, tension: 0.1, fill: false,
-							parsing: false,
-						});
+			const t = d.tracker?.t_ms;
+			if (t?.length) {
+				if (imuMode) {
+					// Nouveau format : IMU des capteurs gauche/droit
+					['left', 'right'].forEach(role => {
+						if (mode === 'xyz') {
+							// Quaternion q_x, q_y, q_z = orientation (position angulaire) de la pince
+							['x', 'y', 'z'].forEach((ax, ai) => {
+								const col = `${role}_${ax}`;
+								if (!d.tracker[col]) return;
+								trkDs.push({
+									label: `${role}.q${ax}`,
+									data: tvDownsample(t, d.tracker[col], 800),
+									borderColor: TV_COLORS[role] + (ai === 0 ? 'ff' : ai === 1 ? '99' : '55'),
+									borderWidth: ai === 0 ? 1.5 : 1,
+									pointRadius: 0, tension: 0.1, fill: false, parsing: false,
+								});
+							});
+						} else {
+							// Mode speed/norm → norme d'accélération (mouvement physique)
+							const key = `${role}_speed`;
+							if (!d.tracker[key]) return;
+							trkDs.push({
+								label: `|a| ${role} (m/s²)`,
+								data: tvDownsample(t, d.tracker[key], 800),
+								borderColor: TV_COLORS[role], borderWidth: 1.5,
+								pointRadius: 0, tension: .15, fill: false, parsing: false,
+							});
+						}
 					});
 				} else {
-					const key = mode === 'speed' ? `${role}_speed` : `${role}_pos_norm`;
-					if (!d.tracker[key]) return;
-					trkDs.push({
-						label: role,
-						data: tvDownsample(t, d.tracker[key], 800),
-						borderColor: TV_COLORS[role], borderWidth: 1.5,
-						pointRadius: 0, tension: .15, fill: false, parsing: false,
+					// Ancien format : Vive trackers head/left/right
+					['head', 'left', 'right'].forEach(role => {
+						if (mode === 'xyz') {
+							['x', 'y', 'z'].forEach((ax, ai) => {
+								const col = `${role}_${ax}`;
+								if (!d.tracker[col]) return;
+								trkDs.push({
+									label: `${role}.${ax}`,
+									data: tvDownsample(t, d.tracker[col], 800),
+									borderColor: TV_COLORS[role] + (ai === 0 ? 'ff' : ai === 1 ? '99' : '55'),
+									borderWidth: ai === 0 ? 1.5 : 1,
+									pointRadius: 0, tension: 0.1, fill: false, parsing: false,
+								});
+							});
+						} else {
+							const key = mode === 'speed' ? `${role}_speed` : `${role}_pos_norm`;
+							if (!d.tracker[key]) return;
+							trkDs.push({
+								label: role,
+								data: tvDownsample(t, d.tracker[key], 800),
+								borderColor: TV_COLORS[role], borderWidth: 1.5,
+								pointRadius: 0, tension: .15, fill: false, parsing: false,
+							});
+						}
 					});
 				}
-			});
+			}
 
-			TV.charts.tracker = tvMkChart('tv-ch-tracker', trkDs,
-				mode === 'xyz' ? 'Position (m)' : mode === 'speed' ? 'Vitesse (m/frame)' : 'Norme (m)');
+			// Label de l'axe Y selon la source
+			const trkYLabel = imuMode
+				? (mode === 'xyz' ? 'Orientation (q)' : '|a| (m/s²)')
+				: (mode === 'xyz' ? 'Position (m)' : mode === 'speed' ? 'Vitesse (m/frame)' : 'Norme (m)');
+			// Label de la zone chart
+			const trkRowLabel = ge('tv-row-tracker')?.querySelector('.tvc-label');
+			if (trkRowLabel) trkRowLabel.textContent = imuMode
+				? (mode === 'xyz' ? 'Orientation (quaternion)' : 'Mouvement (|a|)')
+				: 'Trackers';
+
+			TV.charts.tracker = tvMkChart('tv-ch-tracker', trkDs, trkYLabel);
 
 			// ── Chart grippers ──
 			const gDs = [];
@@ -10002,8 +10183,28 @@
 						pointRadius: 0, tension: .2, fill: false, parsing: false,
 					});
 				}
+				// Nouveau format : capteurs de pression FSR
+				if (g.fsr_r?.length) {
+					gDs.push({
+						label: `FSR_R ${side}`,
+						data: tvDownsample(t_shifted, g.fsr_r, 800),
+						borderColor: TV_COLORS[ck] + '66', borderWidth: 1, borderDash: [2, 4],
+						pointRadius: 0, tension: .1, fill: false, parsing: false,
+						yAxisID: 'y2',
+					});
+				}
+				if (g.fsr_l?.length) {
+					gDs.push({
+						label: `FSR_L ${side}`,
+						data: tvDownsample(t_shifted, g.fsr_l, 800),
+						borderColor: TV_COLORS[ck] + '44', borderWidth: 1, borderDash: [1, 5],
+						pointRadius: 0, tension: .1, fill: false, parsing: false,
+						yAxisID: 'y2',
+					});
+				}
 			});
-			TV.charts.gripper = tvMkChart('tv-ch-gripper', gDs, 'Gripper');
+			const hasFSR = gDs.some(ds => ds.yAxisID === 'y2');
+			TV.charts.gripper = tvMkChart('tv-ch-gripper', gDs, 'Gripper', hasFSR ? 'FSR' : null);
 
 			// ── Chart flux ──
 			const fDs = [];
@@ -10047,10 +10248,35 @@
 			return out;
 		}
 
-		function tvMkChart(canvasId, datasets, yLabel) {
+		function tvMkChart(canvasId, datasets, yLabel, y2Label) {
 			const ctx = ge(canvasId).getContext('2d');
 			const gridCol = '#25254555';
 			const tickCol = '#8b8fb8';
+			const scales = {
+				x: {
+					type: 'linear',
+					min: 0,
+					max: TV.duration_ms,
+					ticks: {
+						color: tickCol, maxTicksLimit: 8,
+						callback: v => (v / 1000).toFixed(1) + 's'
+					},
+					grid: { color: gridCol },
+				},
+				y: {
+					ticks: { color: tickCol, maxTicksLimit: 5 },
+					grid: { color: gridCol },
+					title: { display: !!yLabel, text: yLabel || '', color: tickCol, font: { size: 10 } },
+				},
+			};
+			if (y2Label) {
+				scales.y2 = {
+					position: 'right',
+					ticks: { color: tickCol + '88', maxTicksLimit: 4 },
+					grid: { display: false },
+					title: { display: true, text: y2Label, color: tickCol + '88', font: { size: 10 } },
+				};
+			}
 			return new Chart(ctx, {
 				type: 'line',
 				data: { datasets },
@@ -10075,23 +10301,7 @@
 						},
 						annotation: { annotations: {} },
 					},
-					scales: {
-						x: {
-							type: 'linear',
-							min: 0,
-							max: TV.duration_ms,
-							ticks: {
-								color: tickCol, maxTicksLimit: 8,
-								callback: v => (v / 1000).toFixed(1) + 's'
-							},
-							grid: { color: gridCol },
-						},
-						y: {
-							ticks: { color: tickCol, maxTicksLimit: 5 },
-							grid: { color: gridCol },
-							title: { display: true, text: yLabel, color: tickCol, font: { size: 10 } },
-						}
-					}
+					scales,
 				}
 			});
 		}
@@ -10413,13 +10623,26 @@
 		// ── Légende ───────────────────────────────────────────────────────
 		function tvUpdateLegend() {
 			const leg = ge('tv-legend');
-			const entries = [
-				{ color: TV_COLORS.head, label: 'Head tracker' },
-				{ color: TV_COLORS.left, label: 'Left tracker' },
-				{ color: TV_COLORS.right, label: 'Right tracker' },
-				{ color: TV_COLORS.grip_left, label: 'Gripper gauche' },
-				{ color: TV_COLORS.grip_right, label: 'Gripper droit' },
-			];
+			const imuMode = TV.data?.tracker_source === 'imu';
+			const entries = [];
+			if (imuMode) {
+				entries.push(
+					{ color: TV_COLORS.left,       label: 'IMU gauche (|a|)' },
+					{ color: TV_COLORS.right,      label: 'IMU droit (|a|)' },
+					{ color: TV_COLORS.grip_left,  label: 'Gripper gauche' },
+					{ color: TV_COLORS.grip_right, label: 'Gripper droit' },
+					{ color: TV_COLORS.grip_left  + '66', label: 'FSR gauche' },
+					{ color: TV_COLORS.grip_right + '66', label: 'FSR droit' },
+				);
+			} else {
+				entries.push(
+					{ color: TV_COLORS.head,       label: 'Head tracker' },
+					{ color: TV_COLORS.left,       label: 'Left tracker' },
+					{ color: TV_COLORS.right,      label: 'Right tracker' },
+					{ color: TV_COLORS.grip_left,  label: 'Gripper gauche' },
+					{ color: TV_COLORS.grip_right, label: 'Gripper droit' },
+				);
+			}
 			if (Object.keys(TV.data?.flux || {}).length) {
 				entries.push({ color: TV_COLORS.head + '66', label: 'Flux optique' });
 			}
@@ -11285,11 +11508,23 @@
 		function loadSettings() {
 			try {
 				const c = JSON.parse(localStorage.getItem('syncml-cfg') || '{}');
-				const root = c.root || '';
+				let root = c.root || '';
 				S.cfg.root = root;
 				ge('s-root').value = root;
 				ge('cfg-root').value = root;
 				ge('cfg-root-display').textContent = root || '—';
+				// Si aucun chemin sauvegardé, utiliser ingest_dir du serveur
+				if (!root) {
+					api('GET', '/api/paths').then(p => {
+						const dir = p.ingest_dir || '';
+						if (dir && !ge('s-root').value) {
+							S.cfg.root = dir;
+							ge('s-root').value = dir;
+							ge('cfg-root').value = dir;
+							ge('cfg-root-display').textContent = dir;
+						}
+					}).catch(() => {});
+				}
 				if (c.model) { S.cfg.model = c.model; ge('s-model').value = c.model; }
 				if (c.nas) { S.cfg.nas = c.nas; ge('s-nas').value = c.nas; ge('cfg-nas').value = c.nas; ge('cfg-nas-display').textContent = c.nas || '—'; }
 				if (c.resample_ms) { S.cfg.resample_ms = c.resample_ms; ge('s-rs').value = c.resample_ms; }
@@ -12087,6 +12322,102 @@
 					}
 				} catch (_) { }
 			}, 1500);
+		}
+
+		// ── ArUco tracking ───────────────────────────────────────────────────────
+		function tvViewerAruco() {
+			if (!TV.sessPath) return;
+			ge('aruco-modal-sub').textContent = 'Session : ' + TV.sessPath.split('/').pop();
+			ge('aruco-modal-progress').classList.remove('visible');
+			ge('aruco-modal-confirm').disabled = false;
+			ge('aruco-modal-confirm').textContent = 'Lancer';
+			ge('aruco-progress-bar-inner').style.width = '0%';
+			ge('aruco-modal-backdrop').classList.add('open');
+		}
+
+		function arucoModalClose(e) {
+			if (e.target.id === 'aruco-modal-backdrop')
+				ge('aruco-modal-backdrop').classList.remove('open');
+		}
+
+		function arucoModalCancel() {
+			ge('aruco-modal-backdrop').classList.remove('open');
+		}
+
+		async function arucoModalConfirm() {
+			const btn = ge('aruco-modal-confirm');
+			btn.disabled = true;
+			btn.textContent = '⏳ Lancement…';
+			ge('aruco-modal-progress').classList.add('visible');
+			ge('aruco-progress-label').textContent = 'Initialisation…';
+
+			const payload = {
+				session:        TV.sessPath,
+				marker_size_mm: parseFloat(ge('aruco-size').value) || 30,
+				left_id:        parseInt(ge('aruco-left-id').value),
+				right_id:       parseInt(ge('aruco-right-id').value),
+				focal_px:       parseFloat(ge('aruco-focal').value) || null,
+			};
+
+			try {
+				const { job_id } = await api('POST', '/api/session/aruco_track', payload);
+				log('ArUco tracking lancé : ' + job_id, 'OK');
+				_tvArucoWatchJob(job_id, btn);
+			} catch (e) {
+				log('ArUco erreur : ' + e.message, 'ERROR');
+				btn.disabled = false;
+				btn.textContent = 'Lancer';
+			}
+		}
+
+		function _tvArucoWatchJob(job_id, confirmBtn) {
+			const rBtn = ge('tv-rp-btn-aruco');
+			rBtn.disabled = true;
+			rBtn.textContent = '⏳ ArUco…';
+
+			const poll = setInterval(async () => {
+				try {
+					const j = await api('GET', `/api/jobs/${job_id}`);
+
+					if (j.status === 'running' || j.status === 'pending') {
+						const pct = j.progress || 0;
+						ge('aruco-progress-bar-inner').style.width = pct + '%';
+						ge('aruco-progress-label').textContent =
+							`Analyse… ${Math.round(pct)}%`;
+					}
+
+					if (j.status === 'done') {
+						clearInterval(poll);
+						const res = j.result || {};
+						ge('aruco-progress-bar-inner').style.width = '100%';
+
+						if (res.success) {
+							ge('aruco-progress-label').textContent =
+								`✓ ${res.n_detections} détections / ${res.n_frames} frames`;
+							log(`ArUco OK — ${res.n_detections} détections, ${res.n_frames} frames → ${res.csv_path}`, 'OK');
+							rBtn.textContent = `🎯 ${res.n_detections} det.`;
+							rBtn.style.color = 'var(--green)';
+							rBtn.style.borderColor = 'var(--green)55';
+						} else {
+							ge('aruco-progress-label').textContent = '✗ ' + (res.error || 'erreur');
+							log('ArUco échoué : ' + (res.error || '?'), 'ERROR');
+							rBtn.textContent = '🎯 ArUco';
+						}
+						rBtn.disabled = false;
+						confirmBtn.disabled = false;
+						confirmBtn.textContent = 'Relancer';
+
+					} else if (j.status === 'error') {
+						clearInterval(poll);
+						ge('aruco-progress-label').textContent = '✗ ' + (j.error || 'erreur');
+						log('ArUco job erreur : ' + (j.error || '?'), 'ERROR');
+						rBtn.textContent = '🎯 ArUco';
+						rBtn.disabled = false;
+						confirmBtn.disabled = false;
+						confirmBtn.textContent = 'Relancer';
+					}
+				} catch (_) {}
+			}, 1200);
 		}
 
 		async function tvViewerRepair() {
@@ -13574,4 +13905,43 @@
 	</script>
 	<script src="/static/tv3d.js"></script>
 	<script src="/static/annotator.js"></script>
+
+	<!-- ── Modal ArUco ─────────────────────────────────────────────────── -->
+	<div id="aruco-modal-backdrop" onclick="arucoModalClose(event)">
+		<div id="aruco-modal">
+			<h3>🎯 Tracking ArUco — Positions des pinces</h3>
+			<div class="aruco-sub" id="aruco-modal-sub">Session : —</div>
+
+			<div class="aruco-row">
+				<label>Taille marqueur</label>
+				<input type="number" id="aruco-size" value="30" min="1" max="500" step="1"> mm
+			</div>
+			<div class="aruco-row">
+				<label>ID pince gauche</label>
+				<div class="aruco-ids">
+					<input type="number" id="aruco-left-id" value="0" min="0" max="999" step="1" placeholder="G">
+				</div>
+			</div>
+			<div class="aruco-row">
+				<label>ID pince droite</label>
+				<div class="aruco-ids">
+					<input type="number" id="aruco-right-id" value="1" min="0" max="999" step="1" placeholder="D">
+				</div>
+			</div>
+			<div class="aruco-row">
+				<label>Focale (px)</label>
+				<input type="number" id="aruco-focal" value="0" min="0" max="9999" step="1" placeholder="0 = auto"> px
+			</div>
+
+			<div class="aruco-progress" id="aruco-modal-progress">
+				<span id="aruco-progress-label">Analyse…</span>
+				<div id="aruco-progress-bar"><div id="aruco-progress-bar-inner"></div></div>
+			</div>
+
+			<div class="aruco-btns">
+				<button class="btn" onclick="arucoModalCancel()">Annuler</button>
+				<button class="btn p" id="aruco-modal-confirm" onclick="arucoModalConfirm()">Lancer</button>
+			</div>
+		</div>
+	</div>
 </body>

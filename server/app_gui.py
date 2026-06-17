@@ -515,9 +515,10 @@ class IngestionPanel(QWidget):
 
     def __init__(self, log: LogWidget):
         super().__init__()
-        self.log       = log
-        self._sessions = []
-        self._worker   = None
+        self.log           = log
+        self._sessions     = []
+        self._worker       = None
+        self._aruco_worker = None
         self._build_ui()
 
     def _build_ui(self):
@@ -572,6 +573,47 @@ class IngestionPanel(QWidget):
         self.meta_text.setFont(QFont("Menlo, Consolas, monospace", 9))
         vl2.addWidget(self.meta_text)
         layout.addWidget(grp_meta)
+
+        # ── Analyse ArUco ──
+        grp_aruco = QGroupBox("Analyser les pinces (ArUco)")
+        fl_a = QFormLayout(grp_aruco)
+        fl_a.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        fl_a.setSpacing(5)
+
+        self.sp_aruco_size    = QDoubleSpinBox()
+        self.sp_aruco_size.setDecimals(1); self.sp_aruco_size.setRange(5.0, 500.0)
+        self.sp_aruco_size.setValue(30.0); self.sp_aruco_size.setSuffix(" mm")
+
+        ids_row = QHBoxLayout()
+        self.sp_aruco_left  = QSpinBox(); self.sp_aruco_left.setRange(-1, 999);  self.sp_aruco_left.setValue(0)
+        self.sp_aruco_right = QSpinBox(); self.sp_aruco_right.setRange(-1, 999); self.sp_aruco_right.setValue(1)
+        ids_row.addWidget(QLabel("G:")); ids_row.addWidget(self.sp_aruco_left)
+        ids_row.addWidget(QLabel("D:")); ids_row.addWidget(self.sp_aruco_right)
+
+        self.sp_aruco_focal = QDoubleSpinBox()
+        self.sp_aruco_focal.setDecimals(0); self.sp_aruco_focal.setRange(0.0, 10000.0)
+        self.sp_aruco_focal.setValue(0.0); self.sp_aruco_focal.setSuffix(" px")
+        self.sp_aruco_focal.setSpecialValueText("Auto")
+
+        fl_a.addRow("Marqueur :", self.sp_aruco_size)
+        fl_a.addRow("IDs :", ids_row)
+        fl_a.addRow("Focale :", self.sp_aruco_focal)
+
+        self.btn_aruco = QPushButton("Analyser les pinces")
+        self.btn_aruco.setObjectName("primary")
+        self.btn_aruco.clicked.connect(self._run_aruco)
+        fl_a.addRow(self.btn_aruco)
+
+        self.prog_aruco = QProgressBar()
+        self.prog_aruco.setValue(0); self.prog_aruco.setVisible(False)
+        fl_a.addRow(self.prog_aruco)
+
+        self.lbl_aruco_status = QLabel("")
+        self.lbl_aruco_status.setStyleSheet(f"color:{DARK['text_dim']}; font-size:10px;")
+        self.lbl_aruco_status.setWordWrap(True)
+        fl_a.addRow(self.lbl_aruco_status)
+
+        layout.addWidget(grp_aruco)
         layout.addStretch()
 
         self.list_sessions.currentItemChanged.connect(self._show_meta)
@@ -644,6 +686,79 @@ class IngestionPanel(QWidget):
         if not selected:
             return self._sessions
         return [item.data(Qt.ItemDataRole.UserRole) for item in selected]
+
+    # ── ArUco ──────────────────────────────────────────────────────────────
+
+    def _run_aruco(self):
+        sessions = self.get_selected_sessions()
+        if not sessions:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Attention", "Sélectionnez au moins une session.")
+            return
+
+        # Pour l'instant on traite la première session sélectionnée
+        # (on boucle session par session dans le worker pour éviter le blocage)
+        sess = sessions[0]
+        if len(sessions) > 1:
+            self.log.log(
+                f"[ArUco] {len(sessions)} sessions sélectionnées — la 1re sera traitée : "
+                f"{Path(sess).name}", "WARN"
+            )
+
+        focal = self.sp_aruco_focal.value()
+        params = {
+            "session_path":   sess,
+            "marker_size_mm": self.sp_aruco_size.value(),
+            "left_id":        self.sp_aruco_left.value(),
+            "right_id":       self.sp_aruco_right.value(),
+            "dictionary":     "DICT_4X4_50",
+            "focal_px":       focal if focal > 0 else None,
+            "known_distance_mm": None,
+            "calib_path":     None,
+            "debug_video":    False,
+        }
+
+        self.btn_aruco.setEnabled(False)
+        self.btn_aruco.setText("Analyse…")
+        self.prog_aruco.setVisible(True)
+        self.prog_aruco.setValue(0)
+        self.lbl_aruco_status.setText(f"Analyse de {Path(sess).name}…")
+        self.lbl_aruco_status.setStyleSheet(f"color:{DARK['text_dim']};")
+
+        self._aruco_worker = ArucoWorker(params)
+        self._aruco_worker.progress.connect(self._on_aruco_progress)
+        self._aruco_worker.log_msg.connect(self.log.log)
+        self._aruco_worker.finished.connect(self._on_aruco_finished)
+        self._aruco_worker.start()
+
+    def _on_aruco_progress(self, fi: int, total: int):
+        if total > 0:
+            self.prog_aruco.setMaximum(total)
+            self.prog_aruco.setValue(fi)
+
+    def _on_aruco_finished(self, res: dict):
+        self.btn_aruco.setEnabled(True)
+        self.btn_aruco.setText("Analyser les pinces")
+        self.prog_aruco.setMaximum(100)
+        self.prog_aruco.setValue(100 if res["success"] else 0)
+
+        if not res["success"]:
+            self.lbl_aruco_status.setText(f"Erreur : {res['error']}")
+            self.lbl_aruco_status.setStyleSheet(f"color:{DARK['red']};")
+            self.log.log(f"[ArUco] Échec : {res['error']}", "ERROR")
+            return
+
+        n_det = res["n_detections"]
+        n_fr  = res["n_frames"]
+        self.lbl_aruco_status.setText(f"{n_det} détections / {n_fr} frames")
+        self.lbl_aruco_status.setStyleSheet(f"color:{DARK['green']};")
+        self.log.log(
+            f"[ArUco] {res['session_name']}  frames={n_fr}  détections={n_det}", "OK"
+        )
+
+        if res.get("csv_path"):
+            dlg = ArucoResultsDialog(res["csv_path"], res["session_name"], self)
+            dlg.show()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1492,6 +1607,209 @@ class PipelinePanel(QWidget):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Worker ArUco
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ArucoWorker(QThread):
+    progress   = pyqtSignal(int, int)    # frame_idx, total_frames
+    log_msg    = pyqtSignal(str, str)
+    finished   = pyqtSignal(dict)        # result dict
+
+    def __init__(self, params: dict):
+        super().__init__()
+        self.params = params
+
+    def run(self):
+        try:
+            import sys as _sys
+            _ROOT2 = Path(__file__).resolve().parent.parent
+            if str(_ROOT2) not in _sys.path:
+                _sys.path.insert(0, str(_ROOT2))
+            from verification.gripper_aruco_tracker import (
+                process_session, load_calibration, _auto_focal
+            )
+            import numpy as _np
+
+            p = self.params
+            camera_matrix = dist_coeffs = None
+            focal_px = p.get("focal_px") or None
+
+            if p.get("calib_path"):
+                try:
+                    camera_matrix, dist_coeffs = load_calibration(p["calib_path"])
+                    self.log_msg.emit(f"Calibration chargée : {p['calib_path']}", "OK")
+                except Exception as e:
+                    self.log_msg.emit(f"Calibration ignorée : {e}", "WARN")
+
+            if camera_matrix is None and focal_px is None and p.get("known_distance_mm"):
+                focal_px = _auto_focal(
+                    p["session_path"], p["marker_size_mm"],
+                    p["known_distance_mm"], p["dictionary"],
+                )
+                if focal_px:
+                    self.log_msg.emit(f"Focale auto-calibrée : {focal_px:.1f} px", "OK")
+
+            id_to_side = {}
+            if p.get("left_id") is not None and p["left_id"] >= 0:
+                id_to_side[p["left_id"]] = "left"
+            if p.get("right_id") is not None and p["right_id"] >= 0:
+                id_to_side[p["right_id"]] = "right"
+
+            def _prog(fi, tot):
+                self.progress.emit(fi, tot)
+
+            res = process_session(
+                session_path   = p["session_path"],
+                marker_size_mm = p["marker_size_mm"],
+                id_to_side     = id_to_side,
+                camera_matrix  = camera_matrix,
+                dist_coeffs    = dist_coeffs,
+                focal_px       = focal_px,
+                dict_name      = p["dictionary"],
+                debug_video    = p.get("debug_video", False),
+                progress_fn    = _prog,
+            )
+
+            self.finished.emit({
+                "success":        res.success,
+                "error":          res.error,
+                "n_frames":       res.n_frames,
+                "n_detections":   res.n_detections,
+                "csv_path":       res.csv_path,
+                "session_name":   res.session_name,
+            })
+        except Exception:
+            import traceback as _tb
+            self.log_msg.emit(_tb.format_exc(), "ERROR")
+            self.finished.emit({"success": False, "error": "exception", "n_frames": 0,
+                                "n_detections": 0, "csv_path": "", "session_name": ""})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Dialog résultats ArUco
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ArucoResultsDialog(QDialog):
+    """Fenêtre flottante avec les 3 graphiques de résultats ArUco."""
+
+    def __init__(self, csv_path: str, session_name: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Pinces ArUco \u2014 {session_name}")
+        self.resize(1000, 640)
+        self._build_ui()
+        self._draw(csv_path)
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        self._tabs = QTabWidget()
+        self.canvas_traj    = MplCanvas(figsize=(9, 4))
+        self.canvas_3d_time = MplCanvas(figsize=(9, 5))
+        self.canvas_move    = MplCanvas(figsize=(9, 5))
+        self._tabs.addTab(self.canvas_traj,    "Trajectoire image")
+        self._tabs.addTab(self.canvas_3d_time, "Position 3D (mm)")
+        self._tabs.addTab(self.canvas_move,    "D\u00e9placement")
+        layout.addWidget(self._tabs, 1)
+        btn_close = QPushButton("Fermer")
+        btn_close.clicked.connect(self.close)
+        layout.addWidget(btn_close)
+
+    def _draw(self, csv_path: str):
+        try:
+            import pandas as _pd
+            import numpy as _np
+            df = _pd.read_csv(csv_path)
+        except Exception:
+            return
+        if df.empty:
+            return
+
+        sides  = df["side"].unique().tolist()
+        colors = {"left": DARK["green"], "right": DARK["orange"], "unknown": DARK["text_dim"]}
+
+        # Trajectoire image
+        fig1 = self.canvas_traj.fig
+        fig1.clear()
+        ax1 = fig1.add_subplot(111)
+        ax1.set_facecolor(DARK["bg3"])
+        ax1.invert_yaxis()
+        for side in sides:
+            sub = df[df["side"] == side].sort_values("frame_idx")
+            if sub.empty:
+                continue
+            c = colors.get(side, DARK["text_dim"])
+            ax1.plot(sub["cx_px"], sub["cy_px"], ".", markersize=2, color=c, alpha=0.5, label=side)
+            ax1.plot(sub["cx_px"].iloc[0], sub["cy_px"].iloc[0], "o", markersize=8, color=c, zorder=5)
+            ax1.annotate("d\u00e9but", (sub["cx_px"].iloc[0], sub["cy_px"].iloc[0]),
+                         fontsize=7, color=c, textcoords="offset points", xytext=(5, -5))
+        ax1.set_xlabel("X image (px)"); ax1.set_ylabel("Y image (px)")
+        ax1.set_title("Trajectoire des pinces dans l'image", color=DARK["text"])
+        ax1.legend(facecolor=DARK["bg3"], edgecolor=DARK["border"], labelcolor=DARK["text"], fontsize=8)
+        fig1.tight_layout()
+        self.canvas_traj.draw()
+
+        # Position 3D vs frame
+        has_3d = "x_mm" in df.columns and df["x_mm"].notna().any()
+        fig2 = self.canvas_3d_time.fig
+        fig2.clear()
+        if has_3d:
+            axes2 = fig2.subplots(3, 1, sharex=True)
+            for ax, col, label in zip(axes2, ["x_mm", "y_mm", "z_mm"], ["X (mm)", "Y (mm)", "Z (mm)"]):
+                ax.set_facecolor(DARK["bg3"])
+                for side in sides:
+                    sub = df[df["side"] == side].sort_values("frame_idx")
+                    sv  = sub[sub[col].notna() & (sub[col].astype(str) != "")]
+                    if sv.empty:
+                        continue
+                    ax.plot(sv["frame_idx"], sv[col].astype(float),
+                            lw=1.2, color=colors.get(side, DARK["text_dim"]), label=side)
+                ax.set_ylabel(label, fontsize=8)
+                ax.legend(fontsize=7, facecolor=DARK["bg3"], edgecolor=DARK["border"], labelcolor=DARK["text"])
+                ax.tick_params(labelsize=7)
+            axes2[-1].set_xlabel("Frame")
+            fig2.suptitle("Position 3D des pinces (rep\u00e8re cam\u00e9ra)", color=DARK["text"], fontsize=10)
+        else:
+            ax = fig2.add_subplot(111); ax.set_facecolor(DARK["bg3"])
+            ax.text(0.5, 0.5, "Position 3D non disponible\n(fournir une focale ou calibration)",
+                    ha="center", va="center", color=DARK["text_dim"], fontsize=11, transform=ax.transAxes)
+        fig2.tight_layout()
+        self.canvas_3d_time.draw()
+
+        # Déplacement cumulé + vitesse
+        fig3 = self.canvas_move.fig
+        fig3.clear()
+        if has_3d:
+            ax_d = fig3.add_subplot(211)
+            ax_v = fig3.add_subplot(212, sharex=ax_d)
+            ax_d.set_facecolor(DARK["bg3"]); ax_v.set_facecolor(DARK["bg3"])
+            for side in sides:
+                sub = df[df["side"] == side].sort_values("frame_idx")
+                sv  = sub[sub["x_mm"].notna() & (sub["x_mm"].astype(str) != "")].copy()
+                if len(sv) < 2:
+                    continue
+                c   = colors.get(side, DARK["text_dim"])
+                xyz = sv[["x_mm", "y_mm", "z_mm"]].astype(float).values
+                diffs  = _np.linalg.norm(_np.diff(xyz, axis=0), axis=1)
+                cumul  = _np.concatenate([[0], _np.cumsum(diffs)])
+                frames = sv["frame_idx"].values
+                ax_d.plot(frames, cumul, lw=1.5, color=c, label=side)
+                vel = _np.convolve(diffs, _np.ones(5) / 5, mode="same")
+                ax_v.plot(frames[:-1], vel[:len(frames) - 1], lw=1.2, color=c, alpha=0.85, label=side)
+            ax_d.set_ylabel("D\u00e9placement cumul\u00e9 (mm)", fontsize=8)
+            ax_d.legend(fontsize=7, facecolor=DARK["bg3"], edgecolor=DARK["border"], labelcolor=DARK["text"])
+            ax_v.set_ylabel("Vitesse (mm/frame)", fontsize=8)
+            ax_v.set_xlabel("Frame", fontsize=8)
+            ax_d.tick_params(labelsize=7); ax_v.tick_params(labelsize=7)
+            fig3.suptitle("D\u00e9placement et vitesse des pinces", color=DARK["text"], fontsize=10)
+        else:
+            ax = fig3.add_subplot(111); ax.set_facecolor(DARK["bg3"])
+            ax.text(0.5, 0.5, "Donn\u00e9es 3D non disponibles",
+                    ha="center", va="center", color=DARK["text_dim"], fontsize=11, transform=ax.transAxes)
+        fig3.tight_layout()
+        self.canvas_move.draw()
+
+
 # Fenêtre principale
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1554,7 +1872,6 @@ class MainWindow(QMainWindow):
         self.panel_train    = TrainPanel(self.log, self.panel_ingest)
         self.panel_infer    = InferencePanel(self.log, self.panel_ingest, self.panel_train)
         self.panel_viz      = VizPanel(self.log)
-
         tabs.addTab(self.panel_ingest,   "1 · Ingestion")
         tabs.addTab(self.panel_pipeline, "2 · Pipeline")
         tabs.addTab(self.panel_train,    "3 · Entraînement")

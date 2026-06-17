@@ -8,8 +8,8 @@ import requests
 logging.basicConfig(level=logging.INFO)
 
 BASE_URL = "http://13.62.206.125:5001"
-USERNAME = os.getenv("USERNAME", "")
-PASSWORD = os.getenv("PASSWORD", "")
+USERNAME = os.getenv("USERNAME", "pd_umi")
+PASSWORD = os.getenv("PASSWORD", "sqiu763hQP1")
 
 
 def upload_zip_to_mistral(zip_path: str) -> bool:
